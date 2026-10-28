@@ -1,0 +1,328 @@
+// AssistPay — modèle de données PostgreSQL
+// Chaque table issue de l'ancienne version garde l'identifiant d'origine dans `legacyId`
+// pour que l'import soit rejouable sans doublon (upsert sur legacyId).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Profil métier : fixe les accès par défaut de chaque onglet.
+enum Profile {
+  ADMINISTRATEUR
+  DIRECTION
+  EQUIPE_FACTURATION
+  CHARGE_FACTURATION
+  COMPTABLE
+  RH
+  PARTENAIRE
+}
+
+/// Onglets soumis au tableau des accès.
+enum Module {
+  DASH
+  PILOT
+  QC
+  FCLI
+  FFOUR
+  PART
+  FACT
+  CAAR
+  BDG
+  DP
+  VIR
+  RELEVE
+  RH
+}
+
+enum AccessLevel {
+  NONE
+  VIEW
+  EDIT
+}
+
+enum Sens {
+  CREDIT
+  DEBIT
+}
+
+enum InvoiceStatus {
+  EN_ATTENTE
+  REGLE
+  ANNULE
+}
+
+enum PaymentMode {
+  VIREMENT
+  CHEQUE
+  VERSEMENT
+  AUTRE
+}
+
+enum StatementStatus {
+  A_TRAITER
+  RAPPROCHE
+  DEJA
+  IGNORE
+  AJOUTE
+}
+
+enum HrSens {
+  PAIEMENT
+  RETOUR
+}
+
+model User {
+  id           String             @id
+  email        String             @unique
+  firstName    String             @default("")
+  lastName     String             @default("")
+  profile      Profile            @default(CHARGE_FACTURATION)
+  active       Boolean            @default(true)
+  passwordHash String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  lastLoginAt  DateTime?
+  access       UserModuleAccess[]
+  journal      JournalEntry[]
+
+  @@index([profile])
+}
+
+/// Exception au profil : un niveau d'accès choisi pour un onglet précis.
+model UserModuleAccess {
+  userId String
+  module Module
+  level  AccessLevel
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, module])
+}
+
+model Invoice {
+  id             String         @id @default(cuid())
+  legacyId       String         @unique
+  sens           Sens
+  status         InvoiceStatus  @default(EN_ATTENTE)
+  categorie      String         @default("")
+  tiers          String         @default("")
+  numero         String         @default("")
+  libelle        String         @default("")
+  montant        Decimal        @db.Decimal(14, 2)
+  montantGlobal  Decimal?       @db.Decimal(14, 2)
+  dateOperation  DateTime?      @db.Date
+  dateFacture    DateTime?      @db.Date
+  annee          Int?
+  mode           PaymentMode?
+  cheque         String         @default("")
+  banque         String         @default("")
+  nature         String         @default("")
+  classe         Int?
+  succursale     String         @default("")
+  periode        String         @default("")
+  debours        Decimal?       @db.Decimal(14, 2)
+  frais          Decimal?       @db.Decimal(14, 2)
+  paymentRefs    String[]       @default([])
+  origine        String         @default("")
+  /// Clé de tri de l'ancienne version (peut être un horodatage).
+  ordre          Float?
+  archived       Boolean        @default(false)
+  /// Ligne de paie (salaires, CNAS, G50, IRG) : visible seulement avec l'accès RH.
+  payroll        Boolean        @default(false)
+  /// Champs secondaires de l'ancienne version (groupe de règlement, détail, compensation…).
+  extra          Json           @default("{}")
+  createdById    String?
+  updatedById    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([sens, status])
+  @@index([categorie])
+  @@index([tiers])
+  @@index([annee])
+  @@index([dateOperation])
+  @@index([payroll])
+}
+
+model BankStatementLine {
+  id          String          @id @default(cuid())
+  legacyId    String          @unique
+  date        DateTime        @db.Date
+  libelle     String          @default("")
+  montant     Decimal         @db.Decimal(14, 2)
+  sens        Sens
+  numero      String          @default("")
+  type        String          @default("")
+  status      StatementStatus @default(A_TRAITER)
+  invoiceRefs String[]        @default([])
+  importedAt  DateTime        @default(now())
+  extra       Json            @default("{}")
+
+  @@index([date])
+  @@index([status])
+}
+
+model PaymentRequest {
+  id          String   @id @default(cuid())
+  legacyId    String   @unique
+  num         Int
+  ref         String   @default("")
+  beneficiaire String  @default("")
+  adresse     String   @default("")
+  date        DateTime? @db.Date
+  mode        String   @default("")
+  montant     Decimal  @db.Decimal(14, 2)
+  nature      String   @default("")
+  produit     String   @default("")
+  status      String   @default("")
+  source      String   @default("")
+  pieces      String[] @default([])
+  invoiceIds  String[] @default([])
+  archived    Boolean  @default(false)
+  extra       Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([num])
+  @@index([beneficiaire])
+}
+
+/// Facture émise par AssistPay (onglet « Établir une facture »).
+model IssuedInvoice {
+  id        String    @id @default(cuid())
+  legacyId  String    @unique
+  num       String    @default("")
+  client    String    @default("")
+  date      DateTime? @db.Date
+  ht        Decimal   @db.Decimal(14, 2)
+  tva       Decimal   @db.Decimal(14, 2)
+  ttc       Decimal   @db.Decimal(14, 2)
+  objet     String    @default("")
+  invoiceLegacyId String?
+  payload   Json      @default("{}")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([client])
+}
+
+model CaarProduction {
+  id        String                @id @default(cuid())
+  legacyId  String                @unique
+  annee     Int
+  mois      Int
+  succursale String               @default("")
+  fichier   String                @default("")
+  status    String                @default("")
+  payload   Json                  @default("{}")
+  chunks    CaarProductionChunk[]
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+}
+
+model CaarProductionChunk {
+  id           String         @id @default(cuid())
+  productionId String
+  k            Int
+  rows         Json
+  production   CaarProduction @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  @@unique([productionId, k])
+}
+
+model ProviderRib {
+  id       String   @id @default(cuid())
+  legacyId String   @unique
+  code     String   @default("")
+  key      String   @default("")
+  rib      String
+  noms     String[] @default([])
+  types    String[] @default([])
+  wilaya   String   @default("")
+  status   String   @default("actif")
+  origine  String   @default("")
+  extra    Json     @default("{}")
+  updatedAt DateTime @updatedAt
+
+  @@index([rib])
+  @@index([key])
+}
+
+/// Fichier de virements envoyé à la banque (ligne D + lignes C).
+model TransferBatch {
+  id       String   @id @default(cuid())
+  legacyId String   @unique
+  ref      String   @default("")
+  type     String   @default("")
+  annee    Int?
+  mois     String   @default("")
+  fichier  String   @default("")
+  debit    Decimal  @db.Decimal(14, 2)
+  credit   Decimal  @db.Decimal(14, 2)
+  nb       Int      @default(0)
+  status   String   @default("")
+  verdict  String   @default("")
+  lines    Json     @default("[]")
+  extra    Json     @default("{}")
+  updatedAt DateTime @updatedAt
+}
+
+model HrEntry {
+  id               String    @id @default(cuid())
+  legacyId         String    @unique
+  date             DateTime? @db.Date
+  annee            Int?
+  mois             String    @default("")
+  beneficiaire     String    @default("")
+  libelle          String    @default("")
+  montant          Decimal   @db.Decimal(14, 2)
+  sens             HrSens
+  nature           String    @default("")
+  mode             String    @default("")
+  banque           String    @default("")
+  cheque           String    @default("")
+  classe           Int?
+  ordre            Float?
+  origine          String    @default("")
+  categorieOrigine String    @default("")
+  extra            Json      @default("{}")
+  updatedAt        DateTime  @updatedAt
+
+  @@index([annee])
+}
+
+model Reminder {
+  id         String   @id @default(cuid())
+  legacyId   String   @unique
+  partenaire String   @default("")
+  montant    Decimal  @db.Decimal(14, 2)
+  nb         Int      @default(0)
+  sentAt     DateTime
+  payload    Json     @default("{}")
+}
+
+model JournalEntry {
+  id       String   @id @default(cuid())
+  legacyId String?  @unique
+  at       DateTime @default(now())
+  userId   String?
+  userName String   @default("")
+  action   String
+  objet    String   @default("")
+  /// Journal réservé aux administrateurs (RH, accès…).
+  admin    Boolean  @default(false)
+  user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([at])
+  @@index([admin, at])
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}

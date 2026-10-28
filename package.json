@@ -1,0 +1,56 @@
+{
+  "name": "assistpay",
+  "version": "2.0.0",
+  "private": true,
+  "description": "AssistPay — facturation, créances et règlements (Allo Assistance)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:import": "tsx scripts/import-legacy.ts",
+    "user": "tsx scripts/manage-users.ts",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "@radix-ui/react-dialog": "1.1.2",
+    "@radix-ui/react-label": "2.1.0",
+    "@radix-ui/react-select": "2.1.2",
+    "@radix-ui/react-slot": "1.1.0",
+    "@t3-oss/env-nextjs": "0.11.1",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "dotenv": "16.4.5",
+    "jose": "5.9.6",
+    "lucide-react": "0.460.0",
+    "next": "15.5.27",
+    "pg": "8.13.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "0.0.1",
+    "tailwind-merge": "2.5.5",
+    "xlsx": "0.18.5",
+    "zod": "3.23.8",
+    "zustand": "5.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.1",
+    "@types/pg": "8.11.10",
+    "@types/react": "19.0.1",
+    "@types/react-dom": "19.0.1",
+    "autoprefixer": "10.4.20",
+    "postcss": "8.4.49",
+    "prisma": "7.10.0",
+    "tailwindcss": "3.4.17",
+    "tailwindcss-animate": "1.0.7",
+    "tsx": "4.19.2",
+    "typescript": "5.6.3"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

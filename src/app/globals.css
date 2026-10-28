@@ -1,0 +1,346 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --font-mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, monospace;
+    --background: 228 33% 97%;
+    --foreground: 230 35% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 230 35% 14%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 230 35% 14%;
+    --primary: 262 72% 52%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 228 30% 93%;
+    --secondary-foreground: 230 35% 18%;
+    --muted: 228 26% 94%;
+    --muted-foreground: 229 14% 42%;
+    --accent: 190 85% 40%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 356 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 62% 34%;
+    --success-foreground: 0 0% 100%;
+    --warning: 34 92% 44%;
+    --warning-foreground: 0 0% 100%;
+    --border: 228 22% 88%;
+    --input: 228 22% 84%;
+    --ring: 262 72% 52%;
+    --radius: 0.625rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: 232 38% 8%;
+      --foreground: 228 30% 93%;
+      --card: 232 34% 12%;
+      --card-foreground: 228 30% 93%;
+      --popover: 232 34% 12%;
+      --popover-foreground: 228 30% 93%;
+      --primary: 262 85% 68%;
+      --primary-foreground: 232 38% 8%;
+      --secondary: 232 26% 18%;
+      --secondary-foreground: 228 30% 93%;
+      --muted: 232 26% 16%;
+      --muted-foreground: 228 14% 66%;
+      --accent: 188 80% 52%;
+      --accent-foreground: 232 38% 8%;
+      --destructive: 356 78% 62%;
+      --destructive-foreground: 232 38% 8%;
+      --success: 152 55% 50%;
+      --success-foreground: 232 38% 8%;
+      --warning: 36 92% 58%;
+      --warning-foreground: 232 38% 8%;
+      --border: 232 22% 22%;
+      --input: 232 22% 26%;
+      --ring: 262 85% 68%;
+    }
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    font-feature-settings: "tnum" 1, "cv11" 1;
+  }
+}
+
+/* Fiche « Demande de paiement » au format A4 (aperçu et impression). */
+@layer components {
+  .dp-sheet {
+    background: #fff;
+    color: #000;
+    width: 190mm;
+    min-height: 260mm;
+    margin: 0 auto;
+    padding: 10mm;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 11pt;
+    box-sizing: border-box;
+  }
+  .dp-sheet .dp-row {
+    display: flex;
+    align-items: baseline;
+    gap: 4mm;
+    margin-top: 4mm;
+  }
+  .dp-sheet .dp-label {
+    width: 52mm;
+    flex-shrink: 0;
+    font-weight: 700;
+  }
+  .dp-sheet .dp-line {
+    border-bottom: 1px dotted #555;
+    min-height: 6mm;
+    margin: 1.5mm 0;
+  }
+  .dp-sheet .dp-box {
+    border: 1px solid #000;
+    width: 7mm;
+    height: 6mm;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+  }
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 8mm;
+  }
+  body {
+    background: #fff !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .dp-sheet {
+    page-break-after: always;
+  }
+}
+
+/* Facture (aperçu et impression) — charte ALLO ASSISTANCE. */
+@layer components {
+  .fx-page {
+    width: 210mm;
+    min-height: 290mm;
+    box-sizing: border-box;
+    padding: 10mm 12mm 8mm;
+    background: #fff;
+    color: #1d1530;
+    font: 12.5px/1.45 "Segoe UI", Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin: 0 auto;
+  }
+  .fx-page .fx-top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #6b1f86; padding-bottom: 12px; }
+  .fx-page .fx-logo { height: 18mm; width: auto; }
+  .fx-page h1 { margin: 0; font-size: 30px; letter-spacing: 0.06em; color: #6b1f86; text-align: right; font-weight: 700; }
+  .fx-page .fx-meta { border-collapse: collapse; margin-top: 6px; margin-left: auto; }
+  .fx-page .fx-meta td { padding: 3px 8px; border: 1px solid #d9cfe3; }
+  .fx-page .fx-meta td:first-child { background: #f1ebf6; font-weight: 600; color: #3b1f55; }
+  .fx-page .fx-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .fx-page .fx-box { border: 1px solid #d9cfe3; border-radius: 8px; padding: 10px 12px; background: #faf8fc; font-size: 11.5px; }
+  .fx-page .fx-box h4 { margin: 0 0 4px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: #e8571e; }
+  .fx-page .fx-box .nm { font-weight: 700; font-size: 13.5px; color: #3b1f55; margin-bottom: 2px; }
+  .fx-page .fx-per { font-size: 13px; color: #3b1f55; }
+  .fx-page table.fx-t { width: 100%; border-collapse: collapse; }
+  .fx-page .fx-t th { background: #6b1f86; color: #fff; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; padding: 7px 6px; text-align: left; border: 1px solid #6b1f86; }
+  .fx-page .fx-t td { border: 1px solid #e3dbea; padding: 6px; font-size: 11.5px; vertical-align: top; }
+  .fx-page .fx-t.wide th { font-size: 8.5px; padding: 5px 4px; letter-spacing: 0; }
+  .fx-page .fx-t.wide td { font-size: 9.5px; padding: 4px; }
+  .fx-page .n { text-align: right; white-space: nowrap; }
+  .fx-page .fx-t tr.info td { color: #6c6480; font-style: italic; }
+  .fx-page .fx-t tr.sum td { font-weight: 700; background: #f1ebf6; }
+  .fx-page .fx-kv { border-collapse: collapse; width: 70%; }
+  .fx-page .fx-kv th { text-align: left; background: #f1ebf6; color: #3b1f55; padding: 6px; }
+  .fx-page .fx-kv td { border: 1px solid #e3dbea; padding: 5px 7px; }
+  .fx-page .fx-tot { border-collapse: collapse; margin-left: auto; }
+  .fx-page .fx-tot td { padding: 5px 10px; border: 1px solid #e3dbea; font-weight: 600; }
+  .fx-page .fx-tot tr.ttc td { background: #6b1f86; color: #fff; font-size: 14px; }
+  .fx-page .fx-words { border-left: 4px solid #f39200; padding: 6px 10px; background: #fff7ec; }
+  .fx-page .fx-notes { font-size: 11.5px; color: #4a4060; white-space: pre-line; }
+  .fx-page .fx-foot { margin-top: auto; display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; align-items: end; }
+  .fx-page .fx-sign { border: 1px dashed #b9a9c9; border-radius: 8px; height: 90px; padding: 6px 10px; color: #6c6480; font-size: 11px; }
+  .fx-page .fx-legal { border-top: 1px solid #d9cfe3; padding-top: 6px; font-size: 10px; color: #6c6480; text-align: center; }
+}
+
+@media print {
+  .fx-page {
+    page-break-after: always;
+    min-height: 0;
+  }
+}
+
+/* ===== Menu latéral « néo » aux couleurs d'Allo Assistance (violet profond, orange lumineux) =====
+   Toujours sombre, quel que soit le thème : c'est l'identité de la marque. */
+@layer components {
+  .neo-side {
+    --neo-violet: 284 62% 32%;
+    --neo-violet-deep: 280 58% 9%;
+    --neo-orange: 36 100% 48%;
+    --neo-orange-2: 16 81% 51%;
+    --neo-cyan: 190 95% 62%;
+    --neo-ink: 280 40% 96%;
+    --neo-dim: 280 18% 72%;
+    color: hsl(var(--neo-ink));
+    background:
+      radial-gradient(120% 40% at 0% 0%, hsl(var(--neo-violet) / 0.85), transparent 70%),
+      radial-gradient(90% 30% at 100% 100%, hsl(var(--neo-orange-2) / 0.22), transparent 70%),
+      linear-gradient(hsl(0 0% 100% / 0.035) 1px, transparent 1px) 0 0 / 100% 28px,
+      linear-gradient(180deg, hsl(282 55% 14%), hsl(var(--neo-violet-deep)));
+    border-right: 1px solid hsl(var(--neo-orange) / 0.25);
+    box-shadow: 8px 0 32px hsl(280 60% 6% / 0.35);
+  }
+  .neo-brand {
+    position: relative;
+    border-bottom: 1px solid hsl(0 0% 100% / 0.08);
+  }
+  .neo-brand::after {
+    content: "";
+    position: absolute;
+    left: 20px;
+    right: 20px;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, hsl(var(--neo-orange)), hsl(var(--neo-cyan) / 0.8), transparent);
+  }
+  .neo-logo {
+    height: 44px;
+    width: auto;
+    padding: 3px 5px;
+    border-radius: 11px;
+    background: hsl(0 0% 100%);
+    box-shadow: 0 0 0 1px hsl(var(--neo-orange) / 0.4), 0 6px 18px hsl(var(--neo-orange) / 0.3);
+  }
+  .neo-word {
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    font-size: 1.05rem;
+  }
+  .neo-word span {
+    background: linear-gradient(90deg, hsl(var(--neo-orange)), hsl(var(--neo-orange-2)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .neo-tag {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: hsl(var(--neo-cyan) / 0.85);
+  }
+  .neo-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px 6px;
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: hsl(var(--neo-dim) / 0.8);
+  }
+  .neo-group::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, hsl(0 0% 100% / 0.14), transparent);
+  }
+  .neo-link {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 5px 10px;
+    border-radius: 12px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: hsl(var(--neo-dim));
+    transition: background-color 0.15s, color 0.15s, transform 0.15s;
+  }
+  .neo-link:hover {
+    color: hsl(var(--neo-ink));
+    background: hsl(0 0% 100% / 0.07);
+    transform: translateX(2px);
+  }
+  .neo-link:focus-visible {
+    outline: 2px solid hsl(var(--neo-cyan));
+    outline-offset: 2px;
+  }
+  .neo-icon {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    flex: none;
+    border-radius: 9px;
+    background: hsl(0 0% 100% / 0.06);
+    border: 1px solid hsl(0 0% 100% / 0.08);
+    transition: background-color 0.15s, box-shadow 0.15s, border-color 0.15s;
+  }
+  .neo-link:hover .neo-icon {
+    border-color: hsl(var(--neo-orange) / 0.5);
+  }
+  .neo-link[aria-current="page"] {
+    color: hsl(0 0% 100%);
+    font-weight: 650;
+    background: linear-gradient(90deg, hsl(var(--neo-orange) / 0.22), hsl(var(--neo-orange-2) / 0.06) 70%, transparent);
+    box-shadow: inset 0 0 0 1px hsl(var(--neo-orange) / 0.35);
+  }
+  .neo-link[aria-current="page"]::before {
+    content: "";
+    position: absolute;
+    left: -12px;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: linear-gradient(180deg, hsl(var(--neo-orange)), hsl(var(--neo-orange-2)));
+    box-shadow: 0 0 12px hsl(var(--neo-orange));
+  }
+  .neo-link[aria-current="page"] .neo-icon {
+    background: linear-gradient(135deg, hsl(var(--neo-orange)), hsl(var(--neo-orange-2)));
+    border-color: transparent;
+    color: hsl(0 0% 100%);
+    box-shadow: 0 0 16px hsl(var(--neo-orange) / 0.55);
+  }
+  .neo-foot {
+    border-top: 1px solid hsl(0 0% 100% / 0.08);
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    color: hsl(var(--neo-dim) / 0.75);
+  }
+  .neo-pulse {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: hsl(152 70% 52%);
+    box-shadow: 0 0 0 0 hsl(152 70% 52% / 0.6);
+    animation: neo-pulse 2.4s ease-out infinite;
+  }
+  .neo-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--neo-orange) / 0.45) transparent;
+  }
+  @keyframes neo-pulse {
+    0% { box-shadow: 0 0 0 0 hsl(152 70% 52% / 0.55); }
+    70% { box-shadow: 0 0 0 7px hsl(152 70% 52% / 0); }
+    100% { box-shadow: 0 0 0 0 hsl(152 70% 52% / 0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .neo-link, .neo-link:hover { transition: none; transform: none; }
+    .neo-pulse { animation: none; }
+  }
+}

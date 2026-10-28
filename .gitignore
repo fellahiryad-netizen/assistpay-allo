@@ -1,0 +1,13 @@
+node_modules
+.next
+out
+.env
+.env.local
+src/generated
+*.tsbuildinfo
+next-env.d.ts
+
+# données de l entreprise : ne jamais publier
+rapport-import.json
+assistpay-export-*.json
+*.dump

@@ -1,0 +1,11 @@
+import { Skeleton } from "@/components/ui/skeleton";
+
+/** Chargement du tableau des accès. */
+export default function AccessLoading(): React.JSX.Element {
+  return (
+    <div className="flex flex-col gap-3" aria-busy="true" aria-label="Chargement">
+      <Skeleton className="h-8 w-64" />
+      <Skeleton className="h-96" />
+    </div>
+  );
+}
