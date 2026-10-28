@@ -6,19 +6,19 @@
   :root {
     --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
     --font-mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, monospace;
-    --background: 228 33% 97%;
-    --foreground: 230 35% 14%;
+    --background: 285 30% 97%;
+    --foreground: 285 40% 13%;
     --card: 0 0% 100%;
-    --card-foreground: 230 35% 14%;
+    --card-foreground: 285 40% 13%;
     --popover: 0 0% 100%;
-    --popover-foreground: 230 35% 14%;
-    --primary: 262 72% 52%;
+    --popover-foreground: 285 40% 13%;
+    --primary: 287 62% 31%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 228 30% 93%;
-    --secondary-foreground: 230 35% 18%;
-    --muted: 228 26% 94%;
-    --muted-foreground: 229 14% 42%;
-    --accent: 190 85% 40%;
+    --secondary: 285 30% 93%;
+    --secondary-foreground: 285 40% 18%;
+    --muted: 285 24% 94%;
+    --muted-foreground: 285 12% 42%;
+    --accent: 28 92% 48%;
     --accent-foreground: 0 0% 100%;
     --destructive: 356 72% 48%;
     --destructive-foreground: 0 0% 100%;
@@ -26,37 +26,37 @@
     --success-foreground: 0 0% 100%;
     --warning: 34 92% 44%;
     --warning-foreground: 0 0% 100%;
-    --border: 228 22% 88%;
-    --input: 228 22% 84%;
-    --ring: 262 72% 52%;
+    --border: 285 20% 88%;
+    --input: 285 20% 84%;
+    --ring: 287 62% 31%;
     --radius: 0.625rem;
   }
 
   @media (prefers-color-scheme: dark) {
     :root {
-      --background: 232 38% 8%;
-      --foreground: 228 30% 93%;
-      --card: 232 34% 12%;
-      --card-foreground: 228 30% 93%;
-      --popover: 232 34% 12%;
-      --popover-foreground: 228 30% 93%;
-      --primary: 262 85% 68%;
-      --primary-foreground: 232 38% 8%;
-      --secondary: 232 26% 18%;
-      --secondary-foreground: 228 30% 93%;
-      --muted: 232 26% 16%;
-      --muted-foreground: 228 14% 66%;
-      --accent: 188 80% 52%;
-      --accent-foreground: 232 38% 8%;
+      --background: 284 40% 8%;
+      --foreground: 285 30% 94%;
+      --card: 284 34% 12%;
+      --card-foreground: 285 30% 94%;
+      --popover: 284 34% 12%;
+      --popover-foreground: 285 30% 94%;
+      --primary: 290 60% 70%;
+      --primary-foreground: 284 40% 8%;
+      --secondary: 284 26% 18%;
+      --secondary-foreground: 285 30% 94%;
+      --muted: 284 26% 16%;
+      --muted-foreground: 285 14% 68%;
+      --accent: 36 100% 55%;
+      --accent-foreground: 284 40% 8%;
       --destructive: 356 78% 62%;
-      --destructive-foreground: 232 38% 8%;
+      --destructive-foreground: 284 40% 8%;
       --success: 152 55% 50%;
-      --success-foreground: 232 38% 8%;
+      --success-foreground: 284 40% 8%;
       --warning: 36 92% 58%;
-      --warning-foreground: 232 38% 8%;
-      --border: 232 22% 22%;
-      --input: 232 22% 26%;
-      --ring: 262 85% 68%;
+      --warning-foreground: 284 40% 8%;
+      --border: 284 22% 22%;
+      --input: 284 22% 26%;
+      --ring: 290 60% 70%;
     }
   }
 
@@ -189,7 +189,7 @@
     --neo-violet-deep: 280 58% 9%;
     --neo-orange: 36 100% 48%;
     --neo-orange-2: 16 81% 51%;
-    --neo-cyan: 190 95% 62%;
+    --neo-cyan: 40 100% 62%;
     --neo-ink: 280 40% 96%;
     --neo-dim: 280 18% 72%;
     color: hsl(var(--neo-ink));
@@ -343,4 +343,11 @@
     .neo-link, .neo-link:hover { transition: none; transform: none; }
     .neo-pulse { animation: none; }
   }
+}
+
+/* Page de connexion aux couleurs Allo Assistance. */
+.login-brand {
+  background:
+    radial-gradient(70% 50% at 100% 100%, hsl(24 85% 50% / 0.28), transparent 70%),
+    linear-gradient(160deg, hsl(287 62% 31%), hsl(280 45% 18%) 60%, hsl(280 50% 10%));
 }

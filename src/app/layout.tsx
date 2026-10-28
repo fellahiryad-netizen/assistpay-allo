@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "AssistPay", template: "%s · AssistPay" },
+  title: { default: "AssistPay · Allo Assistance", template: "%s · AssistPay" },
   description: "Facturation, créances et règlements – Allo Assistance",
   robots: { index: false, follow: false },
 };
@@ -12,8 +12,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f5f6fb" },
-    { media: "(prefers-color-scheme: dark)", color: "#0d1020" },
+    { media: "(prefers-color-scheme: light)", color: "#5c1e74" },
+    { media: "(prefers-color-scheme: dark)", color: "#1a0b1f" },
   ],
 };
 
