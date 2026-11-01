@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Download } from "lucide-react";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/features/access/services/access-rules";
 import { DonutChart } from "@/components/common/donut-chart";
 import { PageHeader } from "@/components/common/page-header";
 import { Pagination } from "@/components/common/pagination";
@@ -57,7 +58,7 @@ export default async function HistoryPage({ searchParams }: Readonly<{ searchPar
         title="Historique 2023 – 2024 – 2025"
         description="Reprise du classeur de suivi bancaire : toutes les lignes avec leur détail, et les créances restant à encaisser."
         actions={
-          annee ? (
+          annee && can(user, "A_EXPORT", "EDIT") ? (
             <a href={`/api/factures/export?${exportParams.toString()}`} className={buttonVariants({ variant: "outline" })}>
               <Download />
               Excel de {annee}

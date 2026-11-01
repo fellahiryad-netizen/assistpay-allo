@@ -318,6 +318,8 @@ export async function previousReceivables(actor: AuthUser): Promise<ActionResult
 export async function exportPreviousYears(actor: AuthUser): Promise<ActionResult<{ name: string; bytes: Uint8Array }>> {
   const guard = requireAccess(actor, "PART");
   if (!guard.success) return guard;
+  const allowed = requireAccess(actor, "A_EXPORT", "EDIT");
+  if (!allowed.success) return allowed;
   const rows = await creditRows();
   const today = todayIso();
   const header = ["Partenaire", "Succursale", "N° facture", "Libellé", "Date de facture", "Montant", "Déjà encaissé", "Reste à encaisser", "État", "Date de règlement", "Ancienneté (jours)"];

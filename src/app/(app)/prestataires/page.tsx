@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/features/access/services/access-rules";
 import { DonutChart } from "@/components/common/donut-chart";
 import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
@@ -34,7 +35,7 @@ export default async function ProvidersPage({ searchParams }: Readonly<{ searchP
         actions={
           data.canEdit ? (
             <>
-              <InvoiceImportDialog />
+              {can(user, "A_IMPORT", "EDIT") ? <InvoiceImportDialog /> : null}
               <Link href="/factures/nouvelle?sens=DEBIT" className={buttonVariants()}>
                 <Plus />
                 Ajouter une facture prestataire

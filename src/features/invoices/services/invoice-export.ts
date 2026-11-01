@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import type { Invoice } from "@/generated/prisma/client";
 import { writeWorkbook } from "@/lib/spreadsheet";
+import { requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { isSplit, paidSum, remaining, toPayable, type PayableInvoice } from "@/features/invoices/services/invoice-balance";
 import { authorOf } from "@/features/invoices/services/invoice-extra";
@@ -87,6 +88,8 @@ function listLabel(query: ExportQuery): string {
 
 /** Export Excel de la liste affichée (mêmes filtres que l'écran, toutes les pages). */
 export async function exportInvoiceList(actor: AuthUser, query: ExportQuery): Promise<ActionResult<ExportedFile>> {
+  const allowed = requireAccess(actor, "A_EXPORT", "EDIT");
+  if (!allowed.success) return allowed;
   const loaded = await loadRows(actor, query);
   if (!loaded.success) return loaded;
   if (loaded.data.length === 0) return fail("Rien à exporter avec ces filtres.", "NOT_FOUND");
@@ -129,6 +132,8 @@ export async function exportInvoiceList(actor: AuthUser, query: ExportQuery): Pr
  * (même ordre et mêmes intitulés que le fichier réimportable avec « Importer le fichier de facturation »).
  */
 export async function exportSuivi(actor: AuthUser, annee: number | undefined): Promise<ActionResult<ExportedFile>> {
+  const allowed = requireAccess(actor, "A_EXPORT", "EDIT");
+  if (!allowed.success) return allowed;
   const loaded = await loadRows(actor, { annee, page: 1 });
   if (!loaded.success) return loaded;
   if (loaded.data.length === 0) return fail("Rien à exporter.", "NOT_FOUND");

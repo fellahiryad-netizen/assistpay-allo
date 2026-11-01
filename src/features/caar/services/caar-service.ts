@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { readWorkbook } from "@/lib/spreadsheet";
 import type { Prisma } from "@/generated/prisma/client";
-import { can, requireAccess, requireAdmin } from "@/features/access/services/access-rules";
+import { can, requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { CAAR_FLAGS, DEFAULT_BAREME, DEFAULT_OPTIONS, DEFAULT_RATES, analyseCaarWorkbook, type CaarAnalysis, type CaarBareme, type CaarFlag } from "@/features/caar/services/caar-engine";
 import { logAction } from "@/features/journal/services/journal-service";
@@ -80,14 +80,14 @@ async function loadBareme(): Promise<CaarBareme> {
 
 /** Barème en vigueur (lecture : accès CAAR) et droit de modification (administrateur). */
 export async function getBareme(actor: AuthUser): Promise<ActionResult<{ bareme: CaarBareme; canEdit: boolean }>> {
-  const guard = requireAccess(actor, "CAAR");
+  const guard = requireAccess(actor, "CAARB");
   if (!guard.success) return guard;
-  return ok({ bareme: await loadBareme(), canEdit: requireAdmin(actor).success });
+  return ok({ bareme: await loadBareme(), canEdit: can(actor, "CAARB", "EDIT") });
 }
 
 /** Enregistre le barème et les taux (administrateur) ; `null` rétablit le barème d'origine. */
 export async function saveBareme(actor: AuthUser, input: CaarBareme | null): Promise<ActionResult<CaarBareme>> {
-  const guard = requireAdmin(actor);
+  const guard = requireAccess(actor, "CAARB", "EDIT");
   if (!guard.success) return guard;
   const row = await db.setting.findUnique({ where: { key: "caar" } });
   const previous = obj(row?.value);

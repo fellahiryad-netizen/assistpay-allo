@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Download, Plus } from "lucide-react";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/features/access/services/access-rules";
 import { PageHeader } from "@/components/common/page-header";
 import { Pagination } from "@/components/common/pagination";
 import { StateMessage } from "@/components/common/state-message";
@@ -87,15 +88,19 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
         description={`${data.total.toLocaleString("fr-FR")} facture(s) · total ${formatDA(data.sumMontant)}`}
         actions={
           <div className="flex flex-wrap justify-end gap-2">
-            <a href={exportHref(query)} className={buttonVariants({ variant: "outline" })}>
-              <Download />
-              Exporter en Excel (liste affichée)
-            </a>
-            <a href={exportHref(query, "suivi")} className={buttonVariants({ variant: "outline" })} title="Toutes les lignes, dans les colonnes du classeur de suivi bancaire">
-              <Download />
-              Suivi complet (Excel)
-            </a>
-            {canAdd ? <InvoiceImportDialog /> : null}
+            {can(user, "A_EXPORT", "EDIT") ? (
+              <>
+                <a href={exportHref(query)} className={buttonVariants({ variant: "outline" })}>
+                  <Download />
+                  Exporter en Excel (liste affichée)
+                </a>
+                <a href={exportHref(query, "suivi")} className={buttonVariants({ variant: "outline" })} title="Toutes les lignes, dans les colonnes du classeur de suivi bancaire">
+                  <Download />
+                  Suivi complet (Excel)
+                </a>
+              </>
+            ) : null}
+            {canAdd && can(user, "A_IMPORT", "EDIT") ? <InvoiceImportDialog /> : null}
             {canAdd ? (
               <Link href={query.sens ? `/factures/nouvelle?sens=${query.sens}` : "/factures/nouvelle"} className={buttonVariants()}>
                 <Plus />

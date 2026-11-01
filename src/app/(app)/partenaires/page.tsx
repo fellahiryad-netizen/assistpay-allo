@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Download } from "lucide-react";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/features/access/services/access-rules";
 import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
 import { buttonVariants } from "@/components/ui/button";
@@ -76,10 +77,12 @@ export default async function PartnersPage({
                 Factures de {PREVIOUS_YEARS.join(" et ")} (et antérieures) encore impayées : {previous.data.count} facture(s), {formatDA(previous.data.total)} à suivre jusqu&apos;au règlement complet.
               </p>
             </div>
-            <a href="/api/partenaires/historique" className={buttonVariants({ variant: "outline" })}>
-              <Download />
-              Télécharger l&apos;historique 2024-2025 (Excel)
-            </a>
+            {can(user, "A_EXPORT", "EDIT") ? (
+              <a href="/api/partenaires/historique" className={buttonVariants({ variant: "outline" })}>
+                <Download />
+                Télécharger l&apos;historique 2024-2025 (Excel)
+              </a>
+            ) : null}
           </div>
           {previous.data.items.length === 0 ? (
             <p className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">Aucune créance impayée au titre des exercices précédents.</p>

@@ -3,7 +3,8 @@
 import { useOptimistic, useState, useTransition } from "react";
 import { Ban, Trash2, Undo2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { deleteInvoiceAction, markInvoicePaidAction, setInvoiceStatusAction } from "@/app/actions/invoice-actions";
+import { requestDeletionAction } from "@/app/actions/deletion-actions";
+import { markInvoicePaidAction, setInvoiceStatusAction } from "@/app/actions/invoice-actions";
 import { Button } from "@/components/ui/button";
 import { MarkPaidDialog } from "@/features/invoices/components/mark-paid-dialog";
 import type { MarkPaidInput } from "@/features/invoices/schemas";
@@ -13,14 +14,17 @@ import { STATUS_LABELS, type InvoiceDTO, type InvoiceStatusKey } from "@/feature
 export interface InvoiceStatusActionsProps {
   invoice: InvoiceDTO;
   today: string;
+  /** « direct » : administrateur ; « request » : demande à valider ; « none » : bouton absent. */
+  deleteMode?: "direct" | "request" | "none";
 }
 
 /** Actions de la fiche : régler, remettre en attente, annuler (affichage optimiste de l'état). */
-export function InvoiceStatusActions({ invoice, today }: Readonly<InvoiceStatusActionsProps>): React.JSX.Element {
+export function InvoiceStatusActions({ invoice, today, deleteMode = "none" }: Readonly<InvoiceStatusActionsProps>): React.JSX.Element {
   const [status, setOptimisticStatus] = useOptimistic<InvoiceStatusKey, InvoiceStatusKey>(invoice.status, (_current, next) => next);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const [notice, setNotice] = useState<string | null>(null);
 
   function change(next: "EN_ATTENTE" | "ANNULE"): void {
     setError(null);
@@ -32,12 +36,18 @@ export function InvoiceStatusActions({ invoice, today }: Readonly<InvoiceStatusA
   }
 
   function remove(): void {
-    if (!window.confirm("Supprimer cette facture ? Cette action est définitive (la suppression est inscrite au journal).")) return;
+    const motif = window.prompt(
+      deleteMode === "direct"
+        ? "Supprimer cette facture ? Cette action est définitive.\n\nMotif :"
+        : "La suppression sera soumise à la validation d'un administrateur.\n\nMotif de la demande :",
+    );
+    if (motif === null) return;
     setError(null);
     startTransition(async () => {
-      const result = await deleteInvoiceAction(invoice.id);
-      if (result.success) router.push(`/factures?sens=${invoice.sens}`);
-      else setError(result.error);
+      const result = await requestDeletionAction({ kind: "facture", id: invoice.id, motif });
+      if (!result.success) setError(result.error);
+      else if (result.data.done) router.push(`/factures?sens=${invoice.sens}`);
+      else setNotice("Demande envoyée : un administrateur doit la valider.");
     });
   }
 
@@ -69,12 +79,13 @@ export function InvoiceStatusActions({ invoice, today }: Readonly<InvoiceStatusA
           Annuler la facture
         </Button>
       ) : null}
-      {status !== "REGLE" ? (
+      {status !== "REGLE" && deleteMode !== "none" ? (
         <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={remove} className="text-destructive">
           <Trash2 />
-          Supprimer
+          {deleteMode === "direct" ? "Supprimer" : "Demander la suppression"}
         </Button>
       ) : null}
+      {notice ? <p className="w-full text-sm font-medium text-success">{notice}</p> : null}
       {error ? (
         <p role="alert" className="w-full text-sm font-medium text-destructive">
           {error}

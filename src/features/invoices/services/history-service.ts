@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import type { InvoiceQuery } from "@/features/invoices/schemas";
 import { decimalToNumber, toInvoiceDTO } from "@/features/invoices/services/invoice-mapper";
@@ -35,6 +36,8 @@ export interface HistoryData {
 /** Historique 2023–2025 : synthèse, créances en attente et détail ligne à ligne. */
 export async function getHistory(actor: AuthUser, query: HistoryQuery): Promise<ActionResult<HistoryData>> {
   const { annee, ...rest } = query;
+  const guard = requireAccess(actor, "HIST");
+  if (!guard.success) return guard;
   const base = buildInvoiceWhere(actor, { ...rest, status: undefined, categorie: undefined, q: undefined, sens: undefined });
   if (!base) return fail("Vous n'avez accès à aucune facture.", "FORBIDDEN");
   const list = buildInvoiceWhere(actor, rest);

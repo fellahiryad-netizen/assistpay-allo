@@ -5,7 +5,7 @@ import { setModuleAccessAction, setUserActiveAction, setUserProfileAction } from
 import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { isAdminProfile, LEVEL_LABELS, MODULES, PROFILE_DEFAULTS, PROFILE_LABELS } from "@/features/access/services/access-rules";
+import { ACTION_LABELS, isAdminProfile, LEVEL_LABELS, MODULES, PROFILE_DEFAULTS, PROFILE_LABELS } from "@/features/access/services/access-rules";
 import { ACCESS_LEVELS, PROFILE_KEYS, type AccessLevelKey, type ModuleKey, type ProfileKey } from "@/features/access/types";
 import { ResetPasswordDialog } from "@/features/users/components/reset-password-dialog";
 import type { UserAccessRow } from "@/features/users/types";
@@ -134,7 +134,7 @@ export function AccessMatrix({ users, currentUserId }: Readonly<AccessMatrixProp
                     if (fixed) {
                       return (
                         <TableCell key={module.key}>
-                          <span className={cn("text-sm", LEVEL_STYLE.EDIT)}>Modification</span>
+                          <span className={cn("text-sm", LEVEL_STYLE.EDIT)}>{module.action ? "Autorisé" : "Modification"}</span>
                         </TableCell>
                       );
                     }
@@ -148,10 +148,10 @@ export function AccessMatrix({ users, currentUserId }: Readonly<AccessMatrixProp
                             send({ kind: "level", userId: row.id, module: module.key, level: isLevel(event.target.value) ? event.target.value : null })
                           }
                         >
-                          <option value="">{LEVEL_LABELS[PROFILE_DEFAULTS[row.profile][module.key]]} (profil)</option>
-                          {ACCESS_LEVELS.map((level) => (
+                          <option value="">{(module.action ? ACTION_LABELS : LEVEL_LABELS)[PROFILE_DEFAULTS[row.profile][module.key]]} (profil)</option>
+                          {ACCESS_LEVELS.filter((level) => !module.action || level !== "VIEW").map((level) => (
                             <option key={level} value={level}>
-                              {LEVEL_LABELS[level]}
+                              {(module.action ? ACTION_LABELS : LEVEL_LABELS)[level]}
                             </option>
                           ))}
                         </NativeSelect>

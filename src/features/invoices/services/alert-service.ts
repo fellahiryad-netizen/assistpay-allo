@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { can } from "@/features/access/services/access-rules";
+import { can, requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { remaining, toPayable } from "@/features/invoices/services/invoice-balance";
 import { visibleSens } from "@/features/invoices/services/invoice-rules";
@@ -55,6 +55,8 @@ function levelOf(days: number): AlertLevel | null {
 
 /** Calcule les alertes d'impayés visibles par l'utilisateur (aucune écriture). */
 export async function getAlerts(actor: AuthUser): Promise<ActionResult<AlertData>> {
+  const guard = requireAccess(actor, "ALERT");
+  if (!guard.success) return guard;
   const sens = visibleSens(actor);
   if (sens.length === 0) return fail("Vous n'avez accès à aucune facture.", "FORBIDDEN");
   const today = todayIso();

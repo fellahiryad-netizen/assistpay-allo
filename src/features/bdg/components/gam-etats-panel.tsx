@@ -30,7 +30,7 @@ function download(filename: string, base64: string): void {
  * BDG GAM : on dépose l'Excel des factures, les factures sont réparties par agence, la TVA et le TTC calculés,
  * puis on imprime ou télécharge l'état de chaque agence et le récapitulatif général.
  */
-export function GamEtatsPanel(): React.JSX.Element {
+export function GamEtatsPanel({ canExport }: Readonly<{ canExport: boolean }>): React.JSX.Element {
   const [file, setFile] = useState<File | null>(null);
   const [tva, setTva] = useState("19");
   const [exclure, setExclure] = useState("Préstation; Frais de gestion");
@@ -158,10 +158,12 @@ export function GamEtatsPanel(): React.JSX.Element {
             <Button type="button" variant="outline" disabled={pending || !file} onClick={() => file && run(file)}>
               Recalculer
             </Button>
-            <Button type="button" disabled={pending || !file} onClick={exportExcel}>
-              <Download />
-              Excel (tous les états)
-            </Button>
+            {canExport ? (
+              <Button type="button" disabled={pending || !file} onClick={exportExcel}>
+                <Download />
+                Excel (tous les états)
+              </Button>
+            ) : null}
             <Button type="button" variant="outline" onClick={print}>
               <Printer />
               Imprimer cet état

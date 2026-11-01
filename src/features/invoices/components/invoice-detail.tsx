@@ -11,11 +11,13 @@ import { formatDA, formatDate, formatDateTime } from "@/utils/format";
 export interface InvoiceDetailProps {
   invoice: InvoiceDTO;
   canEdit: boolean;
+  /** « direct » (administrateur), « request » (demande à valider) ou « none » (droit non accordé). */
+  deleteMode: "direct" | "request" | "none";
   today: string;
 }
 
 /** Fiche détaillée d'une facture avec les actions autorisées. */
-export function InvoiceDetail({ invoice, canEdit, today }: Readonly<InvoiceDetailProps>): React.JSX.Element {
+export function InvoiceDetail({ invoice, canEdit, deleteMode, today }: Readonly<InvoiceDetailProps>): React.JSX.Element {
   const rows: Array<[string, string]> = [
     ["Tiers", invoice.tiers || "—"],
     ["N° de facture", invoice.numero || "—"],
@@ -50,7 +52,7 @@ export function InvoiceDetail({ invoice, canEdit, today }: Readonly<InvoiceDetai
         </div>
         {canEdit ? (
           <div className="flex flex-wrap gap-2">
-            <InvoiceStatusActions invoice={invoice} today={today} />
+            <InvoiceStatusActions invoice={invoice} today={today} deleteMode={deleteMode} />
             <Button variant="outline" size="sm" asChild>
               <Link href={`/factures/${invoice.id}/modifier`}>
                 <Pencil />

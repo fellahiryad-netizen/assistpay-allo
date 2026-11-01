@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/features/access/services/access-rules";
 import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
 import { TabsNav } from "@/components/common/tabs-nav";
@@ -38,7 +39,7 @@ export default async function CaarPage({
         tabs={[
           { href: "/caar", label: "Productions contrôlées", active: tab === "productions", count: items.length },
           ...(canEdit ? [{ href: "/caar?onglet=importer", label: "Contrôler un fichier", active: tab === "importer" }] : []),
-          { href: "/caar?onglet=bareme", label: "⚙ Barème et taux", active: tab === "bareme" },
+          ...(can(user, "CAARB") ? [{ href: "/caar?onglet=bareme", label: "⚙ Barème et taux", active: tab === "bareme" }] : []),
         ]}
       />
       {tab === "bareme" ? (

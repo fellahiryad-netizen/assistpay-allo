@@ -462,6 +462,7 @@ function buildPartnerPlan(items: PartnerSheetItem[], credits: ExistingInvoice[])
 
 function guardAccess(actor: AuthUser): ActionResult<true> {
   if (!can(actor, "FCLI", "EDIT") && !can(actor, "FFOUR", "EDIT")) return fail("Vous n'avez pas le droit d'importer des factures.", "FORBIDDEN");
+  if (!can(actor, "A_IMPORT", "EDIT")) return fail("Le droit « Boutons d'import de fichiers » ne vous est pas accordé.", "FORBIDDEN");
   return ok(true);
 }
 

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Copy, Pencil, Printer } from "lucide-react";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/features/access/services/access-rules";
 import { Notice } from "@/components/common/notice";
 import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
@@ -51,13 +52,13 @@ export default async function IssuedPage({
                 Dupliquer
               </Link>
             ) : null}
-            {result.data.canEdit ? (
+            {result.data.canRectify ? (
               <Link href={`/facturation/${result.data.id}/rectifier`} className={buttonVariants({ variant: "outline" })}>
                 <Pencil />
                 Rectifier
               </Link>
             ) : null}
-            {result.data.canEdit ? <DeleteIssuedButton id={result.data.id} num={[draft.num, draft.num2].filter(Boolean).join(" / ")} /> : null}
+            {result.data.canEdit && can(user, "A_SUPPR", "EDIT") ? <DeleteIssuedButton id={result.data.id} num={[draft.num, draft.num2].filter(Boolean).join(" / ")} direct={user.isAdmin} /> : null}
           </>
         }
       />

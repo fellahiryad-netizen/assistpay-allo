@@ -252,7 +252,7 @@ export function buildGamEtats(sheets: SheetData[], fichier: string, options: Gam
 
 /** Aperçu des états GAM d'un fichier (rien n'est enregistré). */
 export async function previewGamEtats(actor: AuthUser, file: { name: string; bytes: Uint8Array }, options: GamOptions): Promise<ActionResult<GamEtats>> {
-  const guard = requireAccess(actor, "BDG");
+  const guard = requireAccess(actor, "BDGV");
   if (!guard.success) return guard;
   let sheets: SheetData[];
   try {
@@ -265,8 +265,10 @@ export async function previewGamEtats(actor: AuthUser, file: { name: string; byt
 
 /** Classeur Excel des états : récapitulatif général puis une feuille par agence. */
 export async function exportGamEtats(actor: AuthUser, file: { name: string; bytes: Uint8Array }, options: GamOptions): Promise<ActionResult<{ filename: string; base64: string }>> {
-  const guard = requireAccess(actor, "BDG");
+  const guard = requireAccess(actor, "BDGV");
   if (!guard.success) return guard;
+  const allowed = requireAccess(actor, "A_EXPORT", "EDIT");
+  if (!allowed.success) return allowed;
   const result = await previewGamEtats(actor, file, options);
   if (!result.success) return result;
   const etats = result.data;

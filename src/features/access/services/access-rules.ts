@@ -17,6 +17,15 @@ export const MODULES: readonly ModuleInfo[] = [
   { key: "VIR", label: "Virements et RIB", group: "Achats et banque" },
   { key: "RELEVE", label: "Relevé bancaire", group: "Achats et banque" },
   { key: "RH", label: "RH (salaires)", group: "Administration" },
+  { key: "ALERT", label: "Alertes impayés", group: "Pilotage", hint: "page des alertes clients et fournisseurs" },
+  { key: "HIST", label: "Historique 2023-2025", group: "Factures" },
+  { key: "PREST", label: "Prestataires (soldes)", group: "Factures" },
+  { key: "BDGV", label: "Vérification BDG GAM", group: "Ventes", hint: "états des factures par agence" },
+  { key: "CAARB", label: "CAAR : barème et taux", group: "Ventes", hint: "Consultation = voir ; Modification = changer les tarifs et taux" },
+  { key: "A_EXPORT", label: "Boutons d'export (Excel, PDF)", group: "Actions et boutons", action: true },
+  { key: "A_IMPORT", label: "Boutons d'import de fichiers", group: "Actions et boutons", action: true },
+  { key: "A_RECT", label: "Rectifier une facture établie", group: "Actions et boutons", action: true },
+  { key: "A_SUPPR", label: "Demander la suppression d'une facture", group: "Actions et boutons", action: true, hint: "la suppression est ensuite validée par un administrateur" },
 ];
 
 /** Libellés français des profils. */
@@ -45,9 +54,9 @@ function all(level: AccessLevelKey): AccessMap {
 export const PROFILE_DEFAULTS: Readonly<Record<ProfileKey, AccessMap>> = {
   ADMINISTRATEUR: all("EDIT"),
   DIRECTION: all("EDIT"),
-  COMPTABLE: all("EDIT"),
-  EQUIPE_FACTURATION: { ...all("EDIT"), RH: "NONE" },
-  CHARGE_FACTURATION: { ...all("EDIT"), DASH: "VIEW", PILOT: "NONE", RELEVE: "NONE", RH: "NONE" },
+  COMPTABLE: { ...all("EDIT"), CAARB: "VIEW" },
+  EQUIPE_FACTURATION: { ...all("EDIT"), RH: "NONE", CAARB: "VIEW" },
+  CHARGE_FACTURATION: { ...all("EDIT"), DASH: "VIEW", PILOT: "NONE", RELEVE: "NONE", RH: "NONE", CAARB: "VIEW" },
   RH: { ...all("NONE"), RH: "EDIT" },
   PARTENAIRE: all("NONE"),
 };
@@ -94,3 +103,6 @@ export function requireAccess(
 export function requireAdmin(user: AuthUser): ActionResult<true> {
   return user.isAdmin ? ok(true) : fail("Action réservée aux administrateurs.", "FORBIDDEN");
 }
+
+/** Libellés d'un droit d'action (bouton) : interdit ou autorisé. */
+export const ACTION_LABELS: Readonly<Record<AccessLevelKey, string>> = { NONE: "Interdit", VIEW: "Interdit", EDIT: "Autorisé" };

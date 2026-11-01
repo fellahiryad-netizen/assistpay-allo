@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
 import { buttonVariants } from "@/components/ui/button";
+import { can } from "@/features/access/services/access-rules";
 import { InvoiceDetail } from "@/features/invoices/components/invoice-detail";
 import { invoiceIdSchema } from "@/features/invoices/schemas";
 import { getInvoice } from "@/features/invoices/services/invoice-service";
@@ -37,7 +38,7 @@ export default async function InvoicePage({ params }: Readonly<{ params: Promise
           </Link>
         }
       />
-      <InvoiceDetail invoice={invoice} canEdit={canEdit} today={todayIso()} />
+      <InvoiceDetail invoice={invoice} canEdit={canEdit} deleteMode={user.isAdmin ? "direct" : can(user, "A_SUPPR", "EDIT") ? "request" : "none"} today={todayIso()} />
     </>
   );
 }

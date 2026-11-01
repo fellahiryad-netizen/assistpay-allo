@@ -54,9 +54,11 @@ export default async function BdgPage({
               <Link href="/facturation/nouvelle?portee=gam" className={buttonVariants({ variant: "outline" })}>
                 Factures BDG GAM
               </Link>
-              <Link href="/bdg?onglet=gam" className={buttonVariants({ variant: "outline" })}>
-                Vérification BDG GAM
-              </Link>
+              {can(user, "BDGV") ? (
+                <Link href="/bdg?onglet=gam" className={buttonVariants({ variant: "outline" })}>
+                  Vérification BDG GAM
+                </Link>
+              ) : null}
             </>
           ) : undefined
         }
@@ -65,11 +67,11 @@ export default async function BdgPage({
         tabs={[
           { href: "/bdg?onglet=suivi", label: "Suivi des encaissements", active: tab === "suivi" },
           { href: "/bdg?onglet=factures", label: "Factures BDG établies", active: tab === "factures" },
-          { href: "/bdg?onglet=gam", label: "Vérification BDG GAM", active: tab === "gam" },
+          ...(can(user, "BDGV") ? [{ href: "/bdg?onglet=gam", label: "Vérification BDG GAM", active: tab === "gam" }] : []),
         ]}
       />
       {tab === "gam" ? (
-        <GamEtatsPanel />
+        can(user, "BDGV") ? <GamEtatsPanel canExport={can(user, "A_EXPORT", "EDIT")} /> : <StateMessage kind="forbidden" title="Accès refusé" message="Le droit « Vérification BDG GAM » ne vous est pas accordé." />
       ) : tab === "factures" ? (
         issued && issued.success && issued.data.length ? <IssuedList items={issued.data} /> : <StateMessage kind="empty" title="Aucune facture BDG établie dans AssistPay" />
       ) : (

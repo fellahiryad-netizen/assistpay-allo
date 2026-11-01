@@ -37,6 +37,15 @@ enum Module {
   VIR
   RELEVE
   RH
+  ALERT
+  HIST
+  PREST
+  BDGV
+  CAARB
+  A_EXPORT
+  A_IMPORT
+  A_RECT
+  A_SUPPR
 }
 
 enum AccessLevel {

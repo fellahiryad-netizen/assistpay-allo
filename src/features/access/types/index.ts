@@ -1,5 +1,8 @@
 /** Onglets soumis au tableau des accès (mêmes valeurs que l'enum Prisma `Module`). */
-export const MODULE_KEYS = ["DASH", "PILOT", "QC", "FCLI", "FFOUR", "PART", "FACT", "CAAR", "BDG", "DP", "VIR", "RELEVE", "RH"] as const;
+export const MODULE_KEYS = [
+  "DASH", "PILOT", "QC", "FCLI", "FFOUR", "PART", "FACT", "CAAR", "BDG", "DP", "VIR", "RELEVE", "RH",
+  "ALERT", "HIST", "PREST", "BDGV", "CAARB", "A_EXPORT", "A_IMPORT", "A_RECT", "A_SUPPR",
+] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
 
 /** Niveaux d'accès (enum Prisma `AccessLevel`). */
@@ -24,6 +27,8 @@ export interface ModuleInfo {
   label: string;
   group: string;
   hint?: string;
+  /** Droit d'action (bouton) : seulement « Interdit » ou « Autorisé ». */
+  action?: boolean;
 }
 
 /** Accès effectif d'un utilisateur, onglet par onglet. */

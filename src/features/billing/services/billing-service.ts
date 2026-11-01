@@ -257,12 +257,12 @@ export async function listIssued(actor: AuthUser, filter: "all" | "bdg" | "gam" 
 }
 
 /** Facture émise complète (pour l'affichage, l'impression et la rectification). */
-export async function getIssued(actor: AuthUser, id: string): Promise<ActionResult<{ id: string; draft: BillingDraft; canEdit: boolean; isAdmin: boolean; versions: number }>> {
+export async function getIssued(actor: AuthUser, id: string): Promise<ActionResult<{ id: string; draft: BillingDraft; canEdit: boolean; canRectify: boolean; isAdmin: boolean; versions: number }>> {
   const guard = requireAccess(actor, "FACT");
   if (!guard.success) return guard;
   const doc = await db.issuedInvoice.findUnique({ where: { id } });
   if (!doc) return fail("Facture introuvable.", "NOT_FOUND");
-  return ok({ id: doc.id, draft: draftFromPayload(doc.payload), canEdit: can(actor, "FACT", "EDIT"), isAdmin: actor.isAdmin, versions: Number(obj(doc.payload).rectifiee ?? 0) || 0 });
+  return ok({ id: doc.id, draft: draftFromPayload(doc.payload), canEdit: can(actor, "FACT", "EDIT"), canRectify: can(actor, "FACT", "EDIT") && can(actor, "A_RECT", "EDIT"), isAdmin: actor.isAdmin, versions: Number(obj(doc.payload).rectifiee ?? 0) || 0 });
 }
 
 function bdgClient(draft: BillingDraft): { cat: string; tiers: string; label: string } {
@@ -288,6 +288,7 @@ export async function saveDraft(actor: AuthUser, input: SaveBillingInput): Promi
   if (!draft.cli.nom || !draft.cli.nif) return fail("Coordonnées du client incomplètes (raison sociale et NIF obligatoires).", "VALIDATION");
   const existingDoc = input.issuedId ? await db.issuedInvoice.findUnique({ where: { id: input.issuedId } }) : null;
   if (input.issuedId && !existingDoc) return fail("Facture introuvable.", "NOT_FOUND");
+  if (existingDoc && !can(actor, "A_RECT", "EDIT")) return fail("Le droit « Rectifier une facture établie » ne vous est pas accordé.", "FORBIDDEN");
   if (existingDoc && !input.motif) return fail("Indiquez le motif de la rectification.", "VALIDATION");
   const numbers = [isBdg && draft.bdgType === "fra" ? "" : draft.num, isBdg && draft.bdgType !== "deb" ? draft.num2 : ""].filter(Boolean);
   const keys = numbers.map(invoiceKey);

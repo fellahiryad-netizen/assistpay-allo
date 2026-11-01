@@ -46,7 +46,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: "/", label: "Tableau de bord", icon: "dashboard", module: "DASH" },
       { href: "/pilotage", label: "Pilotage et clôture", icon: "pilot", module: "PILOT" },
       { href: "/controle", label: "Contrôle qualité", icon: "quality", module: "QC" },
-      { href: "/alertes", label: "Alertes impayés", icon: "alert", module: "invoices" },
+      { href: "/alertes", label: "Alertes impayés", icon: "alert", module: "ALERT" },
     ],
   },
   {
@@ -55,8 +55,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: "/factures", label: "Toutes les factures", icon: "invoice", module: "invoices" },
       { href: "/factures?sens=CREDIT", label: "Factures clients", icon: "credit", module: "FCLI" },
       { href: "/factures?sens=DEBIT", label: "Factures fournisseurs", icon: "debit", module: "FFOUR" },
-      { href: "/prestataires", label: "Prestataires (soldes)", icon: "partners", module: "FFOUR" },
-      { href: "/historique", label: "Historique 2023-2025", icon: "journal", module: "invoices" },
+      { href: "/prestataires", label: "Prestataires (soldes)", icon: "partners", module: "PREST" },
+      { href: "/historique", label: "Historique 2023-2025", icon: "journal", module: "HIST" },
     ],
   },
   {
@@ -81,6 +81,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: "Administration",
     items: [
       { href: "/rh", label: "RH (salaires)", icon: "hr", module: "RH" },
+      { href: "/suppressions", label: "Suppressions à valider", icon: "alert", module: "admin" },
       { href: "/acces", label: "Utilisateurs et accès", icon: "users", module: "admin" },
       { href: "/journal", label: "Journal des actions", icon: "journal", module: "all" },
       { href: "/compte", label: "Mon compte", icon: "account", module: "all" },

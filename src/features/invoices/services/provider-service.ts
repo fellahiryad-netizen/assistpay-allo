@@ -19,8 +19,10 @@ export interface ProviderBalance {
 
 /** Soldes des prestataires : facturé, réglé, reste à payer, nombre de factures impayées et plus ancienne. */
 export async function providerBalances(actor: AuthUser, query: { q?: string; year?: number }): Promise<ActionResult<{ items: ProviderBalance[]; due: number; pending: number; canEdit: boolean; years: number[] }>> {
-  const guard = requireAccess(actor, "FFOUR");
+  const guard = requireAccess(actor, "PREST");
   if (!guard.success) return guard;
+  const supplier = requireAccess(actor, "FFOUR");
+  if (!supplier.success) return supplier;
   const rows = await db.invoice.findMany({ where: { sens: "DEBIT", status: { not: "ANNULE" }, ...(can(actor, "RH") ? {} : { payroll: false }) } });
   const today = todayIso();
   const years = [...new Set(rows.flatMap((row) => (row.annee ? [row.annee] : [])))].sort((a, b) => b - a);
