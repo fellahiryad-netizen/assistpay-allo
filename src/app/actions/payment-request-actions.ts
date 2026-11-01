@@ -13,6 +13,7 @@ import {
   previewRequestImport,
   updateRequest,
 } from "@/features/payment-requests/services/payment-request-service";
+import { applySupplierImport, previewSupplierImport, type SupplierPlan } from "@/features/payment-requests/services/supplier-import";
 import type { DpImportPlan, DpInvoiceOption, PaymentRequestDTO } from "@/features/payment-requests/types";
 import type { ActionResult } from "@/types";
 
@@ -64,5 +65,20 @@ export async function previewRequestImportAction(formData: FormData): Promise<Ac
 export async function applyRequestImportAction(formData: FormData): Promise<ActionResult<{ created: string[]; updated: number }>> {
   const result = await runUploadAction(formData, applyRequestImport);
   if (result.success) refresh();
+  return result;
+}
+
+/** Aperçu de l'import du canevas des factures fournisseurs. */
+export async function previewSupplierImportAction(formData: FormData): Promise<ActionResult<SupplierPlan>> {
+  return runUploadAction(formData, previewSupplierImport);
+}
+
+/** Création des factures fournisseurs du canevas et de leurs demandes de paiement. */
+export async function applySupplierImportAction(formData: FormData): Promise<ActionResult<{ invoices: number; requests: string[] }>> {
+  const result = await runUploadAction(formData, applySupplierImport);
+  if (result.success) {
+    refresh();
+    revalidatePath("/");
+  }
   return result;
 }

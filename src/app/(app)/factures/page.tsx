@@ -8,6 +8,7 @@ import { Pagination } from "@/components/common/pagination";
 import { StateMessage } from "@/components/common/state-message";
 import { TabsNav } from "@/components/common/tabs-nav";
 import { buttonVariants } from "@/components/ui/button";
+import { SupplierImportDialog } from "@/features/payment-requests/components/supplier-import-dialog";
 import { InvoiceImportDialog } from "@/features/invoices/components/invoice-import-dialog";
 import { InvoiceFilters } from "@/features/invoices/components/invoice-filters";
 import { InvoiceTable } from "@/features/invoices/components/invoice-table";
@@ -101,6 +102,7 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
               </>
             ) : null}
             {canAdd && can(user, "A_IMPORT", "EDIT") ? <InvoiceImportDialog /> : null}
+            {query.sens === "DEBIT" && canAdd && can(user, "DP", "EDIT") && can(user, "A_IMPORT", "EDIT") ? <SupplierImportDialog /> : null}
             {canAdd ? (
               <Link href={query.sens ? `/factures/nouvelle?sens=${query.sens}` : "/factures/nouvelle"} className={buttonVariants()}>
                 <Plus />

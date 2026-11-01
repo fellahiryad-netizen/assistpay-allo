@@ -6,6 +6,8 @@ import { StateMessage } from "@/components/common/state-message";
 import { TabsNav } from "@/components/common/tabs-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { can } from "@/features/access/services/access-rules";
+import { SupplierImportDialog } from "@/features/payment-requests/components/supplier-import-dialog";
 import { DpImportDialog } from "@/features/payment-requests/components/dp-import-dialog";
 import { DpList } from "@/features/payment-requests/components/dp-list";
 import { NewRequestButton } from "@/features/payment-requests/components/new-request-button";
@@ -43,6 +45,7 @@ export default async function RequestsPage({
         actions={
           data.canEdit ? (
             <>
+              {can(user, "FFOUR", "EDIT") && can(user, "A_IMPORT", "EDIT") ? <SupplierImportDialog /> : null}
               <DpImportDialog />
               <NewRequestButton />
             </>

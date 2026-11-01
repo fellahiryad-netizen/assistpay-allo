@@ -230,7 +230,7 @@ export async function updateRequest(actor: AuthUser, input: DpUpdateInput): Prom
   }
 }
 
-async function createWithNextNumber(data: Omit<Prisma.PaymentRequestCreateInput, "num" | "ref" | "legacyId">): Promise<PaymentRequest> {
+export async function createWithNextNumber(data: Omit<Prisma.PaymentRequestCreateInput, "num" | "ref" | "legacyId">): Promise<PaymentRequest> {
   const year = Number(todayIso().slice(0, 4));
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const num = (await nextNumber()) + attempt;
@@ -351,7 +351,7 @@ export async function invoiceOptions(actor: AuthUser, search: string): Promise<A
   );
 }
 
-async function productGuesser(): Promise<(beneficiaire: string) => DpProduct | ""> {
+export async function productGuesser(): Promise<(beneficiaire: string) => DpProduct | ""> {
   const [requests, invoices] = await Promise.all([
     db.paymentRequest.findMany({ select: { beneficiaire: true, produit: true } }),
     db.invoice.findMany({ where: { sens: "DEBIT" }, select: { tiers: true, categorie: true } }),
