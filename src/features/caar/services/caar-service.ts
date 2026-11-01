@@ -1,9 +1,9 @@
 import { db } from "@/lib/db";
 import { readWorkbook } from "@/lib/spreadsheet";
 import type { Prisma } from "@/generated/prisma/client";
-import { can, requireAccess } from "@/features/access/services/access-rules";
+import { can, requireAccess, requireAdmin } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
-import { CAAR_FLAGS, DEFAULT_BAREME, analyseCaarWorkbook, type CaarAnalysis, type CaarBareme, type CaarFlag } from "@/features/caar/services/caar-engine";
+import { CAAR_FLAGS, DEFAULT_BAREME, DEFAULT_OPTIONS, DEFAULT_RATES, analyseCaarWorkbook, type CaarAnalysis, type CaarBareme, type CaarFlag } from "@/features/caar/services/caar-engine";
 import { logAction } from "@/features/journal/services/journal-service";
 import { fail, ok, type ActionResult } from "@/types";
 import { MONTHS_FR, todayIso } from "@/utils/dates";
@@ -48,16 +48,61 @@ function num(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function flag(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function rate(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : fallback;
+}
+
 async function loadBareme(): Promise<CaarBareme> {
   const setting = await db.setting.findUnique({ where: { key: "caar" } });
   const bareme = obj(obj(setting?.value).bareme);
   const prices = obj(bareme.prices);
+  const options = obj(bareme.options);
+  const rates = obj(bareme.rates);
   return {
     prices: { ...DEFAULT_BAREME.prices, ...Object.fromEntries(Object.entries(prices).map(([key, value]) => [key, num(value)])) },
     coefs: Array.isArray(bareme.coefs) && bareme.coefs.length === 4 ? bareme.coefs.map(num) : DEFAULT_BAREME.coefs,
     avFee: bareme.avFee !== undefined ? num(bareme.avFee) : DEFAULT_BAREME.avFee,
+    options: {
+      prorata: flag(options.prorata, DEFAULT_OPTIONS.prorata),
+      avFull: flag(options.avFull, DEFAULT_OPTIONS.avFull),
+      avAnyCoef: flag(options.avAnyCoef, DEFAULT_OPTIONS.avAnyCoef),
+      palierAll: flag(options.palierAll, DEFAULT_OPTIONS.palierAll),
+      feeAll: flag(options.feeAll, DEFAULT_OPTIONS.feeAll),
+    },
+    rates: { allo: rate(rates.allo, DEFAULT_RATES.allo), av: rate(rates.av, DEFAULT_RATES.av), tva: rate(rates.tva, DEFAULT_RATES.tva) },
   };
 }
+
+/** Barème en vigueur (lecture : accès CAAR) et droit de modification (administrateur). */
+export async function getBareme(actor: AuthUser): Promise<ActionResult<{ bareme: CaarBareme; canEdit: boolean }>> {
+  const guard = requireAccess(actor, "CAAR");
+  if (!guard.success) return guard;
+  return ok({ bareme: await loadBareme(), canEdit: requireAdmin(actor).success });
+}
+
+/** Enregistre le barème et les taux (administrateur) ; `null` rétablit le barème d'origine. */
+export async function saveBareme(actor: AuthUser, input: CaarBareme | null): Promise<ActionResult<CaarBareme>> {
+  const guard = requireAdmin(actor);
+  if (!guard.success) return guard;
+  const row = await db.setting.findUnique({ where: { key: "caar" } });
+  const previous = obj(row?.value);
+  const bareme = input ?? DEFAULT_BAREME;
+  const value = JSON.parse(JSON.stringify({ ...previous, bareme, bareme_maj: { le: new Date().toISOString(), nom: actor.name } })) as Prisma.InputJsonValue;
+  await db.setting.upsert({ where: { key: "caar" }, create: { key: "caar", value }, update: { value } });
+  await logAction(
+    actor,
+    input ? "Barème CAAR modifié" : "Barème CAAR rétabli",
+    input ? `Part ALLO ${round1(bareme.rates.allo * 100)} % · avance ${round1(bareme.rates.av * 100)} % · TVA ${round1(bareme.rates.tva * 100)} % · frais d'avenant ${bareme.avFee} DA` : "Valeurs d'origine",
+  );
+  return ok(bareme);
+}
+
+const round1 = (value: number): number => Math.round(value * 10) / 10;
 
 const ANOMALY_FLAGS = new Set<string>(Object.entries(CAAR_FLAGS).filter(([, info]) => info.severity !== "info").map(([flag]) => flag));
 
@@ -173,7 +218,7 @@ export async function saveProduction(actor: AuthUser, file: CaarFile, override: 
     prod: analysis.products,
     tot: analysis.totals,
     stats: analysis.stats,
-    rates: { allo: 0.47, av: 0.9, tva: 0.19 },
+    rates: (await loadBareme()).rates,
     checks: analysis.declared ? [{ label: "Prime nette", declared: analysis.declared.prime, ours: analysis.totals.prime, src: `Ligne de total du fichier (ligne ${analysis.declared.line})` }] : [],
     message: analysis.message,
     anomalies: anomalies.slice(0, 500).map((record) => ({ line: record.line, agence: record.agence, police: record.police, nom: record.nom, prime: record.prime, flags: record.flags, basis: record.basis })),

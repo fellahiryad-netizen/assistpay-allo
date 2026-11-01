@@ -11,3 +11,16 @@ export const caarSaveSchema = z.object({
 });
 /** Données validées de période / succursale. */
 export type CaarSaveInput = z.infer<typeof caarSaveSchema>;
+
+const pct = z.coerce.number().min(0, "Taux invalide.").max(100, "Taux invalide.");
+/** Barème et taux saisis (taux et coefficients en pourcentage). */
+export const caarBaremeSchema = z.object({
+  prices: z.record(z.string(), z.coerce.number().min(0, "Tarif invalide.").max(1_000_000, "Tarif trop élevé.")),
+  coefs: z.array(pct).length(4),
+  avFee: z.coerce.number().min(0, "Frais invalides.").max(100_000, "Frais trop élevés."),
+  options: z.object({ prorata: z.boolean(), avFull: z.boolean(), avAnyCoef: z.boolean(), palierAll: z.boolean(), feeAll: z.boolean() }),
+  rates: z.object({ allo: pct, av: pct, tva: pct }),
+  reset: z.boolean().optional(),
+});
+/** Barème saisi. */
+export type CaarBaremeInput = z.infer<typeof caarBaremeSchema>;

@@ -7,8 +7,10 @@ import { TabsNav } from "@/components/common/tabs-nav";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { CaarBaremeForm } from "@/features/caar/components/caar-bareme-form";
 import { CaarImporter } from "@/features/caar/components/caar-importer";
-import { listProductions } from "@/features/caar/services/caar-service";
+import { CAAR_PRODUCTS } from "@/features/caar/services/caar-engine";
+import { getBareme, listProductions } from "@/features/caar/services/caar-service";
 import { todayIso } from "@/utils/dates";
 import { formatDA } from "@/utils/format";
 
@@ -20,10 +22,12 @@ export default async function CaarPage({
 }: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>): Promise<React.JSX.Element> {
   const user = await requireUser();
   const raw = await searchParams;
-  const tab = (Array.isArray(raw.onglet) ? raw.onglet[0] : raw.onglet) === "importer" ? "importer" : "productions";
+  const asked = Array.isArray(raw.onglet) ? raw.onglet[0] : raw.onglet;
+  const tab = asked === "importer" ? "importer" : asked === "bareme" ? "bareme" : "productions";
   const result = await listProductions(user);
   if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="Production CAAR indisponible" message={result.error} />;
   const { items, canEdit } = result.data;
+  const baremeResult = tab === "bareme" ? await getBareme(user) : null;
   const today = todayIso();
   const previousMonth = Number(today.slice(5, 7)) === 1 ? 12 : Number(today.slice(5, 7)) - 1;
   const previousYear = Number(today.slice(5, 7)) === 1 ? Number(today.slice(0, 4)) - 1 : Number(today.slice(0, 4));
@@ -34,9 +38,16 @@ export default async function CaarPage({
         tabs={[
           { href: "/caar", label: "Productions contrôlées", active: tab === "productions", count: items.length },
           ...(canEdit ? [{ href: "/caar?onglet=importer", label: "Contrôler un fichier", active: tab === "importer" }] : []),
+          { href: "/caar?onglet=bareme", label: "⚙ Barème et taux", active: tab === "bareme" },
         ]}
       />
-      {tab === "importer" && canEdit ? (
+      {tab === "bareme" ? (
+        baremeResult && baremeResult.success ? (
+          <CaarBaremeForm initial={baremeResult.data.bareme} canEdit={baremeResult.data.canEdit} products={CAAR_PRODUCTS.map(({ id, label, cg }) => ({ id, label, cg }))} />
+        ) : (
+          <StateMessage kind="error" title="Barème indisponible" message={baremeResult && !baremeResult.success ? baremeResult.error : "Erreur."} />
+        )
+      ) : tab === "importer" && canEdit ? (
         <CaarImporter year={previousYear} month={previousMonth} />
       ) : items.length === 0 ? (
         <StateMessage kind="empty" title="Aucune production contrôlée" message="Déposez le fichier de production d'une succursale dans l'onglet « Contrôler un fichier »." />

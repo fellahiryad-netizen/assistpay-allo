@@ -53,13 +53,38 @@ export interface CaarBareme {
   prices: Record<string, number>;
   coefs: number[];
   avFee: number;
+  /** Cas acceptés lors du contrôle d'une prime. */
+  options: CaarOptions;
+  /** Taux de facturation : part ALLO, avance, TVA (0 à 1). */
+  rates: CaarRates;
 }
 
+/** Cas acceptés par le contrôle. */
+export interface CaarOptions {
+  prorata: boolean;
+  avFull: boolean;
+  avAnyCoef: boolean;
+  palierAll: boolean;
+  feeAll: boolean;
+}
+
+/** Taux de facturation CAAR. */
+export interface CaarRates {
+  allo: number;
+  av: number;
+  tva: number;
+}
+
+/** Cas acceptés par défaut. */
+export const DEFAULT_OPTIONS: CaarOptions = { prorata: true, avFull: true, avAnyCoef: true, palierAll: true, feeAll: true };
+/** Taux par défaut : part ALLO 47 %, avance 90 %, TVA 19 %. */
+export const DEFAULT_RATES: CaarRates = { allo: 0.47, av: 0.9, tva: 0.19 };
+
 /** Barème par défaut. */
-export const DEFAULT_BAREME: CaarBareme = { prices: Object.fromEntries(CAAR_PRODUCTS.map((product) => [product.id, product.annual])), coefs: [0.25, 0.35, 0.55, 1], avFee: 200 };
+export const DEFAULT_BAREME: CaarBareme = { prices: Object.fromEntries(CAAR_PRODUCTS.map((product) => [product.id, product.annual])), coefs: [0.25, 0.35, 0.55, 1], avFee: 200, options: DEFAULT_OPTIONS, rates: DEFAULT_RATES };
 
 /** Taux : part ALLO 47 %, avance 90 %, TVA 19 %. */
-export const CAAR_RATES = { allo: 0.47, av: 0.9, tva: 0.19 } as const;
+export const CAAR_RATES = DEFAULT_RATES;
 
 const BUCKETS: ReadonlyArray<{ max: number; label: string }> = [
   { max: 31, label: "1 mois" },
@@ -177,16 +202,17 @@ const near = (amount: number, expected: number): boolean => Math.abs(amount - ex
 function evaluatePrime(prime: number, product: string | null, days: number | null, avenant: boolean, fleetLike: boolean, bareme: CaarBareme): { status: "ok" | "prorata" | "flotte" | "ko" | "unknown" | "zero"; basis: string } {
   if (prime === 0) return { status: "zero", basis: "" };
   const p = Math.abs(prime);
-  if (bareme.avFee > 0 && near(p, bareme.avFee)) return { status: "ok", basis: `${avenant ? "avenant" : "avenant probable"} · frais fixe ${bareme.avFee} DA` };
+  if (bareme.avFee > 0 && near(p, bareme.avFee) && (avenant || bareme.options.feeAll)) return { status: "ok", basis: `${avenant ? "avenant" : "avenant probable"} · frais fixe ${bareme.avFee} DA` };
   if (!product) return { status: "unknown", basis: "" };
   const annual = bareme.prices[product] ?? 0;
   const bucket = days === null || days < 0 ? -1 : BUCKETS.findIndex((entry) => days <= entry.max);
   if (bucket >= 0 && days !== null) {
     const expected = annual * (bareme.coefs[bucket] ?? 1);
     if (near(p, expected)) return { status: "ok", basis: BUCKETS[bucket]?.label ?? "" };
-    if (days > 0) for (const d of [days, days + 1, days + 0.5]) if (Math.abs(p - (annual * d) / 365) <= Math.max(1.5, ((annual * d) / 365) * 0.01)) return { status: "prorata", basis: `prorata ${Math.round(d)} j / 365` };
-    if (near(p, annual)) return { status: "ok", basis: `${avenant ? "avenant" : fleetLike ? "flotte (même police)" : "palier différent de la durée"} · tarif annuel` };
-    for (let index = BUCKETS.length - 1; index >= 0; index -= 1) if (near(p, annual * (bareme.coefs[index] ?? 1))) return { status: "ok", basis: `palier ${BUCKETS[index]?.label ?? ""}` };
+    if (bareme.options.prorata && days > 0) for (const d of [days, days + 1, days + 0.5]) if (Math.abs(p - (annual * d) / 365) <= Math.max(1.5, ((annual * d) / 365) * 0.01)) return { status: "prorata", basis: `prorata ${Math.round(d)} j / 365` };
+    const lenient = avenant || fleetLike || bareme.options.palierAll;
+    if (lenient && bareme.options.avFull && near(p, annual)) return { status: "ok", basis: `${avenant ? "avenant" : fleetLike ? "flotte (même police)" : "palier différent de la durée"} · tarif annuel` };
+    if (lenient && bareme.options.avAnyCoef) for (let index = BUCKETS.length - 1; index >= 0; index -= 1) if (near(p, annual * (bareme.coefs[index] ?? 1))) return { status: "ok", basis: `palier ${BUCKETS[index]?.label ?? ""}` };
     const k = Math.round(p / expected);
     if (k >= 2 && near(p, k * expected)) return { status: "flotte", basis: `${k} × ${BUCKETS[bucket]?.label ?? ""}` };
     return { status: "ko", basis: `${BUCKETS[bucket]?.label ?? ""} (${days} j) — attendu ${round2(expected)} DA` };
@@ -358,9 +384,9 @@ export function analyseCaarWorkbook(sheets: SheetData[], fileName: string, barem
   }
   const products = [...byProduct.entries()].map(([id, entry]) => [id, CAAR_PRODUCTS.find((product) => product.id === id)?.label ?? "Non reconnu", entry.n, entry.prime, entry.ko] as [string, string, number, number, number]);
   const prime = round2(retained.reduce((sum, record) => sum + (record.prime ?? 0), 0));
-  const allo = round2(prime * CAAR_RATES.allo);
-  const av = round2(allo * CAAR_RATES.av);
-  const tva = round2(av * CAAR_RATES.tva);
+  const allo = round2(prime * bareme.rates.allo);
+  const av = round2(allo * bareme.rates.av);
+  const tva = round2(av * bareme.rates.tva);
   const kinds: Partial<Record<CaarFlag, number>> = {};
   for (const record of records) for (const flag of record.flags) kinds[flag] = (kinds[flag] ?? 0) + 1;
   const detected = detectFromFileName(fileName, fallbackYear);
