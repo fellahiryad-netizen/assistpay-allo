@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowDownLeft, ArrowUpRight, Hourglass, Wallet } from "lucide-react";
+import { DonutChart } from "@/components/common/donut-chart";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarList } from "@/features/dashboard/components/bar-list";
 import { KpiCard } from "@/features/dashboard/components/kpi-card";
@@ -40,7 +41,13 @@ export function DashboardView({ data }: Readonly<DashboardViewProps>): React.JSX
               <CardDescription>Factures clients en attente, par catégorie</CardDescription>
             </CardHeader>
             <CardContent>
-              <BarList items={data.receivables.byCategory} emptyLabel="Aucune créance en attente." />
+              <DonutChart slices={data.receivables.byCategory} centerLabel="En attente" />
+              <details className="mt-4 text-sm">
+                <summary className="cursor-pointer text-muted-foreground">Voir en barres</summary>
+                <div className="mt-3">
+                  <BarList items={data.receivables.byCategory} emptyLabel="Aucune créance en attente." />
+                </div>
+              </details>
               <Link href="/factures?sens=CREDIT&status=EN_ATTENTE" className="mt-4 inline-block text-sm font-medium text-primary hover:underline">
                 Voir les factures clients en attente
               </Link>
@@ -80,7 +87,8 @@ export function DashboardView({ data }: Readonly<DashboardViewProps>): React.JSX
               <CardDescription>Depuis la date de facture, au {formatDate(data.asOf)}</CardDescription>
             </CardHeader>
             <CardContent>
-              <table className="w-full text-sm">
+              <DonutChart slices={data.aging} centerLabel="À encaisser" />
+              <table className="mt-4 w-full text-sm">
                 <tbody>
                   {data.aging.map((bucket) => (
                     <tr key={bucket.label} className="border-b last:border-0">
