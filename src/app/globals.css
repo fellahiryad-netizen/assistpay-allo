@@ -454,3 +454,23 @@ html[data-skin="neo"] .neo-side { background-color: transparent; border-right-co
 }
 .skin-btn:hover { background: rgba(255, 255, 255, 0.16); }
 html[data-skin="neo"] .skin-btn { border-color: rgba(59, 232, 255, 0.4); color: hsl(var(--cyan)); background: rgba(59, 232, 255, 0.06); text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.68rem; }
+
+/* États des factures BDG GAM : impression de l'état affiché seul, A4 paysage. */
+@media print {
+  body[data-print="gam"] * {
+    visibility: hidden;
+  }
+  body[data-print="gam"] .gam-etat,
+  body[data-print="gam"] .gam-etat * {
+    visibility: visible;
+  }
+  body[data-print="gam"] .gam-etat {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    border: 0;
+    color: #111;
+    background: #fff;
+  }
+}

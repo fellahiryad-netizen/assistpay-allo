@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { can } from "@/features/access/services/access-rules";
+import { GamEtatsPanel } from "@/features/bdg/components/gam-etats-panel";
 import { BdgSettleButton } from "@/features/bdg/components/bdg-settle-button";
 import { bdgQuerySchema } from "@/features/bdg/schemas";
 import { listBdg } from "@/features/bdg/services/bdg-service";
@@ -61,9 +62,12 @@ export default async function BdgPage({
         tabs={[
           { href: "/bdg?onglet=suivi", label: "Suivi des encaissements", active: tab === "suivi" },
           { href: "/bdg?onglet=factures", label: "Factures BDG établies", active: tab === "factures" },
+          { href: "/bdg?onglet=gam", label: "BDG GAM", active: tab === "gam" },
         ]}
       />
-      {tab === "factures" ? (
+      {tab === "gam" ? (
+        <GamEtatsPanel />
+      ) : tab === "factures" ? (
         issued && issued.success && issued.data.length ? <IssuedList items={issued.data} /> : <StateMessage kind="empty" title="Aucune facture BDG établie dans AssistPay" />
       ) : (
         <>

@@ -16,3 +16,11 @@ export const settlePartSchema = z.object({
   reference: z.string().trim().max(80).default(""),
 });
 export type SettlePartInput = z.infer<typeof settlePartSchema>;
+
+/** Réglages du récapitulatif des factures BDG GAM. */
+export const gamOptionsSchema = z.object({
+  tva: z.coerce.number().min(0, "TVA invalide.").max(100, "TVA invalide.").default(19),
+  exclure: z.string().trim().max(200).default("Préstation; Frais de gestion"),
+  mois: z.preprocess((value) => (value === "" || value === null || value === undefined ? null : value), z.coerce.number().int().min(1).max(12).nullable()).default(null),
+});
+export type GamOptionsInput = z.infer<typeof gamOptionsSchema>;
