@@ -14,6 +14,7 @@ import {
   FilePlus2,
   Handshake,
   HandCoins,
+  Bell,
   Landmark,
   LayoutDashboard,
   ScrollText,
@@ -46,6 +47,7 @@ const ICONS: Readonly<Record<NavIcon, LucideIcon>> = {
   users: ShieldCheck,
   journal: ScrollText,
   account: UserRound,
+  alert: Bell,
 };
 
 /** Propriétés du menu latéral. */
@@ -121,6 +123,7 @@ export function Sidebar({ groups }: Readonly<SidebarProps>): React.JSX.Element {
                           <Icon className="size-4" aria-hidden />
                         </span>
                         {item.label}
+                        {item.badge ? <span className="ml-auto rounded-full bg-[hsl(14_90%_55%)] px-2 py-0.5 text-[11px] font-semibold leading-none text-white">{item.badge}</span> : null}
                       </Link>
                     </li>
                   );

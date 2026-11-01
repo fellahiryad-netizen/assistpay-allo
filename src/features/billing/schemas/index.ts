@@ -43,3 +43,6 @@ export const prepareBillingSchema = z.object({
   caarId: z.string().max(64).optional(),
 });
 export type PrepareBillingInput = z.infer<typeof prepareBillingSchema>;
+
+/** Suppression d'une facture établie (motif facultatif, conservé au journal). */
+export const deleteIssuedSchema = z.object({ id: z.string().min(1).max(64), motif: z.string().trim().max(300).default("") });

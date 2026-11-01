@@ -64,8 +64,10 @@ export async function qualityReport(actor: AuthUser): Promise<ActionResult<{ rul
     byNumber.set(id, [...(byNumber.get(id) ?? []), invoice]);
   }
   const duplicates = new Set([...byNumber.values()].filter((list) => list.length > 1).flatMap((list) => list.map((invoice) => invoice.id)));
+  const isCaatAdvance = (i: PayableInvoice): boolean => i.sens === "CREDIT" && /caat/i.test(i.categorie) && (Boolean(i.extra.avance) || /avance/i.test(i.libelle));
   const definitions: Array<{ key: string; title: string; hint: string; test: (invoice: PayableInvoice) => boolean }> = [
-    { key: "nodate", title: "Factures en attente sans date de dépôt", hint: "Sans cette date, l'ancienneté et la prévision d'encaissement ne peuvent pas être calculées.", test: (i) => i.status === "EN_ATTENTE" && !i.dateFacture && !isPersonnel(i) },
+    { key: "nodate", title: "Factures en attente sans date de dépôt", hint: "Sans cette date, l'ancienneté et la prévision d'encaissement ne peuvent pas être calculées.", test: (i) => i.status === "EN_ATTENTE" && !i.dateFacture && !isPersonnel(i) && !isCaatAdvance(i) },
+    { key: "nodatecaat", title: "Avances CAAT en attente sans date de dépôt", hint: "Factures d'avance CAAT (90 %), classées à part pour suivre leur montant et les déposer à la succursale.", test: (i) => i.status === "EN_ATTENTE" && !i.dateFacture && isCaatAdvance(i) },
     { key: "nonum", title: "Factures clients en attente sans n° de facture", hint: "Le n° de facture aide à retrouver les paiements dans le relevé.", test: (i) => i.sens === "CREDIT" && !i.numero && !i.extra.avance && i.status === "EN_ATTENTE" && !isPersonnel(i) },
     { key: "nocat", title: "Lignes sans client / catégorie", hint: "Elles n'apparaissent dans aucune fiche partenaire.", test: (i) => !i.categorie && i.status !== "ANNULE" && yearOf(i) >= 2025 },
     { key: "dates", title: "Dates impossibles", hint: `Année hors 2020–${maxYear}, ou règlement avant la facture.`, test: (i) => badDate(i.dateOperation) || badDate(i.dateFacture) || Boolean(i.dateOperation && i.dateFacture && i.dateOperation < i.dateFacture) },
@@ -92,6 +94,6 @@ export async function qualityReport(actor: AuthUser): Promise<ActionResult<{ rul
     return { key: definition.key, title: definition.title, hint: definition.hint, count: matched.length, items: matched.slice(0, 200).map(toItem) };
   });
   const doubleWork = await countDoubleEntryWork(actor);
-  rules.splice(6, 0, { key: "dblglob", title: "Double emploi global / détail (Débit) et virements à rapprocher", hint: "Virement global de prestataires saisi en plus des lignes de chaque prestataire, ou global saisi deux fois.", count: doubleWork, href: "/releve/rapprochement", items: [] });
+  rules.splice(7, 0, { key: "dblglob", title: "Double emploi global / détail (Débit) et virements à rapprocher", hint: "Virement global de prestataires saisi en plus des lignes de chaque prestataire, ou global saisi deux fois.", count: doubleWork, href: "/releve/rapprochement", items: [] });
   return ok({ rules, total: rules.reduce((sum, rule) => sum + rule.count, 0) });
 }

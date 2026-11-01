@@ -54,6 +54,9 @@ export default async function BdgPage({
               <Link href="/facturation/nouvelle?portee=gam" className={buttonVariants({ variant: "outline" })}>
                 Factures BDG GAM
               </Link>
+              <Link href="/bdg?onglet=gam" className={buttonVariants({ variant: "outline" })}>
+                Vérification BDG GAM
+              </Link>
             </>
           ) : undefined
         }
@@ -62,7 +65,7 @@ export default async function BdgPage({
         tabs={[
           { href: "/bdg?onglet=suivi", label: "Suivi des encaissements", active: tab === "suivi" },
           { href: "/bdg?onglet=factures", label: "Factures BDG établies", active: tab === "factures" },
-          { href: "/bdg?onglet=gam", label: "BDG GAM", active: tab === "gam" },
+          { href: "/bdg?onglet=gam", label: "Vérification BDG GAM", active: tab === "gam" },
         ]}
       />
       {tab === "gam" ? (

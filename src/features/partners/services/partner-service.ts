@@ -4,7 +4,7 @@ import { can, requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { paidSum, remaining, toPayable, type PayableInvoice } from "@/features/invoices/services/invoice-balance";
 import { decimalToNumber } from "@/features/invoices/services/invoice-mapper";
-import { branchOf } from "@/features/invoices/services/branch";
+import { branchLabel, branchOf } from "@/features/invoices/services/branch";
 import { logAction } from "@/features/journal/services/journal-service";
 import type { PartnerQuery } from "@/features/partners/schemas";
 import { FORECAST_BUCKETS, type BranchStats, type ForecastBucket, type PartnerDetail, type PartnerForecast, type PartnerInvoice, type PartnerStats } from "@/features/partners/types";
@@ -269,4 +269,82 @@ export async function partnerStatement(actor: AuthUser, query: PartnerQuery): Pr
       { name: "Factures", rows: invoices, widths: [18, 18, 46, 12, 8, 14, 14, 10, 12, 10, 16, 8, 10] },
     ]),
   });
+}
+
+/** Années antérieures suivies (historique 2024 et 2025). */
+export const PREVIOUS_YEARS = [2024, 2025] as const;
+
+/** Créances restantes d'un partenaire au titre des exercices précédents. */
+export interface PreviousReceivable {
+  key: string;
+  byYear: Record<string, number>;
+  total: number;
+  count: number;
+  oldestDays: number;
+}
+
+function ownerYear(row: CreditRow): number | null {
+  if (row.annee) return row.annee;
+  const date = invoiceDate(row);
+  return date ? Number(date.date.slice(0, 4)) : null;
+}
+
+/** Créances restant à encaisser au titre des exercices précédents (avant l'année en cours), par partenaire et par année. */
+export async function previousReceivables(actor: AuthUser): Promise<ActionResult<{ items: PreviousReceivable[]; total: number; count: number }>> {
+  const guard = requireAccess(actor, "PART");
+  if (!guard.success) return guard;
+  const today = todayIso();
+  const current = Number(today.slice(0, 4));
+  const rows = (await creditRows()).filter((row) => row.status === "EN_ATTENTE" && (ownerYear(row) ?? 0) < current);
+  const map = new Map<string, PreviousReceivable>();
+  for (const row of rows) {
+    const key = partnerKey(row.categorie);
+    const year = ownerYear(row);
+    const label = year ? String(year) : "Date inconnue";
+    const entry = map.get(key) ?? { key, byYear: {}, total: 0, count: 0, oldestDays: 0 };
+    const amount = remaining(row);
+    entry.byYear[label] = round2((entry.byYear[label] ?? 0) + amount);
+    entry.total = round2(entry.total + amount);
+    entry.count += 1;
+    const date = invoiceDate(row);
+    if (date) entry.oldestDays = Math.max(entry.oldestDays, daysBetween(date.date, today));
+    map.set(key, entry);
+  }
+  const items = [...map.values()].filter((entry) => entry.total > 0).sort((a, b) => b.total - a.total);
+  return ok({ items, total: round2(items.reduce((s, i) => s + i.total, 0)), count: items.reduce((s, i) => s + i.count, 0) });
+}
+
+/** Excel de l'historique des factures clients 2024 et 2025 avec les créances restantes à suivre jusqu'au règlement. */
+export async function exportPreviousYears(actor: AuthUser): Promise<ActionResult<{ name: string; bytes: Uint8Array }>> {
+  const guard = requireAccess(actor, "PART");
+  if (!guard.success) return guard;
+  const rows = await creditRows();
+  const today = todayIso();
+  const header = ["Partenaire", "Succursale", "N° facture", "Libellé", "Date de facture", "Montant", "Déjà encaissé", "Reste à encaisser", "État", "Date de règlement", "Ancienneté (jours)"];
+  const line = (row: CreditRow): Array<string | number | Date | null> => {
+    const date = invoiceDate(row);
+    return [
+      partnerKey(row.categorie),
+      branchLabel(row),
+      row.numero,
+      row.libelle,
+      date ? new Date(`${date.date}T12:00:00Z`) : null,
+      row.montant,
+      round2(collected(row)),
+      row.status === "EN_ATTENTE" ? remaining(row) : 0,
+      row.status === "REGLE" ? "Réglée" : "En attente",
+      row.dateOperation ? new Date(`${row.dateOperation}T12:00:00Z`) : null,
+      row.status === "EN_ATTENTE" && date ? daysBetween(date.date, today) : null,
+    ];
+  };
+  const byYear = (year: number): CreditRow[] => rows.filter((row) => ownerYear(row) === year).sort((a, b) => (invoiceDate(a)?.date ?? "").localeCompare(invoiceDate(b)?.date ?? ""));
+  const current = Number(today.slice(0, 4));
+  const open = rows.filter((row) => row.status === "EN_ATTENTE" && (ownerYear(row) ?? 0) < current).sort((a, b) => partnerKey(a.categorie).localeCompare(partnerKey(b.categorie)) || (invoiceDate(a)?.date ?? "").localeCompare(invoiceDate(b)?.date ?? ""));
+  const widths = [14, 22, 18, 50, 14, 16, 16, 18, 12, 16, 14];
+  const sheets = [
+    { name: "Créances restantes", widths, rows: [header, ...open.map(line), [], ["TOTAL RESTE À ENCAISSER", "", "", "", "", "", "", round2(open.reduce((s, r) => s + remaining(r), 0))]] },
+    ...PREVIOUS_YEARS.map((year) => ({ name: `Historique ${year}`, widths, rows: [header, ...byYear(year).map(line)] })),
+  ];
+  await logAction(actor, "Export historique partenaires", `Créances restantes et historique ${PREVIOUS_YEARS.join(" – ")} (${open.length} facture(s) en attente)`);
+  return ok({ name: `HISTORIQUE_PARTENAIRES_${PREVIOUS_YEARS.join("_")}.xlsx`, bytes: writeWorkbook(sheets) });
 }

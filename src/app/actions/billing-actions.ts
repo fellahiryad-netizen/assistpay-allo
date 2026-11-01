@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { runAction } from "@/app/actions/action-helpers";
-import { prepareBillingSchema, saveBillingSchema, type PrepareBillingInput, type SaveBillingInput } from "@/features/billing/schemas";
-import { prepareDraft, saveDraft } from "@/features/billing/services/billing-service";
+import { deleteIssuedSchema, prepareBillingSchema, saveBillingSchema, type PrepareBillingInput, type SaveBillingInput } from "@/features/billing/schemas";
+import { deleteIssued, prepareDraft, saveDraft } from "@/features/billing/services/billing-service";
 import type { BillingDraft } from "@/features/billing/types";
 import type { ActionResult } from "@/types";
 
@@ -15,6 +15,19 @@ export async function prepareBillingAction(input: PrepareBillingInput): Promise<
 /** Enregistrement d'une facture (ajoutée aux factures clients). */
 export async function saveBillingAction(input: SaveBillingInput): Promise<ActionResult<{ id: string; ttc: number }>> {
   const result = await runAction(saveBillingSchema, input, saveDraft);
+  if (result.success) {
+    revalidatePath("/facturation", "layout");
+    revalidatePath("/factures");
+    revalidatePath("/bdg");
+    revalidatePath("/caar");
+    revalidatePath("/");
+  }
+  return result;
+}
+
+/** Suppression d'une facture établie (et de sa ligne au suivi si elle est en attente). */
+export async function deleteIssuedAction(input: { id: string; motif: string }): Promise<ActionResult<{ num: string }>> {
+  const result = await runAction(deleteIssuedSchema, input, deleteIssued);
   if (result.success) {
     revalidatePath("/facturation", "layout");
     revalidatePath("/factures");

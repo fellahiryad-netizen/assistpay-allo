@@ -272,7 +272,7 @@ function bdgClient(draft: BillingDraft): { cat: string; tiers: string; label: st
 /**
  * Enregistre une facture : elle s'ajoute aux factures clients (Crédit) en attente de paiement.
  * Facture BDG : une seule ligne au suivi avec la répartition débours / frais de gestion (2 n° de facture).
- * Une facture déjà émise ne peut être rectifiée que par un administrateur, avec un motif (version conservée).
+ * Une facture déjà émise peut être rectifiée par un utilisateur autorisé, avec un motif (version conservée).
  */
 export async function saveDraft(actor: AuthUser, input: SaveBillingInput): Promise<ActionResult<{ id: string; ttc: number }>> {
   const guard = requireAccess(actor, "FACT", "EDIT");
@@ -288,7 +288,6 @@ export async function saveDraft(actor: AuthUser, input: SaveBillingInput): Promi
   if (!draft.cli.nom || !draft.cli.nif) return fail("Coordonnées du client incomplètes (raison sociale et NIF obligatoires).", "VALIDATION");
   const existingDoc = input.issuedId ? await db.issuedInvoice.findUnique({ where: { id: input.issuedId } }) : null;
   if (input.issuedId && !existingDoc) return fail("Facture introuvable.", "NOT_FOUND");
-  if (existingDoc && !actor.isAdmin) return fail("Facture émise : seul un administrateur peut la rectifier.", "FORBIDDEN");
   if (existingDoc && !input.motif) return fail("Indiquez le motif de la rectification.", "VALIDATION");
   const numbers = [isBdg && draft.bdgType === "fra" ? "" : draft.num, isBdg && draft.bdgType !== "deb" ? draft.num2 : ""].filter(Boolean);
   const keys = numbers.map(invoiceKey);
@@ -426,4 +425,37 @@ export async function saveDraft(actor: AuthUser, input: SaveBillingInput): Promi
 /** Liste des préréglages d'un client (pour l'éditeur). */
 export function presetsOf(client: string): Array<{ id: string; lbl: string }> {
   return PRESETS.filter((preset) => preset.c === client).map((preset) => ({ id: preset.id, lbl: preset.lbl }));
+}
+
+/**
+ * Supprime une facture établie et sa ligne au suivi (si elle est encore en attente).
+ * Refusé si la facture est déjà réglée : il faut d'abord la remettre en attente. Le détail est conservé au journal.
+ */
+export async function deleteIssued(actor: AuthUser, input: { id: string; motif: string }): Promise<ActionResult<{ num: string }>> {
+  const guard = requireAccess(actor, "FACT", "EDIT");
+  if (!guard.success) return guard;
+  const doc = await db.issuedInvoice.findUnique({ where: { id: input.id } });
+  if (!doc) return fail("Facture introuvable.", "NOT_FOUND");
+  try {
+    const linked = doc.invoiceLegacyId ? await db.invoice.findUnique({ where: { legacyId: doc.invoiceLegacyId } }) : null;
+    if (linked && linked.status === "REGLE") return fail("Cette facture est réglée : remettez-la d'abord en attente avant de la supprimer.", "CONFLICT");
+    await db.$transaction(async (tx) => {
+      if (linked) await tx.invoice.delete({ where: { id: linked.id } });
+      await tx.issuedInvoice.delete({ where: { id: doc.id } });
+      if (doc.invoiceLegacyId) {
+        const productions = await tx.caarProduction.findMany({ select: { id: true, payload: true } });
+        for (const production of productions) {
+          const payload = obj(production.payload);
+          if (payload.factureId !== doc.invoiceLegacyId) continue;
+          const { factureId: _a, factureNum: _b, factureTTC: _c, factureDate: _d, ...rest } = payload;
+          await tx.caarProduction.update({ where: { id: production.id }, data: { payload: rest as Prisma.InputJsonValue, status: "controle" } });
+        }
+      }
+    });
+    await logAction(actor, "Suppression facture établie", `${doc.num} – ${doc.client} – ${formatDA(decimalToNumber(doc.ttc) ?? 0)}${input.motif ? ` – motif : ${input.motif}` : ""}`);
+    return ok({ num: doc.num });
+  } catch (error) {
+    console.error("[facturation] suppression impossible :", error);
+    return fail("La facture n'a pas pu être supprimée.", "DATABASE");
+  }
 }

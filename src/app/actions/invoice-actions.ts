@@ -13,6 +13,7 @@ import {
 } from "@/features/invoices/schemas";
 import {
   createInvoice,
+  deleteInvoice,
   markInvoicePaid,
   setInvoiceStatus,
   updateInvoice,
@@ -40,6 +41,13 @@ const updateSchema = z.object({ id: invoiceIdSchema, values: invoiceInputSchema 
 export async function updateInvoiceAction(id: string, values: unknown): Promise<ActionResult<InvoiceDTO>> {
   const result = await runAction(updateSchema, { id, values }, (actor, input) => updateInvoice(actor, input.id, input.values));
   if (result.success) refresh(id);
+  return result;
+}
+
+/** Suppression d'une facture (non réglée). */
+export async function deleteInvoiceAction(id: string): Promise<ActionResult<{ id: string }>> {
+  const result = await runAction(invoiceIdSchema, id, (actor, value) => deleteInvoice(actor, value));
+  if (result.success) refresh();
   return result;
 }
 

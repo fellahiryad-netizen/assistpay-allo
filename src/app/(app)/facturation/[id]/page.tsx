@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
 import { buttonVariants } from "@/components/ui/button";
 import { InvoiceDocument } from "@/features/billing/components/invoice-document";
+import { DeleteIssuedButton } from "@/features/billing/components/delete-issued-button";
 import { getIssued } from "@/features/billing/services/billing-service";
 
 export const metadata: Metadata = { title: "Facture établie" };
@@ -50,12 +51,13 @@ export default async function IssuedPage({
                 Dupliquer
               </Link>
             ) : null}
-            {result.data.isAdmin ? (
+            {result.data.canEdit ? (
               <Link href={`/facturation/${result.data.id}/rectifier`} className={buttonVariants({ variant: "outline" })}>
                 <Pencil />
                 Rectifier
               </Link>
             ) : null}
+            {result.data.canEdit ? <DeleteIssuedButton id={result.data.id} num={[draft.num, draft.num2].filter(Boolean).join(" / ")} /> : null}
           </>
         }
       />

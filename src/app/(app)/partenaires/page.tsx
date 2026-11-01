@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Download } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { partnersOverview } from "@/features/partners/services/partner-service";
+import { PREVIOUS_YEARS, partnersOverview, previousReceivables } from "@/features/partners/services/partner-service";
 import { FORECAST_BUCKETS } from "@/features/partners/types";
 import { cn } from "@/utils/cn";
 import { todayIso } from "@/utils/dates";
@@ -23,7 +24,7 @@ export default async function PartnersPage({
   const currentYear = Number(todayIso().slice(0, 4));
   const yearParam = Array.isArray(raw.annee) ? raw.annee[0] : raw.annee;
   const year: number | "all" = yearParam === "all" ? "all" : Number(yearParam) || currentYear;
-  const result = await partnersOverview(user, year);
+  const [result, previous] = await Promise.all([partnersOverview(user, year), previousReceivables(user)]);
   if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="Partenaires indisponibles" message={result.error} />;
   const { partners, forecast } = result.data;
   return (
@@ -66,6 +67,62 @@ export default async function PartnersPage({
           </Link>
         ))}
       </div>
+      {previous.success ? (
+        <>
+          <div className="mb-2 mt-8 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="text-lg font-semibold">Créances restantes des exercices précédents</h2>
+              <p className="text-sm text-muted-foreground">
+                Factures de {PREVIOUS_YEARS.join(" et ")} (et antérieures) encore impayées : {previous.data.count} facture(s), {formatDA(previous.data.total)} à suivre jusqu&apos;au règlement complet.
+              </p>
+            </div>
+            <a href="/api/partenaires/historique" className={buttonVariants({ variant: "outline" })}>
+              <Download />
+              Télécharger l&apos;historique 2024-2025 (Excel)
+            </a>
+          </div>
+          {previous.data.items.length === 0 ? (
+            <p className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">Aucune créance impayée au titre des exercices précédents.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Partenaire</TableHead>
+                    {[...PREVIOUS_YEARS, "Date inconnue"].map((label) => (
+                      <TableHead key={label} className="text-right">
+                        {label}
+                      </TableHead>
+                    ))}
+                    <TableHead className="text-right">Total restant dû</TableHead>
+                    <TableHead className="text-right">Factures</TableHead>
+                    <TableHead className="text-right">Plus ancienne</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {previous.data.items.map((item) => (
+                    <TableRow key={item.key}>
+                      <TableCell className="font-medium">
+                        <Link href={`/partenaires/${encodeURIComponent(item.key)}?annee=all`} className="hover:underline">
+                          {item.key}
+                        </Link>
+                      </TableCell>
+                      {[...PREVIOUS_YEARS.map(String), "Date inconnue"].map((label) => (
+                        <TableCell key={label} className="whitespace-nowrap text-right tabular-nums">
+                          {item.byYear[label] ? formatDA(item.byYear[label]) : "—"}
+                        </TableCell>
+                      ))}
+                      <TableCell className="whitespace-nowrap text-right font-semibold tabular-nums text-destructive">{formatDA(item.total)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{item.count}</TableCell>
+                      <TableCell className="text-right tabular-nums">{item.oldestDays ? `${item.oldestDays} j` : "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </>
+      ) : null}
       <h2 className="mb-2 mt-8 text-lg font-semibold">Prévision des encaissements</h2>
       <p className="mb-3 text-sm text-muted-foreground">Calculée avec le délai médian réel de chaque partenaire (60 jours par défaut s&apos;il est inconnu).</p>
       <div className="rounded-lg border bg-card">

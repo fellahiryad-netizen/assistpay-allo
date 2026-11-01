@@ -1,8 +1,9 @@
 "use client";
 
 import { useOptimistic, useState, useTransition } from "react";
-import { Ban, Undo2 } from "lucide-react";
-import { markInvoicePaidAction, setInvoiceStatusAction } from "@/app/actions/invoice-actions";
+import { Ban, Trash2, Undo2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { deleteInvoiceAction, markInvoicePaidAction, setInvoiceStatusAction } from "@/app/actions/invoice-actions";
 import { Button } from "@/components/ui/button";
 import { MarkPaidDialog } from "@/features/invoices/components/mark-paid-dialog";
 import type { MarkPaidInput } from "@/features/invoices/schemas";
@@ -19,6 +20,7 @@ export function InvoiceStatusActions({ invoice, today }: Readonly<InvoiceStatusA
   const [status, setOptimisticStatus] = useOptimistic<InvoiceStatusKey, InvoiceStatusKey>(invoice.status, (_current, next) => next);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   function change(next: "EN_ATTENTE" | "ANNULE"): void {
     setError(null);
@@ -26,6 +28,16 @@ export function InvoiceStatusActions({ invoice, today }: Readonly<InvoiceStatusA
       setOptimisticStatus(next);
       const result = await setInvoiceStatusAction({ id: invoice.id, status: next });
       if (!result.success) setError(result.error);
+    });
+  }
+
+  function remove(): void {
+    if (!window.confirm("Supprimer cette facture ? Cette action est définitive (la suppression est inscrite au journal).")) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await deleteInvoiceAction(invoice.id);
+      if (result.success) router.push(`/factures?sens=${invoice.sens}`);
+      else setError(result.error);
     });
   }
 
@@ -55,6 +67,12 @@ export function InvoiceStatusActions({ invoice, today }: Readonly<InvoiceStatusA
         <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => change("ANNULE")}>
           <Ban />
           Annuler la facture
+        </Button>
+      ) : null}
+      {status !== "REGLE" ? (
+        <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={remove} className="text-destructive">
+          <Trash2 />
+          Supprimer
         </Button>
       ) : null}
       {error ? (

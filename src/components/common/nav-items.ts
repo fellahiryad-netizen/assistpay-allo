@@ -7,6 +7,8 @@ export interface NavItem {
   icon: NavIcon;
   /** Onglet du tableau des accès requis ; `admin` = réservé aux administrateurs. */
   module: ModuleKey | "admin" | "all" | "invoices";
+  /** Pastille de compteur (renseignée à l'affichage, par exemple le nombre d'alertes). */
+  badge?: number;
 }
 
 /** Icônes disponibles pour le menu. */
@@ -27,7 +29,8 @@ export type NavIcon =
   | "hr"
   | "users"
   | "journal"
-  | "account";
+  | "account"
+  | "alert";
 
 /** Groupe du menu. */
 export interface NavGroup {
@@ -43,6 +46,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: "/", label: "Tableau de bord", icon: "dashboard", module: "DASH" },
       { href: "/pilotage", label: "Pilotage et clôture", icon: "pilot", module: "PILOT" },
       { href: "/controle", label: "Contrôle qualité", icon: "quality", module: "QC" },
+      { href: "/alertes", label: "Alertes impayés", icon: "alert", module: "invoices" },
     ],
   },
   {
@@ -51,6 +55,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: "/factures", label: "Toutes les factures", icon: "invoice", module: "invoices" },
       { href: "/factures?sens=CREDIT", label: "Factures clients", icon: "credit", module: "FCLI" },
       { href: "/factures?sens=DEBIT", label: "Factures fournisseurs", icon: "debit", module: "FFOUR" },
+      { href: "/prestataires", label: "Prestataires (soldes)", icon: "partners", module: "FFOUR" },
       { href: "/historique", label: "Historique 2023-2025", icon: "journal", module: "invoices" },
     ],
   },

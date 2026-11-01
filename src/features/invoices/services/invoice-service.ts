@@ -247,3 +247,23 @@ export async function setInvoiceStatus(actor: AuthUser, input: SetStatusInput): 
     return fail("L'état n'a pas pu être modifié.", "DATABASE");
   }
 }
+
+/**
+ * Supprime une facture. Refusé si elle est réglée (la remettre d'abord en attente ou l'annuler) :
+ * le journal garde la trace de la suppression.
+ */
+export async function deleteInvoice(actor: AuthUser, id: string): Promise<ActionResult<{ id: string }>> {
+  try {
+    const current = await db.invoice.findUnique({ where: { id } });
+    if (!current) return fail("Facture introuvable.", "NOT_FOUND");
+    if (!canOnInvoice(actor, current, "EDIT")) return fail("Vous ne pouvez pas supprimer cette facture.", "FORBIDDEN");
+    if (current.status === "REGLE") return fail("Cette facture est réglée : remettez-la d'abord en attente avant de la supprimer.", "CONFLICT");
+    const dto = toInvoiceDTO(current);
+    await db.invoice.delete({ where: { id } });
+    await logAction(actor, "Suppression facture", describe(dto));
+    return ok({ id });
+  } catch (error) {
+    console.error("[invoices] suppression impossible :", error);
+    return fail("La facture n'a pas pu être supprimée.", "DATABASE");
+  }
+}

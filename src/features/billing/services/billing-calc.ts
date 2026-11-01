@@ -63,7 +63,7 @@ export function periodLabel(month: string): string {
   return name && year ? `${name.toUpperCase()} ${year}` : "";
 }
 
-/** Prochain numéro « client » (« GAM 26-00057 ») à partir des numéros déjà utilisés. */
+/** Prochain numéro « client » (« GAM 26-000057 », six chiffres) à partir des numéros déjà utilisés. */
 export function nextClientNumber(prefix: string, year: number, used: string[]): string {
   const yy = String(year).slice(2);
   const pattern = new RegExp(`${yy}\\s*-?\\s*0*(\\d{1,6})\\s*$`);
@@ -72,22 +72,22 @@ export function nextClientNumber(prefix: string, year: number, used: string[]): 
     const match = value.replace(/\s+/g, " ").match(pattern);
     if (match?.[1] && Number(match[1]) < 5000) max = Math.max(max, Number(match[1]));
   }
-  return `${prefix.replace(/26/, yy)}${String(max + 1).padStart(5, "0")}`;
+  return `${prefix.replace(/26/, yy)}${String(max + 1).padStart(6, "0")}`;
 }
 
 /** Prochains numéros BDG TRUST (« TRUST 012-2026 BDG ») — débours puis frais. */
 export function nextTrustBdgNumbers(year: number, used: string[]): [string, string] {
-  const pattern = new RegExp(`TRUST\\s*0*(\\d{1,4})\\s*[-/ ]\\s*${year}\\s*BDG`, "ig");
+  const pattern = new RegExp(`TRUST\\s*0*(\\d{1,6})\\s*[-/ ]\\s*${year}\\s*BDG`, "ig");
   let max = 0;
   for (const value of used) for (const match of value.matchAll(pattern)) max = Math.max(max, Number(match[1]));
-  const make = (k: number): string => `TRUST ${String(max + k).padStart(3, "0")}-${year} BDG`;
+  const make = (k: number): string => `TRUST ${String(max + k).padStart(6, "0")}-${year} BDG`;
   return [make(1), make(2)];
 }
 
 /** Prochains numéros BDG CAAT (« CAAT 26-41BDG ») — débours puis frais. */
 export function nextCaatBdgNumbers(year: number, used: string[]): [string, string] {
   const yy = String(year).slice(2);
-  const pattern = new RegExp(`${yy}\\s*-?\\s*0*(\\d{1,4})\\s*(?:&\\s*\\d+\\s*)?BDG`, "i");
+  const pattern = new RegExp(`${yy}\\s*-?\\s*0*(\\d{1,6})\\s*(?:&\\s*\\d+\\s*)?BDG`, "i");
   let max = 0;
   for (const value of used) {
     const match = value.match(pattern);
@@ -95,19 +95,19 @@ export function nextCaatBdgNumbers(year: number, used: string[]): [string, strin
     const second = value.match(/&\s*(\d+)\s*BDG/i);
     if (second?.[1]) max = Math.max(max, Number(second[1]));
   }
-  return [`CAAT ${yy}-${max + 1}BDG`, `CAAT ${yy}-${max + 2}BDG`];
+  return [`CAAT ${yy}-${String(max + 1).padStart(6, "0")}BDG`, `CAAT ${yy}-${String(max + 2).padStart(6, "0")}BDG`];
 }
 
 /** Prochain numéro de facture globale BDG GAM (« 019-2026 AB »). */
 export function nextGamAbNumber(year: number, used: string[]): string {
-  const first = new RegExp(`AB\\s*0*(\\d{1,3})\\s*[-/]\\s*${year}`, "i");
-  const second = new RegExp(`(?:^|\\D)0*(\\d{1,3})\\s*[-/ ]?\\s*${year}\\s*AB`, "i");
+  const first = new RegExp(`AB\\s*0*(\\d{1,6})\\s*[-/]\\s*${year}`, "i");
+  const second = new RegExp(`(?:^|\\D)0*(\\d{1,6})\\s*[-/ ]?\\s*${year}\\s*AB`, "i");
   let max = 0;
   for (const value of used) {
     const match = value.match(first) ?? value.match(second);
     if (match?.[1]) max = Math.max(max, Number(match[1]));
   }
-  return `${String(max + 1).padStart(3, "0")}-${year} AB`;
+  return `${String(max + 1).padStart(6, "0")}-${year} AB`;
 }
 
 /** Libellé de la ligne au suivi (« Honoraire … {P} »). */
