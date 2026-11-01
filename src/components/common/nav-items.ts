@@ -6,7 +6,7 @@ export interface NavItem {
   label: string;
   icon: NavIcon;
   /** Onglet du tableau des accès requis ; `admin` = réservé aux administrateurs. */
-  module: ModuleKey | "admin" | "all";
+  module: ModuleKey | "admin" | "all" | "invoices";
 }
 
 /** Icônes disponibles pour le menu. */
@@ -48,6 +48,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     label: "Factures",
     items: [
+      { href: "/factures", label: "Toutes les factures", icon: "invoice", module: "invoices" },
       { href: "/factures?sens=CREDIT", label: "Factures clients", icon: "credit", module: "FCLI" },
       { href: "/factures?sens=DEBIT", label: "Factures fournisseurs", icon: "debit", module: "FFOUR" },
     ],

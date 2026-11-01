@@ -12,7 +12,7 @@ export interface SheetData {
 /** Feuille à écrire. */
 export interface SheetToWrite {
   name: string;
-  rows: Array<Array<string | number | null>>;
+  rows: Array<Array<string | number | Date | null>>;
   /** Largeur des colonnes en caractères. */
   widths?: number[];
 }
@@ -53,10 +53,15 @@ export function cellAt(rows: SheetCell[][], address: string): SheetCell {
 export function writeWorkbook(sheets: SheetToWrite[]): Uint8Array {
   const workbook = XLSX.utils.book_new();
   for (const sheet of sheets) {
-    const worksheet = XLSX.utils.aoa_to_sheet(sheet.rows);
+    const worksheet = XLSX.utils.aoa_to_sheet(sheet.rows, { cellDates: true });
+    for (const address of Object.keys(worksheet)) {
+      if (address.startsWith("!")) continue;
+      const cell = worksheet[address];
+      if (cell && cell.t === "d") cell.z = "dd/mm/yyyy";
+    }
     if (sheet.widths) worksheet["!cols"] = sheet.widths.map((wch) => ({ wch }));
     XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name.slice(0, 31));
   }
-  const output: ArrayBuffer = XLSX.write(workbook, { type: "array", bookType: "xlsx" });
+  const output: ArrayBuffer = XLSX.write(workbook, { type: "array", bookType: "xlsx", cellDates: true });
   return new Uint8Array(output);
 }

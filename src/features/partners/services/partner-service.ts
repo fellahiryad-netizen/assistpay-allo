@@ -4,6 +4,7 @@ import { can, requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { paidSum, remaining, toPayable, type PayableInvoice } from "@/features/invoices/services/invoice-balance";
 import { decimalToNumber } from "@/features/invoices/services/invoice-mapper";
+import { branchOf } from "@/features/invoices/services/branch";
 import { logAction } from "@/features/journal/services/journal-service";
 import type { PartnerQuery } from "@/features/partners/schemas";
 import { FORECAST_BUCKETS, type BranchStats, type ForecastBucket, type PartnerDetail, type PartnerForecast, type PartnerInvoice, type PartnerStats } from "@/features/partners/types";
@@ -26,7 +27,6 @@ export const PARTNER_GROUPS: Readonly<Record<string, readonly string[]>> = {
 };
 
 const MONTH_PREFIXES: ReadonlyArray<[string, number]> = [["JANV", 1], ["FEV", 2], ["MARS", 3], ["AVR", 4], ["MAI", 5], ["JUIN", 6], ["JUIL", 7], ["AOUT", 8], ["SEPT", 9], ["OCT", 10], ["OCOB", 10], ["NOV", 11], ["DEC", 12]];
-const CAAR_BRANCHES = ["Cheraga", "Bouzareah", "Constantine", "Annaba", "Oran"];
 
 /** Partenaire d'une facture client. */
 export function partnerKey(categorie: string): string {
@@ -34,25 +34,7 @@ export function partnerKey(categorie: string): string {
   return categorie || "Sans catégorie";
 }
 
-/** Succursale d'une facture (champ succursale, sinon déduite du libellé ; succursales CAAR reconnues). */
-export function branchOf(invoice: Pick<PayableInvoice, "categorie" | "succursale" | "tiers" | "libelle">): string {
-  if (invoice.categorie === "CAAR") {
-    const text = upperPlain(`${invoice.succursale} ${invoice.tiers} ${invoice.libelle}`);
-    const found = CAAR_BRANCHES.find((name) => text.includes(upperPlain(name)) || (name === "Bouzareah" && /BOUZAR/.test(text)) || (name === "Cheraga" && /CHERAGA|CHERAGHA/.test(text)));
-    if (found) return upperPlain(found);
-  }
-  let value = invoice.succursale;
-  if (!value) {
-    const match = invoice.libelle.match(/succursale[\s\-–_/:]*([A-Za-zÀ-ÿ]+(?:[\s-]?(?:I{1,3}|\d{1,3}))?)/i);
-    value = match?.[1] ?? "";
-  }
-  return upperPlain(value.replace(/^succursale\s*/i, ""))
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b111\b/, "III")
-    .replace(/\b11\b/, "II")
-    .replace(/\b0?1\b/, "I");
-}
+export { branchOf } from "@/features/invoices/services/branch";
 
 /** Date de facture, ou date estimée (1er du mois suivant la période citée dans le libellé). */
 export function invoiceDate(invoice: Pick<PayableInvoice, "dateFacture" | "libelle"> & { periode?: string }): { date: string; estimated: boolean } | null {

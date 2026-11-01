@@ -23,6 +23,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import { SkinToggle } from "@/components/common/skin-toggle";
 import { useSidebarStore } from "@/components/common/sidebar-store";
 import type { NavGroup, NavIcon } from "@/components/common/nav-items";
 import { cn } from "@/utils/cn";
@@ -93,14 +94,17 @@ export function Sidebar({ groups }: Readonly<SidebarProps>): React.JSX.Element {
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        <div className="neo-brand flex shrink-0 items-center gap-3 px-5 py-4">
-          <img src="/logo-allo.png" alt="Allo Assistance" width={80} height={44} className="neo-logo" />
-          <div className="leading-tight">
-            <p className="neo-word">
-              Assist<span>Pay</span>
-            </p>
-            <p className="neo-tag">Créances · Banque</p>
+        <div className="neo-brand shrink-0 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <img src="/logo-allo.png" alt="Allo Assistance" width={80} height={44} className="neo-logo" />
+            <div className="leading-tight">
+              <p className="neo-word">
+                Assist<span>Pay</span>
+              </p>
+              <p className="neo-tag">Facturation · créances · règlements</p>
+            </div>
           </div>
+          <SkinToggle />
         </div>
         <nav className="neo-scroll flex-1 overflow-y-auto px-3 py-4" aria-label="Menu principal">
           {groups.map((group) => (

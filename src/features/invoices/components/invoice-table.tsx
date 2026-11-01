@@ -9,7 +9,24 @@ import { MarkPaidDialog } from "@/features/invoices/components/mark-paid-dialog"
 import { useOptimisticInvoices } from "@/features/invoices/hooks/use-optimistic-invoices";
 import type { MarkPaidInput } from "@/features/invoices/schemas";
 import type { InvoiceDTO, SensKey } from "@/features/invoices/types";
+import { daysBetween } from "@/utils/dates";
 import { formatDA, formatDate } from "@/utils/format";
+
+/** Au-delà de ce délai (jours), une facture déposée et non réglée est signalée en retard. */
+const LATE_AFTER_DAYS = 60;
+
+const MODE_SHORT = { VIREMENT: "Virement", CHEQUE: "Chèque", VERSEMENT: "Versement", AUTRE: "Autre" } as const;
+
+/** Première ligne d'une facture : nom de la succursale quand elle est connue, sinon le tiers. */
+function headline(invoice: InvoiceDTO): string {
+  return invoice.succursaleNom ? `Succursale ${invoice.succursaleNom}` : invoice.tiers || "—";
+}
+
+/** Deuxième ligne : tiers (si la première est la succursale), période et libellé. */
+function subline(invoice: InvoiceDTO): string {
+  const parts = [invoice.succursaleNom && invoice.tiers && invoice.tiers !== "ALLO Assistance" ? invoice.tiers : "", invoice.periode ? `Période ${invoice.periode}` : "", invoice.libelle].filter(Boolean);
+  return parts.join(" – ");
+}
 
 /** Propriétés du tableau de factures. */
 export interface InvoiceTableProps {
@@ -49,7 +66,7 @@ export function InvoiceTable({ items, canEdit, today, showSens }: Readonly<Invoi
           <li key={invoice.id} className="rounded-lg border bg-card p-3">
             <div className="flex items-start justify-between gap-2">
               <Link href={`/factures/${invoice.id}`} className="min-w-0 font-medium hover:underline">
-                <span className="block truncate">{invoice.tiers || "—"}</span>
+                <span className="block truncate">{headline(invoice)}</span>
                 <span className="block truncate text-xs font-normal text-muted-foreground">
                   {invoice.numero || "sans numéro"} · {invoice.categorie || "sans catégorie"}
                 </span>
@@ -71,50 +88,62 @@ export function InvoiceTable({ items, canEdit, today, showSens }: Readonly<Invoi
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Date</TableHead>
+              <TableHead>Dépôt facture</TableHead>
               {showSens ? <TableHead>Sens</TableHead> : null}
-              <TableHead>Tiers</TableHead>
+              <TableHead>Tiers et libellé</TableHead>
               <TableHead>N° facture</TableHead>
-              <TableHead className="hidden 2xl:table-cell">Catégorie / libellé</TableHead>
-              <TableHead className="text-right">Montant</TableHead>
+              <TableHead>Client / catégorie</TableHead>
+              <TableHead className="text-right">Montant (DA)</TableHead>
+              <TableHead>Date de règlement</TableHead>
               <TableHead>État</TableHead>
+              <TableHead>Par</TableHead>
               <TableHead className="text-right">
                 <span className="sr-only">Actions</span>
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {optimisticItems.map((invoice) => (
-              <TableRow key={invoice.id}>
-                <TableCell className="whitespace-nowrap tabular-nums">
-                  {formatDate(invoice.dateOperation ?? invoice.dateFacture)}
-                  {invoice.dateFacture && invoice.dateOperation && invoice.dateFacture !== invoice.dateOperation ? (
-                    <span className="block text-xs text-muted-foreground">fact. {formatDate(invoice.dateFacture)}</span>
-                  ) : null}
-                </TableCell>
-                {showSens ? (
-                  <TableCell>
-                    <SensBadge sens={invoice.sens} />
+            {optimisticItems.map((invoice) => {
+              const waiting = invoice.status === "EN_ATTENTE" && invoice.dateFacture ? daysBetween(invoice.dateFacture, today) : null;
+              return (
+                <TableRow key={invoice.id}>
+                  <TableCell className="whitespace-nowrap tabular-nums">
+                    {formatDate(invoice.dateFacture)}
+                    {waiting !== null && waiting >= 0 ? (
+                      <span className={`block text-xs ${waiting > LATE_AFTER_DAYS ? "font-semibold text-destructive" : "text-muted-foreground"}`}>depuis {waiting} j</span>
+                    ) : null}
                   </TableCell>
-                ) : null}
-                <TableCell className="max-w-56">
-                  <Link href={`/factures/${invoice.id}`} className="block truncate font-medium hover:underline">
-                    {invoice.tiers || "—"}
-                  </Link>
-                  <span className="block truncate text-xs text-muted-foreground 2xl:hidden">{invoice.categorie}</span>
-                </TableCell>
-                <TableCell className="whitespace-nowrap">{invoice.numero || "—"}</TableCell>
-                <TableCell className="hidden max-w-72 2xl:table-cell">
-                  <span className="block truncate">{invoice.categorie || "—"}</span>
-                  <span className="block truncate text-xs text-muted-foreground">{invoice.libelle}</span>
-                </TableCell>
-                <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{formatDA(invoice.montant)}</TableCell>
-                <TableCell>
-                  <StatusBadge status={invoice.status} />
-                </TableCell>
-                <TableCell className="text-right">{action(invoice)}</TableCell>
-              </TableRow>
-            ))}
+                  {showSens ? (
+                    <TableCell>
+                      <SensBadge sens={invoice.sens} />
+                    </TableCell>
+                  ) : null}
+                  <TableCell className="max-w-80">
+                    <Link href={`/factures/${invoice.id}`} className="block truncate font-semibold hover:underline">
+                      {headline(invoice)}
+                    </Link>
+                    <span className="block truncate text-xs text-muted-foreground">{subline(invoice)}</span>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">{invoice.numero || "—"}</TableCell>
+                  <TableCell className="max-w-44 text-sm">
+                    <span className="block truncate">{invoice.categorie || "Sans catégorie"}</span>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right font-semibold tabular-nums">{formatDA(invoice.montant)}</TableCell>
+                  <TableCell className="whitespace-nowrap tabular-nums">
+                    {invoice.status === "REGLE" ? formatDate(invoice.dateOperation) : "—"}
+                    {invoice.status === "REGLE" && (invoice.mode || invoice.cheque) ? (
+                      <span className="block text-xs text-muted-foreground">{[invoice.mode ? MODE_SHORT[invoice.mode] : "", invoice.cheque].filter(Boolean).join(" ")}</span>
+                    ) : null}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={invoice.status} />
+                    {invoice.partiel ? <span className="mt-1 block text-xs font-semibold text-primary">partiel</span> : null}
+                  </TableCell>
+                  <TableCell className="max-w-28 truncate text-xs text-muted-foreground">{invoice.par || "—"}</TableCell>
+                  <TableCell className="text-right">{action(invoice)}</TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

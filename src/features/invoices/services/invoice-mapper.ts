@@ -1,5 +1,7 @@
 import type { Invoice } from "@/generated/prisma/client";
 import type { InvoiceDTO } from "@/features/invoices/types";
+import { branchLabel } from "@/features/invoices/services/branch";
+import { authorOf, readExtra } from "@/features/invoices/services/invoice-extra";
 import { toIsoDate } from "@/utils/dates";
 
 type DecimalLike = { toNumber(): number };
@@ -13,6 +15,8 @@ export function decimalToNumber(value: DecimalLike | null): number | null {
 
 /** Convertit une ligne Prisma en objet transmissible à l'interface. */
 export function toInvoiceDTO(row: Invoice): InvoiceDTO {
+  const extra = readExtra(row.extra);
+  const acomptes = (extra.paiements ?? []).reduce((sum, payment) => sum + payment.montant, 0);
   return {
     id: row.id,
     legacyId: row.legacyId,
@@ -33,10 +37,13 @@ export function toInvoiceDTO(row: Invoice): InvoiceDTO {
     nature: row.nature,
     classe: row.classe,
     succursale: row.succursale,
+    succursaleNom: branchLabel(row),
     periode: row.periode,
     debours: decimalToNumber(row.debours),
     frais: decimalToNumber(row.frais),
     origine: row.origine,
+    par: authorOf(extra),
+    partiel: row.status === "EN_ATTENTE" && acomptes > 0,
     archived: row.archived,
     payroll: row.payroll,
     updatedAt: row.updatedAt.toISOString(),

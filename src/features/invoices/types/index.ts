@@ -42,10 +42,16 @@ export interface InvoiceDTO {
   nature: string;
   classe: number | null;
   succursale: string;
+  /** Nom lisible de la succursale (déduit du libellé ou du tiers si le champ est vide). */
+  succursaleNom: string;
   periode: string;
   debours: number | null;
   frais: number | null;
   origine: string;
+  /** Dernière personne ayant saisi ou modifié la facture. */
+  par: string;
+  /** Règlement partiel en cours (acomptes reçus, facture encore en attente). */
+  partiel: boolean;
   archived: boolean;
   payroll: boolean;
   updatedAt: string;

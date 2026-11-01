@@ -17,10 +17,16 @@ export const viewport: Viewport = {
   ],
 };
 
+/** Applique la charte choisie (Néo par défaut) avant le premier affichage, pour éviter tout clignotement. */
+const SKIN_SCRIPT = `(function(){var k="neo";try{k=localStorage.getItem("allo-skin")||"neo"}catch(e){}if(k==="neo")document.documentElement.setAttribute("data-skin","neo")})();`;
+
 /** Mise en page racine. */
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>): React.JSX.Element {
   return (
-    <html lang="fr">
+    <html lang="fr" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: SKIN_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

@@ -36,16 +36,12 @@ function describe(invoice: { sens: "CREDIT" | "DEBIT"; tiers: string; numero: st
   return `${SENS_LABELS[invoice.sens]} – ${invoice.tiers}${numero} – ${formatDA(invoice.montant)}`;
 }
 
-/**
- * Recherche paginée des factures, limitée à ce que l'utilisateur a le droit de voir.
- * La recherche libre porte sur le tiers, le numéro, le libellé et la catégorie.
- */
-export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promise<ActionResult<InvoiceListResult>> {
+/** Filtre complet d'une recherche de factures (visibilité + filtres de la liste) ; null si aucun accès. */
+export function buildInvoiceWhere(actor: AuthUser, query: Omit<InvoiceQuery, "page">): Prisma.InvoiceWhereInput | null {
   const visibility = visibilityWhere(actor);
-  if (!visibility) return fail(NO_ACCESS, "FORBIDDEN");
-  if (query.sens && !visibleSens(actor).includes(query.sens)) return fail(NO_ACCESS, "FORBIDDEN");
-
-  const where: Prisma.InvoiceWhereInput = {
+  if (!visibility) return null;
+  if (query.sens && !visibleSens(actor).includes(query.sens)) return null;
+  return {
     AND: [
       visibility,
       query.sens ? { sens: query.sens } : {},
@@ -59,11 +55,21 @@ export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promis
               { numero: { contains: query.q, mode: "insensitive" } },
               { libelle: { contains: query.q, mode: "insensitive" } },
               { categorie: { contains: query.q, mode: "insensitive" } },
+              { succursale: { contains: query.q, mode: "insensitive" } },
             ],
           }
         : {},
     ],
   };
+}
+
+/**
+ * Recherche paginée des factures, limitée à ce que l'utilisateur a le droit de voir.
+ * La recherche libre porte sur le tiers, le numéro, le libellé et la catégorie.
+ */
+export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promise<ActionResult<InvoiceListResult>> {
+  const where = buildInvoiceWhere(actor, query);
+  if (!where) return fail(NO_ACCESS, "FORBIDDEN");
 
   try {
     const [total, sum, rows] = await Promise.all([

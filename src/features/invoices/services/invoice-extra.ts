@@ -53,3 +53,12 @@ export function readExtra(extra: Prisma.JsonValue): InvoiceExtra {
 export function writeExtra(extra: InvoiceExtra): Prisma.InputJsonObject {
   return JSON.parse(JSON.stringify(extra)) as Prisma.InputJsonObject;
 }
+
+/** Nom de la dernière personne ayant saisi ou modifié la facture (champs `maj` puis `cree` de l'ancienne version). */
+export function authorOf(extra: Record<string, unknown>): string {
+  for (const key of ["maj", "cree"]) {
+    const value = extra[key];
+    if (value && typeof value === "object" && typeof (value as { nom?: unknown }).nom === "string") return (value as { nom: string }).nom;
+  }
+  return "";
+}

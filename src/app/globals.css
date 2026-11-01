@@ -30,6 +30,10 @@
     --input: 285 20% 84%;
     --ring: 287 62% 31%;
     --radius: 0.625rem;
+    --orange: 36 100% 48%;
+    --orange-2: 16 81% 51%;
+    --on-orange: 0 0% 100%;
+    --cyan: 36 100% 52%;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -189,7 +193,7 @@
     --neo-violet-deep: 280 58% 9%;
     --neo-orange: 36 100% 48%;
     --neo-orange-2: 16 81% 51%;
-    --neo-cyan: 40 100% 62%;
+    --neo-cyan: var(--cyan);
     --neo-ink: 280 40% 96%;
     --neo-dim: 280 18% 72%;
     color: hsl(var(--neo-ink));
@@ -351,3 +355,102 @@
     radial-gradient(70% 50% at 100% 100%, hsl(24 85% 50% / 0.28), transparent 70%),
     linear-gradient(160deg, hsl(287 62% 31%), hsl(280 45% 18%) 60%, hsl(280 50% 10%));
 }
+
+
+/* ===== Charte NÉO (sombre) : reprise de la version Claude d'AssistPay =====
+   Active par défaut, comme dans l'ancienne version ; le bouton du menu bascule vers la charte classique. */
+html[data-skin="neo"] {
+  color-scheme: dark;
+  --background: 247 40% 5%;
+  --foreground: 252 62% 95%;
+  --card: 254 42% 12%;
+  --card-foreground: 252 62% 95%;
+  --popover: 254 42% 12%;
+  --popover-foreground: 252 62% 95%;
+  --primary: 266 100% 62%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 255 30% 17%;
+  --secondary-foreground: 252 62% 95%;
+  --muted: 255 30% 15%;
+  --muted-foreground: 257 20% 68%;
+  --accent: 187 100% 62%;
+  --accent-foreground: 247 40% 5%;
+  --destructive: 350 100% 71%;
+  --destructive-foreground: 247 40% 5%;
+  --success: 160 80% 54%;
+  --success-foreground: 247 40% 5%;
+  --warning: 41 100% 67%;
+  --warning-foreground: 247 40% 5%;
+  --border: 268 38% 24%;
+  --input: 268 38% 28%;
+  --ring: 187 100% 62%;
+  --orange: 36 100% 55%;
+  --orange-2: 11 100% 61%;
+  --on-orange: 30 100% 3%;
+  --cyan: 187 100% 62%;
+}
+html[data-skin="neo"] body {
+  background-color: #07060f;
+  background-image:
+    radial-gradient(900px 520px at 105% -8%, rgba(255, 94, 58, 0.2), transparent 60%),
+    radial-gradient(1000px 620px at -10% -5%, rgba(124, 58, 237, 0.3), transparent 62%),
+    radial-gradient(800px 600px at 50% 120%, rgba(59, 232, 255, 0.1), transparent 60%),
+    linear-gradient(rgba(178, 107, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(178, 107, 255, 0.05) 1px, transparent 1px);
+  background-size: auto, auto, auto, 44px 44px, 44px 44px;
+  background-attachment: fixed;
+}
+html[data-skin="neo"] ::selection { background: rgba(59, 232, 255, 0.35); color: #fff; }
+html[data-skin="neo"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+html[data-skin="neo"] ::-webkit-scrollbar-thumb { background: linear-gradient(#b26bff, #ff5e3a); border-radius: 10px; border: 2px solid #07060f; }
+html[data-skin="neo"] ::-webkit-scrollbar-track { background: transparent; }
+/* verre : cartes, tableaux, fenêtres */
+html[data-skin="neo"] .bg-card { background-color: rgba(22, 17, 40, 0.72); -webkit-backdrop-filter: blur(14px) saturate(140%); backdrop-filter: blur(14px) saturate(140%); }
+html[data-skin="neo"] [role="dialog"].bg-card, html[data-skin="neo"] [role="dialog"] { background-color: #16112a; box-shadow: 0 0 0 1px rgba(178, 107, 255, 0.15), 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 18px rgba(178, 107, 255, 0.45); }
+html[data-skin="neo"] header.sticky { background-color: rgba(10, 7, 22, 0.75); border-color: rgba(178, 107, 255, 0.2); }
+/* tableaux : en-têtes cyan, lignes alternées, survol */
+html[data-skin="neo"] thead th { color: hsl(var(--cyan)); text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.68rem; font-weight: 700; }
+html[data-skin="neo"] thead tr { border-bottom: 1px solid rgba(59, 232, 255, 0.25); background: rgba(18, 12, 36, 0.96); }
+html[data-skin="neo"] tbody tr:nth-child(even) { background: rgba(178, 107, 255, 0.035); }
+html[data-skin="neo"] tbody tr:hover { background: rgba(59, 232, 255, 0.06); }
+html[data-skin="neo"] td.tabular-nums, html[data-skin="neo"] .font-mono-num { font-family: var(--font-mono); letter-spacing: -0.02em; }
+/* champs */
+html[data-skin="neo"] input:not([type="checkbox"]):not([type="radio"]), html[data-skin="neo"] select, html[data-skin="neo"] textarea { background-color: rgba(10, 7, 22, 0.7); color: hsl(var(--foreground)); border-color: rgba(178, 107, 255, 0.28); }
+html[data-skin="neo"] input:focus-visible, html[data-skin="neo"] select:focus-visible, html[data-skin="neo"] textarea:focus-visible { outline: 2px solid hsl(var(--cyan)); box-shadow: 0 0 14px rgba(59, 232, 255, 0.35); }
+html[data-skin="neo"] option { background: #16112a; color: hsl(var(--foreground)); }
+html[data-skin="neo"] input[type="checkbox"], html[data-skin="neo"] input[type="radio"] { accent-color: #ff9f1c; }
+/* titres de page : filet dégradé */
+html[data-skin="neo"] main h1::after { content: ""; display: block; width: 64px; height: 3px; margin-top: 6px; border-radius: 3px; background: linear-gradient(90deg, #3be8ff, #b26bff, #ff9f1c); box-shadow: 0 0 12px rgba(178, 107, 255, 0.7); }
+/* boutons secondaires */
+html[data-skin="neo"] button.border-input:hover, html[data-skin="neo"] a.border-input:hover { border-color: #b26bff; box-shadow: 0 0 18px rgba(178, 107, 255, 0.45); }
+/* menu : cockpit */
+html[data-skin="neo"] .neo-side { background-color: transparent; border-right-color: rgba(178, 107, 255, 0.28); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
+@media (prefers-reduced-motion: no-preference) {
+  html[data-skin="neo"] main > * { animation: neo-in 0.35s ease-out both; }
+  @keyframes neo-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+}
+
+/* Documents à imprimer et fiches papier : toujours en clair, quelle que soit la charte. */
+.skin-paper {
+  color-scheme: light;
+  --background: 285 30% 97%;
+  --foreground: 285 40% 13%;
+  --card: 0 0% 100%;
+  --card-foreground: 285 40% 13%;
+  --muted: 285 24% 94%;
+  --muted-foreground: 285 12% 42%;
+  --border: 285 20% 88%;
+  color: hsl(var(--foreground));
+}
+.skin-paper .bg-card { background-color: #fff; -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* Bouton de charte du menu. */
+.skin-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; margin-top: 10px; padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08); color: #fff;
+  font: inherit; font-size: 0.8rem; font-weight: 650; cursor: pointer;
+}
+.skin-btn:hover { background: rgba(255, 255, 255, 0.16); }
+html[data-skin="neo"] .skin-btn { border-color: rgba(59, 232, 255, 0.4); color: hsl(var(--cyan)); background: rgba(59, 232, 255, 0.06); text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.68rem; }

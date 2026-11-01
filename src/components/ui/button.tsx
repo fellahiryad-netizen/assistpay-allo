@@ -8,7 +8,9 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
+        default:
+          "bg-gradient-to-br from-[hsl(var(--orange))] to-[hsl(var(--orange-2))] text-[hsl(var(--on-orange))] shadow-md shadow-[hsl(var(--orange-2)/0.3)] hover:brightness-95",
+        violet: "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         outline: "border border-input bg-card hover:bg-muted",
         ghost: "hover:bg-muted",

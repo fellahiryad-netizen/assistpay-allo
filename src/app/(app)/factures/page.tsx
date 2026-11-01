@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Download, Plus } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { PageHeader } from "@/components/common/page-header";
 import { Pagination } from "@/components/common/pagination";
 import { StateMessage } from "@/components/common/state-message";
+import { TabsNav } from "@/components/common/tabs-nav";
 import { buttonVariants } from "@/components/ui/button";
 import { InvoiceFilters } from "@/features/invoices/components/invoice-filters";
 import { InvoiceTable } from "@/features/invoices/components/invoice-table";
@@ -20,6 +21,17 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 function first(value: string | string[] | undefined): string | undefined {
   const raw = Array.isArray(value) ? value[0] : value;
   return raw === "" ? undefined : raw;
+}
+
+function exportHref(query: InvoiceQuery, format?: "suivi"): string {
+  const params = new URLSearchParams();
+  if (format) params.set("format", format);
+  if (query.sens) params.set("sens", query.sens);
+  if (query.status) params.set("status", query.status);
+  if (query.annee) params.set("annee", String(query.annee));
+  if (query.categorie) params.set("categorie", query.categorie);
+  if (query.q) params.set("q", query.q);
+  return `/api/factures/export?${params.toString()}`;
 }
 
 function toSearch(query: InvoiceQuery, page: number): string {
@@ -73,13 +85,30 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
         title={title}
         description={`${data.total.toLocaleString("fr-FR")} facture(s) · total ${formatDA(data.sumMontant)}`}
         actions={
-          canAdd ? (
-            <Link href={query.sens ? `/factures/nouvelle?sens=${query.sens}` : "/factures/nouvelle"} className={buttonVariants()}>
-              <Plus />
-              Nouvelle facture
-            </Link>
-          ) : undefined
+          <div className="flex flex-wrap justify-end gap-2">
+            <a href={exportHref(query)} className={buttonVariants({ variant: "outline" })}>
+              <Download />
+              Exporter en Excel (liste affichée)
+            </a>
+            <a href={exportHref(query, "suivi")} className={buttonVariants({ variant: "outline" })} title="Toutes les lignes, dans les colonnes du classeur de suivi bancaire">
+              <Download />
+              Suivi complet (Excel)
+            </a>
+            {canAdd ? (
+              <Link href={query.sens ? `/factures/nouvelle?sens=${query.sens}` : "/factures/nouvelle"} className={buttonVariants()}>
+                <Plus />
+                Nouvelle facture
+              </Link>
+            ) : null}
+          </div>
         }
+      />
+      <TabsNav
+        tabs={[
+          { href: toSearch({ ...query, status: "EN_ATTENTE" }, 1), label: "En attente", active: query.status === "EN_ATTENTE" },
+          { href: toSearch({ ...query, status: "REGLE" }, 1), label: "Réglées", active: query.status === "REGLE" },
+          { href: toSearch({ ...query, status: undefined }, 1), label: "Tout", active: !query.status },
+        ]}
       />
       <InvoiceFilters query={query} options={options.data} />
       {data.items.length === 0 ? (
