@@ -7,6 +7,7 @@ import { Pagination } from "@/components/common/pagination";
 import { StateMessage } from "@/components/common/state-message";
 import { TabsNav } from "@/components/common/tabs-nav";
 import { buttonVariants } from "@/components/ui/button";
+import { InvoiceImportDialog } from "@/features/invoices/components/invoice-import-dialog";
 import { InvoiceFilters } from "@/features/invoices/components/invoice-filters";
 import { InvoiceTable } from "@/features/invoices/components/invoice-table";
 import { invoiceQuerySchema, type InvoiceQuery } from "@/features/invoices/schemas";
@@ -94,6 +95,7 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
               <Download />
               Suivi complet (Excel)
             </a>
+            {canAdd ? <InvoiceImportDialog /> : null}
             {canAdd ? (
               <Link href={query.sens ? `/factures/nouvelle?sens=${query.sens}` : "/factures/nouvelle"} className={buttonVariants()}>
                 <Plus />

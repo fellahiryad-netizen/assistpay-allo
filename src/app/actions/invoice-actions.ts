@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { runAction } from "@/app/actions/action-helpers";
+import { runAction, runUploadAction } from "@/app/actions/action-helpers";
 import {
   invoiceIdSchema,
   invoiceInputSchema,
@@ -17,6 +17,7 @@ import {
   setInvoiceStatus,
   updateInvoice,
 } from "@/features/invoices/services/invoice-service";
+import { applyInvoiceImport, previewInvoiceImport, type InvoiceImportPlan } from "@/features/invoices/services/invoice-import";
 import type { InvoiceDTO } from "@/features/invoices/types";
 import type { ActionResult } from "@/types";
 
@@ -53,5 +54,29 @@ export async function markInvoicePaidAction(input: MarkPaidInput): Promise<Actio
 export async function setInvoiceStatusAction(input: SetStatusInput): Promise<ActionResult<InvoiceDTO>> {
   const result = await runAction(setStatusSchema, input, setInvoiceStatus);
   if (result.success) refresh(input.id);
+  return result;
+}
+
+/** Aperçu de l'import du fichier de facturation (classeur de suivi ou classeur partenaires). */
+export async function previewInvoiceImportAction(formData: FormData): Promise<ActionResult<InvoiceImportPlan>> {
+  return runUploadAction(formData, previewInvoiceImport);
+}
+
+const selectionSchema = z.array(z.string().max(120)).max(2000).nullable();
+
+/** Application de l'import ; `selection` (JSON) liste les feuilles cochées d'un classeur partenaires. */
+export async function applyInvoiceImportAction(formData: FormData): Promise<ActionResult<{ created: number; updated: number }>> {
+  const raw = formData.get("selection");
+  let selection: string[] | null = null;
+  if (typeof raw === "string" && raw !== "") {
+    try {
+      const parsed = selectionSchema.safeParse(JSON.parse(raw));
+      if (parsed.success) selection = parsed.data;
+    } catch {
+      selection = null;
+    }
+  }
+  const result = await runUploadAction(formData, (actor, file) => applyInvoiceImport(actor, file, selection));
+  if (result.success) refresh();
   return result;
 }
