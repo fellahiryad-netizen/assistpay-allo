@@ -3,7 +3,8 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { PrintToolbar } from "@/components/common/print-toolbar";
 import { StateMessage } from "@/components/common/state-message";
-import { InvoiceDocument } from "@/features/billing/components/invoice-document";
+import Link from "next/link";
+import { InvoiceDocument, type LetterheadMode } from "@/features/billing/components/invoice-document";
 import { getIssued } from "@/features/billing/services/billing-service";
 import type { BillingDraft } from "@/features/billing/types";
 
@@ -18,6 +19,7 @@ export default async function PrintBillingPage({
   const user = await requireUser();
   const raw = await searchParams;
   const ids = idsSchema.parse(Array.isArray(raw.ids) ? raw.ids.join(",") : raw.ids ?? "");
+  const entete: LetterheadMode = raw.entete === "charte" ? "charte" : "papier";
   const drafts: Array<{ id: string; draft: BillingDraft }> = [];
   for (const id of ids) {
     const result = await getIssued(user, id);
@@ -26,10 +28,22 @@ export default async function PrintBillingPage({
   if (drafts.length === 0) return <StateMessage kind="empty" title="Aucune facture à imprimer" className="mx-auto max-w-xl" />;
   return (
     <>
-      <PrintToolbar title={`${drafts.length} facture(s)`} />
+      <div className="no-print mx-auto mb-3 flex max-w-3xl flex-wrap items-center gap-2 px-4 text-sm">
+        <span className="text-muted-foreground">Présentation :</span>
+        {([["papier", "Sur papier à en-tête (marges réservées)"], ["charte", "Avec la charte (logo et pied de page)"]] as const).map(([mode, label]) => (
+          <Link
+            key={mode}
+            href={`/imprimer/factures?ids=${ids.join(",")}&entete=${mode}`}
+            className={`rounded-md border px-3 py-1.5 ${entete === mode ? "border-primary bg-primary text-primary-foreground" : "bg-card hover:bg-muted"}`}
+          >
+            {label}
+          </Link>
+        ))}
+      </div>
+      <PrintToolbar title={`${drafts.length} facture(s)`} autoPrint={false} />
       <div className="flex flex-col gap-6 print:gap-0">
         {drafts.map((entry) => (
-          <InvoiceDocument key={entry.id} draft={entry.draft} />
+          <InvoiceDocument key={entry.id} draft={entry.draft} entete={entete} />
         ))}
       </div>
     </>

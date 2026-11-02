@@ -15,6 +15,9 @@ function cell(col: BillingColumn, row: ComputedRow): string {
   return String(value);
 }
 
+/** Mode d'impression d'une facture partenaire : avec la charte, ou sur papier à en-tête déjà imprimé (marges réservées). */
+export type LetterheadMode = "charte" | "papier";
+
 interface PageProps {
   draft: BillingDraft;
   presetId: string;
@@ -22,9 +25,11 @@ interface PageProps {
   rows: ComputedRow[];
   totals: Array<[string, number, boolean?]>;
   ttc: number;
+  /** Absent : présentation d'origine (factures BDG, aperçu à l'écran). */
+  entete?: LetterheadMode;
 }
 
-function Page({ draft, presetId, number, rows, totals, ttc }: Readonly<PageProps>): React.JSX.Element {
+function Page({ draft, presetId, number, rows, totals, ttc, entete }: Readonly<PageProps>): React.JSX.Element {
   const preset = presetById(presetId);
   const model = modelOf(preset);
   const columns = model.cols;
@@ -60,9 +65,9 @@ function Page({ draft, presetId, number, rows, totals, ttc }: Readonly<PageProps
   );
   const details = Object.entries(draft.details).filter(([, value]) => value.trim());
   return (
-    <div className="fx-page">
+    <div className={`fx-page${entete ? ` fx-${entete}` : ""}`}>
       <div className="fx-top">
-        <img className="fx-logo" src="/logo-allo.png" alt="Allo Assistance" />
+        {entete === "papier" ? <div /> : <img className="fx-logo" src="/logo-allo.png" alt="Allo Assistance" />}
         <div>
           <h1>FACTURE</h1>
           <table className="fx-meta">
@@ -183,9 +188,13 @@ function Page({ draft, presetId, number, rows, totals, ttc }: Readonly<PageProps
         </div>
         <div className="fx-sign">Cachet et signature</div>
       </div>
-      <div className="fx-legal">
-        {ISSUER.nom} — {ISSUER.adresse} — RC {ISSUER.rc} — NIF {ISSUER.nif} — NIS {ISSUER.nis}
-      </div>
+      {entete === "charte" ? (
+        <img className="fx-pied" src="/entete/pied.png" alt="EURL ALLO ASSISTANCE — coordonnées" />
+      ) : entete === "papier" ? null : (
+        <div className="fx-legal">
+          {ISSUER.nom} — {ISSUER.adresse} — RC {ISSUER.rc} — NIF {ISSUER.nif} — NIS {ISSUER.nis}
+        </div>
+      )}
     </div>
   );
 }
@@ -203,7 +212,7 @@ const DETAIL_LABELS: Readonly<Record<string, string>> = {
  * Facture imprimable. Facture BDG « débours + frais » : deux pages (une facture chacune, n° consécutifs).
  * BDG GAM : page de synthèse + annexe détaillée des dossiers.
  */
-export function InvoiceDocument({ draft }: Readonly<{ draft: BillingDraft }>): React.JSX.Element {
+export function InvoiceDocument({ draft, entete }: Readonly<{ draft: BillingDraft; entete?: LetterheadMode }>): React.JSX.Element {
   const preset = presetById(draft.preset);
   const { rows, totals } = computeBilling(draft);
   if (preset.m === "bdgpair") {
@@ -283,7 +292,8 @@ export function InvoiceDocument({ draft }: Readonly<{ draft: BillingDraft }>): R
       </>
     );
   }
-  return <Page draft={draft} presetId={draft.preset} number={draft.num} rows={rows} totals={totals.lines} ttc={totals.ttc} />;
+  // Les factures BDG gardent leur présentation d'origine, quel que soit le mode demandé.
+  return <Page draft={draft} presetId={draft.preset} number={draft.num} rows={rows} totals={totals.lines} ttc={totals.ttc} entete={/^bdg/.test(preset.m) ? undefined : entete} />;
 }
 
 /** Page d'une facture BDG (modèles internes « _bdgdeb », « _bdgfra », « _bdggamsum »). */
