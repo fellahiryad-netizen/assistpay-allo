@@ -7,7 +7,7 @@ import { StateMessage } from "@/components/common/state-message";
 import { TabsNav } from "@/components/common/tabs-nav";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { BatchHistory } from "@/features/transfers/components/batch-history";
+import { BatchHistory, monthRank } from "@/features/transfers/components/batch-history";
 import { RibFormDialog } from "@/features/transfers/components/rib-form-dialog";
 import { RibTable } from "@/features/transfers/components/rib-table";
 import { UploadCheck } from "@/features/transfers/components/upload-check";
@@ -27,9 +27,13 @@ export default async function TransfersPage({
   const one = (value: string | string[] | undefined): string | undefined => (Array.isArray(value) ? value[0] : value) || undefined;
   const tab = one(raw.onglet) ?? "envois";
   const today = todayIso();
-  const year = Number(one(raw.annee) ?? today.slice(0, 4));
+  const yearParam = one(raw.annee) ?? today.slice(0, 4);
+  const year = yearParam === "toutes" ? null : Number(yearParam);
+  const monthFilter = Number(one(raw.mois) ?? 0) || 0;
+  const productFilter = one(raw.produit) ?? "";
+  const statusFilter = one(raw.statut) ?? "";
   const [history, ribs] = await Promise.all([
-    tab === "envois" ? listBatches(user, Number.isFinite(year) ? year : null) : Promise.resolve(null),
+    tab === "envois" ? listBatches(user, year !== null && Number.isFinite(year) ? year : null) : Promise.resolve(null),
     tab === "rib" ? listRibs(user, ribQuerySchema.parse({ filtre: one(raw.filtre), q: one(raw.q) })) : Promise.resolve(null),
   ]);
   const ribQuery = ribQuerySchema.parse({ filtre: one(raw.filtre), q: one(raw.q) });
@@ -57,14 +61,60 @@ export default async function TransfersPage({
           <StateMessage kind={history.code === "FORBIDDEN" ? "forbidden" : "error"} title="Historique indisponible" message={history.error} />
         ) : (
           <>
-            <div className="mb-3 flex flex-wrap gap-1">
-              {history.data.years.map((value) => (
-                <Link key={value} href={`/virements?onglet=envois&annee=${value}`} className={buttonVariants({ size: "sm", variant: value === year ? "default" : "outline" })}>
-                  {value}
-                </Link>
-              ))}
-            </div>
-            {history.data.batches.length ? <BatchHistory batches={history.data.batches} /> : <StateMessage kind="empty" title="Aucun envoi cette année" />}
+            {(() => {
+              const all = history.data.batches;
+              const filtered = all.filter(
+                (batch) => (!monthFilter || monthRank(batch.mois) === monthFilter) && (!productFilter || batch.type === productFilter) && (!statusFilter || batch.status === statusFilter),
+              );
+              const link = (patch: Record<string, string>): string => {
+                const params = new URLSearchParams({ onglet: "envois", annee: yearParam, ...(monthFilter ? { mois: String(monthFilter) } : {}), ...(productFilter ? { produit: productFilter } : {}), ...(statusFilter ? { statut: statusFilter } : {}), ...patch });
+                for (const [key, value] of [...params.entries()]) if (!value) params.delete(key);
+                return `/virements?${params.toString()}`;
+              };
+              const chip = (active: boolean): string => buttonVariants({ size: "sm", variant: active ? "default" : "outline" });
+              const monthCount = (rank: number): number => all.filter((batch) => monthRank(batch.mois) === rank).length;
+              return (
+                <>
+                  <div className="mb-2 flex flex-wrap items-center gap-1">
+                    <span className="mr-1 text-xs text-muted-foreground">Année</span>
+                    {history.data.years.map((value) => (
+                      <Link key={value} href={link({ annee: String(value), mois: "" })} className={chip(value === year)}>
+                        {value}
+                      </Link>
+                    ))}
+                    <Link href={link({ annee: "toutes", mois: "" })} className={chip(year === null)}>
+                      Toutes
+                    </Link>
+                  </div>
+                  <div className="mb-2 flex flex-wrap items-center gap-1">
+                    <span className="mr-1 text-xs text-muted-foreground">Mois</span>
+                    <Link href={link({ mois: "" })} className={chip(monthFilter === 0)}>
+                      Tous
+                    </Link>
+                    {MONTHS_FR.map((name, index) => (
+                      <Link key={name} href={link({ mois: String(index + 1) })} className={chip(monthFilter === index + 1)} aria-disabled={monthCount(index + 1) === 0}>
+                        {name.slice(0, 4)}.{monthCount(index + 1) ? ` (${monthCount(index + 1)})` : ""}
+                      </Link>
+                    ))}
+                  </div>
+                  <div className="mb-3 flex flex-wrap items-center gap-1">
+                    <span className="mr-1 text-xs text-muted-foreground">Activité</span>
+                    {([["", "Toutes"], ["A", "Assistance routière"], ["B", "BDG"]] as const).map(([value, label]) => (
+                      <Link key={label} href={link({ produit: value })} className={chip(productFilter === value)}>
+                        {label}
+                      </Link>
+                    ))}
+                    <span className="ml-3 mr-1 text-xs text-muted-foreground">Statut</span>
+                    {([["", "Tous"], ["valide", "Validés"], ["attente", "En attente"], ["rejete", "Rejetés"]] as const).map(([value, label]) => (
+                      <Link key={label} href={link({ statut: value })} className={chip(statusFilter === value)}>
+                        {label}
+                      </Link>
+                    ))}
+                  </div>
+                  {filtered.length ? <BatchHistory batches={filtered} /> : <StateMessage kind="empty" title="Aucun envoi pour ce filtre" />}
+                </>
+              );
+            })()}
           </>
         )
       ) : null}
