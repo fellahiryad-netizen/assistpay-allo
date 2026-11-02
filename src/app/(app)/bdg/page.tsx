@@ -71,7 +71,7 @@ export default async function BdgPage({
         ]}
       />
       {tab === "etats" || tab === "gam" ? (
-        can(user, "BDGV") ? <EtatsAgencesPanel canExport={can(user, "A_EXPORT", "EDIT")} userName={user.name} /> : <StateMessage kind="forbidden" title="Accès refusé" message="Le droit « États des factures par agence (BDG CAAT) » ne vous est pas accordé." />
+        can(user, "BDGV") ? <EtatsAgencesPanel canExport={can(user, "A_EXPORT", "EDIT")} /> : <StateMessage kind="forbidden" title="Accès refusé" message="Le droit « États des factures par agence (BDG CAAT) » ne vous est pas accordé." />
       ) : tab === "factures" ? (
         issued && issued.success && issued.data.length ? <IssuedList items={issued.data} /> : <StateMessage kind="empty" title="Aucune facture BDG établie dans AssistPay" />
       ) : (

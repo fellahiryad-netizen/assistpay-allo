@@ -1,10 +1,8 @@
 import type { EtatsAgences } from "@/features/bdg/services/etats-agences";
 
-/** Réglages du PDF : papier en-tête, nom de la personne qui établit l'état et date du jour. */
+/** Réglages du PDF : papier en-tête (logo et pied de page). */
 export interface EtatsPdfOptions {
   logo: boolean;
-  who: string;
-  date: string;
 }
 
 const LOGO_RATIO = 224 / 121;
@@ -117,12 +115,6 @@ export async function buildEtatsPdf(etats: EtatsAgences, which: number | "all", 
       },
       didDrawPage: drawFooter,
     });
-    if (options.who) {
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(9);
-      doc.setTextColor(60, 60, 60);
-      doc.text(latin(`Établi par : ${options.who} - ${options.date}`), MARGIN, sy + 6);
-    }
   };
 
   if (which === "all") {

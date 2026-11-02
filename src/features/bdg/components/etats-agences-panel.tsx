@@ -37,7 +37,7 @@ const fileSafe = (text: string): string => text.replace(/[^\w\- ]/g, "_");
  * BDG GAM : on dépose l'Excel des factures, les factures sont réparties par agence, la TVA et le TTC calculés,
  * puis on imprime ou télécharge l'état de chaque agence et le récapitulatif général.
  */
-export function EtatsAgencesPanel({ canExport, userName }: Readonly<{ canExport: boolean; userName: string }>): React.JSX.Element {
+export function EtatsAgencesPanel({ canExport }: Readonly<{ canExport: boolean }>): React.JSX.Element {
   const [file, setFile] = useState<File | null>(null);
   const [tva, setTva] = useState("19");
   const [exclure, setExclure] = useState("Préstation; Frais de gestion");
@@ -97,8 +97,7 @@ export function EtatsAgencesPanel({ canExport, userName }: Readonly<{ canExport:
     setError(null);
     startTransition(async () => {
       try {
-        const date = new Date().toLocaleDateString("fr-FR", { timeZone: "Africa/Algiers" });
-        const blob = await buildEtatsPdf(etats, which, { logo, who: userName, date });
+        const blob = await buildEtatsPdf(etats, which, { logo });
         const month = MOIS[etats.mois - 1]?.toUpperCase() ?? "";
         const name = which === "all" ? `TOUS_LES_ETATS_${month}` : `ETAT_${fileSafe(which < 0 ? "RECAPITULATIF_GENERAL" : (etats.agencies[which]?.sheet ?? "AGENCE"))}`;
         saveBlob(`${name}.pdf`, blob);
@@ -123,7 +122,6 @@ export function EtatsAgencesPanel({ canExport, userName }: Readonly<{ canExport:
     window.print();
   }
 
-  const stamp = `Établi par : ${userName} - ${new Date().toLocaleDateString("fr-FR", { timeZone: "Africa/Algiers" })}`;
 
   const pc = etats ? `TVA ${Number(etats.tauxTva.toFixed(2))} %` : "TVA";
   const agency = etats && current >= 0 ? etats.agencies[current] : null;
@@ -324,7 +322,6 @@ export function EtatsAgencesPanel({ canExport, userName }: Readonly<{ canExport:
                 {totalBox(etats.totals.ht, etats.totals.tva, etats.totals.ttc)}
               </>
             )}
-            <p className="mt-4 text-xs italic text-neutral-600">{stamp}</p>
             {logo ? <img src="/etats/pied.png" alt="" className="mx-auto mt-6 block w-full max-w-[560px]" /> : null}
           </div>
         </>

@@ -299,7 +299,7 @@ export async function exportEtatsAgences(actor: AuthUser, file: { name: string; 
       ttc: a.ttc,
       rows: a.rows.map((r) => ({ cells: r.cells, amount: r.amount })),
     })),
-    who: `Établi par : ${actor.name} - ${new Date().toLocaleDateString("fr-FR", { timeZone: "Africa/Algiers" })}`,
+    who: "",
     marginTop: options.mh ?? 1.5,
     marginBottom: options.mb ?? 1.5,
     logo: withLogo ? { data: Uint8Array.from(Buffer.from(ETATS_LOGO_BASE64, "base64")), ratio: ETATS_LOGO_RATIO } : null,
