@@ -104,9 +104,12 @@ async function debitPool(date: string, linked: Set<string>): Promise<PayableInvo
     .map(toPayable)
     .filter((invoice) => !isGlobalRow(invoice) && !isIncluded(invoice) && !linked.has(invoice.legacyId))
     .filter((invoice) => {
+      // Une facture encore en attente est toujours candidate, quelle que soit sa date ; une facture déjà réglée seulement si elle est proche.
+      if (invoice.status === "EN_ATTENTE") return true;
       const when = invoice.dateOperation ?? invoice.dateFacture;
       return !when || dayGap(when, date) <= 75;
-    });
+    })
+    .sort((a, b) => Number(b.status === "EN_ATTENTE") - Number(a.status === "EN_ATTENTE"));
 }
 
 /** Débits globaux du relevé reconnus comme envois de virements, avec le détail par prestataire. */
