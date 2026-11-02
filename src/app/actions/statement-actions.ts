@@ -6,6 +6,7 @@ import { firstIssue, runAction, runUploadAction } from "@/app/actions/action-hel
 import {
   applyProposalsSchema,
   assignLineSchema,
+  assignSearchSchema,
   columnMappingSchema,
   createFromLineSchema,
   doubleEntrySchema,
@@ -15,6 +16,7 @@ import {
   transferLinkSchema,
   type ApplyProposalsInput,
   type AssignLineInput,
+  type AssignSearchInput,
   type CreateFromLineInput,
   type DoubleEntryInput,
   type LinkExistingInput,
@@ -99,8 +101,8 @@ export async function reopenLineAction(lineId: string): Promise<ActionResult<tru
 }
 
 /** Factures proposées pour une affectation manuelle. */
-export async function assignCandidatesAction(lineId: string): Promise<ActionResult<AssignCandidate[]>> {
-  return runAction(lineIdSchema, lineId, assignCandidates);
+export async function assignCandidatesAction(input: AssignSearchInput): Promise<ActionResult<AssignCandidate[]>> {
+  return runAction(assignSearchSchema, input, assignCandidates);
 }
 
 /** Affectation manuelle d'une ligne. */

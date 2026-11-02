@@ -1,4 +1,5 @@
-import { paymentOptions, isSplit, paidSum, type PayableInvoice, type PaymentOption } from "@/features/invoices/services/invoice-balance";
+import { paymentOptions, isSplit, paidSum, type PayableInvoice, type PaymentOption, type PaymentPart } from "@/features/invoices/services/invoice-balance";
+import { branchOf } from "@/features/invoices/services/branch";
 import type { Confidence, ParsedLine, Proposal, ProposalItem, RecordedMatch } from "@/features/statement/types";
 import { round2 } from "@/utils/amounts";
 import { dayGap } from "@/utils/dates";
@@ -28,6 +29,59 @@ const FAMILIES: Readonly<Record<string, readonly string[]>> = {
 };
 
 const TOLERANCE = 0.5;
+
+/**
+ * Succursale citée dans un libellé bancaire, en clé majuscule (« ALGER II », « SUD »…), ou `null`.
+ * La banque écrit « ALGER 11 » pour Alger II et « GHARDAIA » pour la succursale Sud.
+ */
+export function bankBranch(libelle: string): string | null {
+  const text = upperPlain(libelle);
+  if (/GHARDAIA|\bSUD\b/.test(text)) return "SUD";
+  if (/ALGER\s*(0?3|III|111)\b/.test(text)) return "ALGER III";
+  if (/ALGER\s*(0?2|II|11)\b/.test(text)) return "ALGER II";
+  if (/ALGER\s*(0?1|I)\b/.test(text)) return "ALGER I";
+  for (const name of ["SETIF", "CONSTANTINE", "ANNABA", "TLEMCEN", "ORAN"]) if (new RegExp(`\\b${name}\\b`).test(text)) return name;
+  if (/BOUZAR/.test(text)) return "BOUZAREAH";
+  if (/CHERAGA|CHERAGHA/.test(text)) return "CHERAGA";
+  return null;
+}
+
+/** Succursale d'une facture (clé majuscule), vide si inconnue. */
+export function invoiceBranch(invoice: PayableInvoice): string {
+  return branchOf({ categorie: invoice.categorie, succursale: invoice.succursale, tiers: invoice.tiers, libelle: invoice.libelle });
+}
+
+/** Une facture peut-elle être payée par ce virement ? « non » si la succursale du virement n'est pas celle de la facture. */
+export function branchCompat(lineBranch: string | null, invoice: PayableInvoice): "ok" | "inconnue" | "non" {
+  if (!lineBranch) return "ok";
+  const own = invoiceBranch(invoice);
+  if (!own) return "inconnue";
+  return own === lineBranch ? "ok" : "non";
+}
+
+/** Partie de facture déjà réglée (facture soldée, débours ou frais réglés seuls, acompte). */
+export interface PaidEntry {
+  invoice: PayableInvoice;
+  part: PaymentPart;
+  amount: number;
+  date: string;
+}
+
+/** Tous les règlements déjà enregistrés d'une liste de factures, à la partie près. */
+export function paidEntries(invoices: PayableInvoice[]): PaidEntry[] {
+  const out: PaidEntry[] = [];
+  const dateOf = (value: unknown, fallback: string | null): string => (typeof value === "string" && value.length >= 8 ? value : (fallback ?? ""));
+  for (const invoice of invoices) {
+    if (invoice.status === "ANNULE") continue;
+    if (isSplit(invoice)) {
+      if (invoice.debours > 0 && invoice.extra.regDebours) out.push({ invoice, part: "debours", amount: invoice.debours, date: dateOf(invoice.extra.regDebours, invoice.dateOperation) });
+      if (invoice.frais > 0 && invoice.extra.regFrais) out.push({ invoice, part: "frais", amount: invoice.frais, date: dateOf(invoice.extra.regFrais, invoice.dateOperation) });
+    }
+    if (invoice.status === "REGLE") out.push({ invoice, part: "tout", amount: invoice.montant, date: invoice.dateOperation ?? "" });
+    else if (!isSplit(invoice)) for (const payment of invoice.extra.paiements ?? []) out.push({ invoice, part: "tout", amount: payment.montant, date: payment.date });
+  }
+  return out;
+}
 
 /** Famille du payeur reconnue dans le libellé, ou `null`. */
 export function payerFamily(libelle: string): string | null {
@@ -118,39 +172,58 @@ function chequeKeys(invoice: PayableInvoice): Set<string> {
  * Paiement déjà enregistré dans le suivi ? (facture déjà réglée : même chèque, même groupe de règlement,
  * même montant à moins de 31 jours, ou somme de factures réglées le même jour / à quelques jours).
  */
-function findRecorded(line: ParsedLine, recorded: PayableInvoice[], taken: Set<string>): PayableInvoice[] | null {
+export interface RecordedPart {
+  invoice: PayableInvoice;
+  part: PaymentPart;
+}
+
+const whole = (invoices: PayableInvoice[]): RecordedPart[] => invoices.map((invoice) => ({ invoice, part: "tout" as const }));
+
+function findRecorded(line: ParsedLine, recorded: PayableInvoice[], taken: Set<string>): RecordedPart[] | null {
   const free = recorded.filter((invoice) => invoice.sens === line.sens && !taken.has(invoice.id));
   if (line.type === "CHEQUE" && line.numero) {
     const key = chequeKey(line.numero);
     const compact = alnumKey(line.numero);
     const same = free.filter((invoice) => (invoice.status === "REGLE" || paidSum(invoice) > 0) && (alnumKey(invoice.cheque) === compact || (key !== "" && chequeKeys(invoice).has(key))));
-    if (same.length && Math.abs(same.reduce((sum, invoice) => sum + invoice.montant, 0) - line.montant) <= TOLERANCE) return same;
+    if (same.length && Math.abs(same.reduce((sum, invoice) => sum + invoice.montant, 0) - line.montant) <= TOLERANCE) return whole(same);
     const group = same.find((invoice) => invoice.extra.groupe && Math.abs(invoice.extra.groupe.montant - line.montant) <= TOLERANCE);
     if (group?.extra.groupe) {
       const groupId = group.extra.groupe.id;
-      return same.filter((invoice) => invoice.extra.groupe?.id === groupId);
+      return whole(same.filter((invoice) => invoice.extra.groupe?.id === groupId));
     }
   }
+  // Le montant exact d'un règlement déjà enregistré, où qu'il soit (facture soldée, débours ou frais réglés seuls, acompte), sans limite de date :
+  // la succursale du virement doit être celle de la facture.
+  const lineBranch = bankBranch(line.libelle);
+  const exact = paidEntries(recorded.filter((invoice) => invoice.sens === line.sens))
+    .filter((entry) => Math.abs(entry.amount - line.montant) <= TOLERANCE && !taken.has(entry.invoice.id) && !taken.has(`${entry.invoice.id}:${entry.part}`))
+    .filter((entry) => inFamily(line.libelle, entry.invoice) && branchCompat(lineBranch, entry.invoice) !== "non")
+    .sort(
+      (a, b) =>
+        Number(branchCompat(lineBranch, b.invoice) === "ok") - Number(branchCompat(lineBranch, a.invoice) === "ok") ||
+        dayGap(a.date || line.date, line.date) - dayGap(b.date || line.date, line.date),
+    )[0];
+  if (exact) return [{ invoice: exact.invoice, part: exact.part }];
   const settled = free.filter((invoice) => invoice.status === "REGLE" && invoice.dateOperation);
   const grouped = settled.find(
     (invoice) => invoice.extra.groupe && Math.abs(invoice.extra.groupe.montant - line.montant) <= TOLERANCE && dayGap(invoice.dateOperation ?? line.date, line.date) <= 31,
   );
   if (grouped?.extra.groupe) {
     const groupId = grouped.extra.groupe.id;
-    return settled.filter((invoice) => invoice.extra.groupe?.id === groupId);
+    return whole(settled.filter((invoice) => invoice.extra.groupe?.id === groupId));
   }
-  const pool = settled.filter((invoice) => inFamily(line.libelle, invoice) && dayGap(invoice.dateOperation ?? line.date, line.date) <= 31);
+  const pool = settled.filter((invoice) => inFamily(line.libelle, invoice) && branchCompat(lineBranch, invoice) !== "non" && dayGap(invoice.dateOperation ?? line.date, line.date) <= 31);
   const single = pool
     .filter((invoice) => Math.abs(invoice.montant - line.montant) <= TOLERANCE)
     .sort((a, b) => dayGap(a.dateOperation ?? line.date, line.date) - dayGap(b.dateOperation ?? line.date, line.date))[0];
-  if (single) return [single];
+  if (single) return whole([single]);
   const byDay = new Map<string, PayableInvoice[]>();
   for (const invoice of pool) {
     const day = invoice.dateOperation ?? "";
     if (day && dayGap(day, line.date) <= 5) byDay.set(day, [...(byDay.get(day) ?? []), invoice]);
   }
   for (const group of byDay.values()) {
-    if (group.length > 1 && Math.abs(group.reduce((sum, invoice) => sum + invoice.montant, 0) - line.montant) <= TOLERANCE) return group;
+    if (group.length > 1 && Math.abs(group.reduce((sum, invoice) => sum + invoice.montant, 0) - line.montant) <= TOLERANCE && new Set(group.map(invoiceBranch)).size === 1) return whole(group);
   }
   const near = pool
     .filter((invoice) => dayGap(invoice.dateOperation ?? line.date, line.date) <= 15)
@@ -162,10 +235,11 @@ function findRecorded(line: ParsedLine, recorded: PayableInvoice[], taken: Set<s
       const b = near[j];
       if (!a || !b) continue;
       const pair = a.montant + b.montant;
-      if (Math.abs(pair - line.montant) <= TOLERANCE) return [a, b];
+      const sameBranch = (...list: PayableInvoice[]): boolean => new Set(list.map(invoiceBranch)).size === 1;
+      if (Math.abs(pair - line.montant) <= TOLERANCE && sameBranch(a, b)) return whole([a, b]);
       for (let k = j + 1; k < near.length; k += 1) {
         const c = near[k];
-        if (c && Math.abs(pair + c.montant - line.montant) <= TOLERANCE) return [a, b, c];
+        if (c && Math.abs(pair + c.montant - line.montant) <= TOLERANCE && sameBranch(a, b, c)) return whole([a, b, c]);
       }
     }
   }
@@ -194,7 +268,7 @@ export interface MatchingInput {
 /** Résultat brut de l'analyse. */
 export interface MatchingOutput {
   proposals: Proposal[];
-  recorded: Array<RecordedMatch & { invoices: PayableInvoice[] }>;
+  recorded: Array<RecordedMatch & { invoices: PayableInvoice[]; parts: RecordedPart[] }>;
   todo: ParsedLine[];
 }
 
@@ -214,7 +288,9 @@ export function analyseLines(input: MatchingInput): MatchingOutput {
   let todo: ParsedLine[] = [];
 
   for (const line of [...input.lines].sort((a, b) => a.date.localeCompare(b.date))) {
-    const candidates = input.pending.filter((invoice) => invoice.sens === line.sens && inFamily(line.libelle, invoice));
+    const lineBranch = bankBranch(line.libelle);
+    // Chaque succursale ne paie que ses factures : une facture d'une autre succursale n'est jamais proposée.
+    const candidates = input.pending.filter((invoice) => invoice.sens === line.sens && inFamily(line.libelle, invoice) && branchCompat(lineBranch, invoice) !== "non");
     const exact = candidates.flatMap((invoice) => paymentOptions(invoice, used)).filter((option) => Math.abs(option.amount - line.montant) <= TOLERANCE);
     let picked: { items: PaymentOption[]; alternatives: PaymentOption[]; sure: boolean } | null = null;
     if (exact.length) {
@@ -232,9 +308,10 @@ export function analyseLines(input: MatchingInput): MatchingOutput {
       for (const invoice of candidates) {
         const option = paymentOptions(invoice, used).find((entry) => entry.part === "tout");
         if (!option) continue;
-        add(`C:${invoice.categorie || "?"}`, option);
-        if (invoice.tiers) add(`T:${upperPlain(invoice.tiers)}`, option);
-        if (payerFamily(line.libelle)) add("F", option);
+        const branch = invoiceBranch(invoice) || "?";
+        add(`C:${invoice.categorie || "?"}|${branch}`, option);
+        if (invoice.tiers) add(`T:${upperPlain(invoice.tiers)}|${branch}`, option);
+        if (payerFamily(line.libelle)) add(`F|${branch}`, option);
       }
       for (const group of groups.values()) {
         if (group.length < 2) continue;
@@ -259,8 +336,13 @@ export function analyseLines(input: MatchingInput): MatchingOutput {
     }
     const found = findRecorded(line, input.recorded, taken);
     if (found) {
-      for (const invoice of found) taken.add(invoice.id);
-      recorded.push({ line, labels: found.map((invoice) => `${invoice.tiers || invoice.categorie}${invoice.numero ? ` · ${invoice.numero}` : ""}`), invoices: found });
+      for (const { invoice, part } of found) taken.add(part === "tout" ? invoice.id : `${invoice.id}:${part}`);
+      recorded.push({
+        line,
+        labels: found.map(({ invoice, part }) => `${invoice.tiers || invoice.categorie}${invoice.numero ? ` · ${invoice.numero}` : ""}${part === "debours" ? " (débours)" : part === "frais" ? " (frais)" : ""}`),
+        invoices: found.map((entry) => entry.invoice),
+        parts: found,
+      });
       continue;
     }
     todo.push(line);

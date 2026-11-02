@@ -55,10 +55,14 @@ export type StatementQuery = z.infer<typeof statementQuerySchema>;
 /** Identifiant d'une ligne du relevé. */
 export const lineIdSchema = z.string().min(1).max(64);
 
+/** Recherche de factures pour une affectation manuelle (montant, succursale, nom ou n° de facture). */
+export const assignSearchSchema = z.object({ lineId: lineIdSchema, q: z.string().trim().max(120).default("") });
+export type AssignSearchInput = z.infer<typeof assignSearchSchema>;
+
 /** Affectation manuelle d'une ligne à une ou plusieurs factures. */
 export const assignLineSchema = z.object({
   lineId: lineIdSchema,
-  items: z.array(z.object({ invoiceId: z.string().min(1).max(64), part: partSchema })).min(1, "Choisissez au moins une facture.").max(30),
+  items: z.array(z.object({ invoiceId: z.string().min(1).max(64), part: partSchema, paid: z.boolean().default(false) })).min(1, "Choisissez au moins une facture.").max(30),
 });
 export type AssignLineInput = z.infer<typeof assignLineSchema>;
 

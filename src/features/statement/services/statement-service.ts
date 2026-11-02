@@ -3,13 +3,13 @@ import { readWorkbook } from "@/lib/spreadsheet";
 import type { Prisma } from "@/generated/prisma/client";
 import { can, requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
-import { paymentOptions, remaining, settle, toPayable, type PayableInvoice, type PaymentInfo, type PaymentPart } from "@/features/invoices/services/invoice-balance";
+import { isSplit, paymentOptions, remaining, settle, toPayable, type PayableInvoice, type PaymentInfo, type PaymentPart } from "@/features/invoices/services/invoice-balance";
 import { writeExtra } from "@/features/invoices/services/invoice-extra";
 import { decimalToNumber } from "@/features/invoices/services/invoice-mapper";
 import { isPayrollInvoice, moduleForSens } from "@/features/invoices/services/invoice-rules";
 import { logAction } from "@/features/journal/services/journal-service";
-import type { ApplyProposalsInput, AssignLineInput, CreateFromLineInput, StatementQuery } from "@/features/statement/schemas";
-import { analyseLines, inFamily } from "@/features/statement/services/statement-matching";
+import type { ApplyProposalsInput, AssignLineInput, AssignSearchInput, CreateFromLineInput, StatementQuery } from "@/features/statement/schemas";
+import { analyseLines, bankBranch, branchCompat, inFamily, paidEntries } from "@/features/statement/services/statement-matching";
 import {
   BANK_FEE_PATTERN,
   PAYROLL_PATTERN,
@@ -177,19 +177,14 @@ async function analyseParsed(actor: AuthUser, all: ParsedLine[]): Promise<Action
 
     const dates = business.map((line) => line.date).sort();
     const from = shiftIsoDate(dates[0] ?? "2000-01-01", -75);
-    const to = shiftIsoDate(dates[dates.length - 1] ?? "2100-01-01", 75);
     const [pendingRows, recordedRows, linked] = await Promise.all([
       db.invoice.findMany({ where: { status: "EN_ATTENTE", payroll: false } }),
-      db.invoice.findMany({
-        where: {
-          payroll: false,
-          OR: [{ status: "REGLE", dateOperation: { gte: fromIsoDate(from) ?? undefined, lte: fromIsoDate(to) ?? undefined } }, { status: "EN_ATTENTE", cheque: { not: "" } }],
-        },
-      }),
+      // Tous les règlements déjà saisis, à n'importe quelle date : le montant d'un virement est cherché partout.
+      db.invoice.findMany({ where: { payroll: false, OR: [{ status: "REGLE" }, { status: "EN_ATTENTE", cheque: { not: "" } }] } }),
       linkedInvoiceIds(),
     ]);
     const pending = pendingRows.map(toPayable).filter((invoice) => can(actor, moduleForSens(invoice.sens), "EDIT"));
-    const recorded = recordedRows.map(toPayable);
+    const recorded = [...recordedRows.map(toPayable), ...pending.filter((invoice) => !recordedRows.some((row) => row.id === invoice.id) && (invoice.extra.regDebours || invoice.extra.regFrais || (invoice.extra.paiements ?? []).length > 0))];
     const result = analyseLines({
       lines: business,
       pending,
@@ -227,7 +222,7 @@ async function analyseParsed(actor: AuthUser, all: ParsedLine[]): Promise<Action
       if (!knownStatus.has(line.key)) await upsertLine(line, "A_TRAITER", [], actor);
     }
     for (const match of result.recorded) {
-      await upsertLine(match.line, "DEJA", match.invoices.map((invoice) => `${invoice.legacyId}:tout`), actor);
+      await upsertLine(match.line, "DEJA", match.parts.map(({ invoice, part }) => `${invoice.legacyId}:${part}`), actor);
     }
     await logAction(
       actor,
@@ -446,29 +441,51 @@ export async function reopenLine(actor: AuthUser, lineId: string): Promise<Actio
   return ok(true);
 }
 
-/** Factures en attente proposées pour affecter manuellement une ligne (montant exact en premier). */
-export async function assignCandidates(actor: AuthUser, lineId: string): Promise<ActionResult<AssignCandidate[]>> {
+/**
+ * Factures proposées pour affecter manuellement une ligne : en attente ET déjà réglées (le montant est cherché partout).
+ * Sans recherche : montant exact d'abord, puis même succursale. Avec `q` : montant, succursale, nom ou n° de facture.
+ */
+export async function assignCandidates(actor: AuthUser, input: AssignSearchInput): Promise<ActionResult<AssignCandidate[]>> {
   const guard = guardEdit(actor);
   if (!guard.success) return guard;
-  const line = await loadLine(lineId);
+  const line = await loadLine(input.lineId);
   if (!line.success) return line;
   const montant = decimalToNumber(line.data.montant);
-  const rows = await db.invoice.findMany({ where: { status: "EN_ATTENTE", sens: line.data.sens, ...(can(actor, "RH") ? {} : { payroll: false }) } });
-  const options = rows
-    .map(toPayable)
-    .flatMap((invoice) => paymentOptions(invoice, new Set()))
-    .map((option) => ({ option, family: inFamily(line.data.libelle, option.invoice) }))
-    .sort((a, b) => Math.abs(a.option.amount - montant) - Math.abs(b.option.amount - montant) || Number(b.family) - Number(a.family))
+  const lineBranch = bankBranch(line.data.libelle);
+  const rows = await db.invoice.findMany({ where: { sens: line.data.sens, status: { not: "ANNULE" }, ...(can(actor, "RH") ? {} : { payroll: false }) } });
+  const invoices = rows.map(toPayable);
+  type Entry = { invoice: PayableInvoice; part: PaymentPart; amount: number; paid: boolean };
+  const entries: Entry[] = [
+    ...invoices.filter((invoice) => invoice.status === "EN_ATTENTE").flatMap((invoice) => paymentOptions(invoice, new Set()).map((option) => ({ invoice, part: option.part, amount: option.amount, paid: false }))),
+    ...paidEntries(invoices).map((entry) => ({ invoice: entry.invoice, part: entry.part, amount: entry.amount, paid: true })),
+  ];
+  const label = (entry: Entry): string => {
+    const { invoice, part } = entry;
+    const suffix = part === "debours" ? " (débours)" : part === "frais" ? " (frais)" : "";
+    const branch = invoice.succursale ? ` · ${invoice.succursale}` : "";
+    return `${invoice.tiers || invoice.categorie}${invoice.numero ? ` · ${invoice.numero}` : ""}${branch}${invoice.dateFacture ? ` · ${formatDate(invoice.dateFacture)}` : ""}${suffix}`;
+  };
+  const query = upperPlain(input.q).trim();
+  const typed = Number(input.q.replace(/[\s\u00a0]/g, "").replace(",", "."));
+  const hasAmount = query !== "" && Number.isFinite(typed) && typed > 0;
+  let pool = entries;
+  if (query) {
+    const words = query.split(/\s+/).filter(Boolean);
+    pool = entries.filter((entry) => {
+      if (hasAmount && (Math.abs(entry.amount - typed) <= 0.5 || String(entry.amount.toFixed(2)).replace(".", "").includes(String(typed).replace(".", "")))) return true;
+      const text = upperPlain(
+        `${entry.invoice.tiers} ${entry.invoice.categorie} ${entry.invoice.numero} ${entry.invoice.libelle} ${entry.invoice.succursale} ${entry.invoice.cheque} ${entry.invoice.extra.factureDebours ?? ""} ${entry.invoice.extra.factureFrais ?? ""}`,
+      );
+      return words.every((word) => text.includes(word));
+    });
+  }
+  const rank = (entry: Entry): number =>
+    (Math.abs(entry.amount - montant) <= 0.5 ? 0 : 100) + (branchCompat(lineBranch, entry.invoice) === "ok" ? 0 : branchCompat(lineBranch, entry.invoice) === "inconnue" ? 5 : 20) + (inFamily(line.data.libelle, entry.invoice) ? 0 : 10) + (entry.paid ? 1 : 0);
+  const sorted = pool
+    .filter((entry) => (query ? true : Math.abs(entry.amount - montant) <= 0.5 || !entry.paid))
+    .sort((a, b) => rank(a) - rank(b) || Math.abs(a.amount - montant) - Math.abs(b.amount - montant))
     .slice(0, 80);
-  return ok(
-    options.map(({ option }) => ({
-      invoiceId: option.invoice.id,
-      part: option.part,
-      amount: option.amount,
-      exact: Math.abs(option.amount - montant) <= 0.5,
-      label: `${option.invoice.tiers || option.invoice.categorie}${option.invoice.numero ? ` · ${option.invoice.numero}` : ""}${option.invoice.dateFacture ? ` · ${formatDate(option.invoice.dateFacture)}` : ""}${option.part === "debours" ? " (débours)" : option.part === "frais" ? " (frais)" : ""}`,
-    })),
-  );
+  return ok(sorted.map((entry) => ({ invoiceId: entry.invoice.id, part: entry.part, amount: entry.amount, exact: Math.abs(entry.amount - montant) <= 0.5, paid: entry.paid, label: label(entry) })));
 }
 
 /**
@@ -491,6 +508,13 @@ export async function assignLine(actor: AuthUser, input: AssignLineInput): Promi
       for (const item of input.items) {
         const invoiceRow = await tx.invoice.findUnique({ where: { id: item.invoiceId } });
         if (!invoiceRow) throw new Error("Facture introuvable.");
+        if (item.paid) {
+          // Règlement déjà enregistré : on relie seulement la ligne du relevé, la facture ne change pas.
+          const paidAmount = item.part === "debours" ? (decimalToNumber(invoiceRow.debours) ?? 0) : item.part === "frais" ? (decimalToNumber(invoiceRow.frais) ?? 0) : decimalToNumber(invoiceRow.montant);
+          out.push(`${invoiceRow.legacyId}:${item.part}`);
+          left = round2(left - paidAmount);
+          continue;
+        }
         const due = item.part === "tout" ? remaining(toPayable(invoiceRow)) || decimalToNumber(invoiceRow.montant) : item.part === "debours" ? decimalToNumber(invoiceRow.debours) ?? 0 : decimalToNumber(invoiceRow.frais) ?? 0;
         const amount = round2(Math.min(due, Math.max(0, left)));
         const settled = await settleInvoice(tx, actor, item.invoiceId, item.part, payment, item.part === "tout" ? amount : undefined);
@@ -498,7 +522,7 @@ export async function assignLine(actor: AuthUser, input: AssignLineInput): Promi
         out.push(settled.data);
         left = round2(left - due);
       }
-      await tx.bankStatementLine.update({ where: { id: row.id }, data: { status: "RAPPROCHE", invoiceRefs: out } });
+      await tx.bankStatementLine.update({ where: { id: row.id }, data: { status: input.items.every((item) => item.paid) ? "DEJA" : "RAPPROCHE", invoiceRefs: out } });
       return out;
     });
     await logAction(actor, "Relevé : paiement affecté", `${describeLine(row)} → ${refs.length} facture(s)`);

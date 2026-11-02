@@ -23,30 +23,43 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
   const [dialog, setDialog] = useState<"assign" | "create" | null>(null);
   const [candidates, setCandidates] = useState<AssignCandidate[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const keyOf = (candidate: AssignCandidate): string => `${candidate.invoiceId}:${candidate.part}`;
 
-  function openAssign(): void {
-    setDialog("assign");
+  function load(q: string, preselect: boolean): void {
     setError(null);
-    setSelected(new Set());
-    setCandidates(null);
     startTransition(async () => {
-      const result = await assignCandidatesAction(line.id);
+      const result = await assignCandidatesAction({ lineId: line.id, q });
       if (!result.success) {
         setError(result.error);
         return;
       }
       setCandidates(result.data);
-      const exact = result.data.find((candidate) => candidate.exact);
-      if (exact) setSelected(new Set([keyOf(exact)]));
+      if (preselect) {
+        const exact = result.data.find((candidate) => candidate.exact);
+        setSelected(exact ? new Set([keyOf(exact)]) : new Set());
+      }
     });
+  }
+
+  function openAssign(): void {
+    setDialog("assign");
+    setSelected(new Set());
+    setCandidates(null);
+    setSearch("");
+    load("", true);
+  }
+
+  function runSearch(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    load(search, false);
   }
 
   function confirmAssign(): void {
     if (!candidates) return;
-    const items = candidates.filter((candidate) => selected.has(keyOf(candidate))).map((candidate) => ({ invoiceId: candidate.invoiceId, part: candidate.part }));
+    const items = candidates.filter((candidate) => selected.has(keyOf(candidate))).map((candidate) => ({ invoiceId: candidate.invoiceId, part: candidate.part, paid: candidate.paid }));
     startTransition(async () => {
       const result = await assignLineAction({ lineId: line.id, items });
       if (result.success) setDialog(null);
@@ -129,10 +142,22 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
               {formatDate(line.date)} · {formatDA(line.montant)} · {line.libelle}
             </DialogDescription>
           </DialogHeader>
+          <form onSubmit={runSearch} className="flex gap-2" role="search">
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Chercher : montant, succursale, nom ou n° de facture…"
+              aria-label="Chercher une facture à affecter"
+            />
+            <Button type="submit" variant="outline" disabled={pending}>
+              Chercher
+            </Button>
+          </form>
+          <p className="text-xs text-muted-foreground">La recherche porte sur les factures en attente et sur celles déjà réglées.</p>
           {candidates === null ? (
             <p className="py-6 text-center text-sm text-muted-foreground">{error ?? "Recherche des factures en attente…"}</p>
           ) : candidates.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Aucune facture en attente de ce côté. Utilisez « Ajouter au suivi ».</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">Aucune facture trouvée. Modifiez la recherche ou utilisez « Ajouter au suivi ».</p>
           ) : (
             <ul className="max-h-80 divide-y overflow-y-auto rounded-md border">
               {candidates.map((candidate) => {
@@ -151,7 +176,10 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
                           })
                         }
                       />
-                      <span className="min-w-0 flex-1 truncate">{candidate.label}</span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {candidate.label}
+                        {candidate.paid ? <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">déjà réglée</span> : null}
+                      </span>
                       <span className={candidate.exact ? "font-semibold text-success tabular-nums" : "tabular-nums"}>{formatDA(candidate.amount)}</span>
                     </label>
                   </li>
@@ -175,7 +203,7 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
               Annuler
             </Button>
             <Button type="button" onClick={confirmAssign} disabled={pending || selected.size === 0}>
-              Affecter et marquer réglé
+              {candidates?.some((candidate) => selected.has(keyOf(candidate)) && !candidate.paid) ? "Affecter et marquer réglé" : "Relier à ces factures déjà réglées"}
             </Button>
           </DialogFooter>
         </DialogContent>

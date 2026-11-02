@@ -114,4 +114,6 @@ export interface AssignCandidate {
   amount: number;
   part: "tout" | "debours" | "frais";
   exact: boolean;
+  /** Règlement déjà enregistré dans le suivi : on relie seulement la ligne, la facture ne change pas. */
+  paid: boolean;
 }
