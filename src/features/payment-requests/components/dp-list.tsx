@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { Printer } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { PaymentRequestDTO } from "@/features/payment-requests/types";
 import { formatDA, formatDate } from "@/utils/format";
@@ -16,6 +18,7 @@ export function DpList({ items }: Readonly<{ items: PaymentRequestDTO[] }>): Rea
             <TableHead className="text-right">Montant</TableHead>
             <TableHead className="hidden md:table-cell">Produit</TableHead>
             <TableHead>Paiement</TableHead>
+            <TableHead className="text-right">PDF</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -39,6 +42,18 @@ export function DpList({ items }: Readonly<{ items: PaymentRequestDTO[] }>): Rea
               </TableCell>
               <TableCell>
                 <Badge variant={request.payment.state === "payee" ? "success" : request.payment.state === "non_reliee" ? "muted" : "warning"}>{request.payment.label}</Badge>
+              </TableCell>
+              <TableCell className="text-right">
+                <Link
+                  href={`/imprimer/demandes?ids=${request.id}`}
+                  target="_blank"
+                  title={`Imprimer la demande ${request.ref} en PDF`}
+                  aria-label={`Imprimer la demande ${request.ref}`}
+                  className={buttonVariants({ variant: "outline", size: "sm" })}
+                >
+                  <Printer />
+                  PDF
+                </Link>
               </TableCell>
             </TableRow>
           ))}

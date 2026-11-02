@@ -40,7 +40,7 @@ export default async function InvoicePage({ params }: Readonly<{ params: Promise
           </Link>
         }
       />
-      <InvoiceDetail invoice={invoice} canEdit={canEdit} deleteMode={user.isAdmin ? "direct" : can(user, "A_SUPPR", "EDIT") ? "request" : "none"} today={todayIso()} requestIds={requestIds} />
+      <InvoiceDetail invoice={invoice} canEdit={canEdit} deleteMode={user.isAdmin ? "direct" : can(user, "A_SUPPR", "EDIT") ? "request" : "none"} today={todayIso()} requestIds={requestIds} isAdmin={user.isAdmin} />
     </>
   );
 }

@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { Pencil, Printer } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InvoiceDpActions, type InvoiceDpItem } from "@/features/payment-requests/components/invoice-dp-actions";
 import { InvoiceStatusActions } from "@/features/invoices/components/invoice-status-actions";
 import {
   SensBadge,
@@ -18,7 +19,9 @@ export interface InvoiceDetailProps {
   deleteMode: "direct" | "request" | "none";
   today: string;
   /** Demandes de paiement liées à cette facture (impression directe). */
-  requestIds?: string[];
+  requestIds?: InvoiceDpItem[];
+  /** Administrateur : peut supprimer une demande de paiement. */
+  isAdmin?: boolean;
 }
 
 /** Fiche détaillée d'une facture avec les actions autorisées. */
@@ -28,6 +31,7 @@ export function InvoiceDetail({
   deleteMode,
   today,
   requestIds = [],
+  isAdmin = false,
 }: Readonly<InvoiceDetailProps>): React.JSX.Element {
   const rows: Array<[string, string]> = [
     ["Tiers", invoice.tiers || "—"],
@@ -72,38 +76,20 @@ export function InvoiceDetail({
             Dernière modification : {formatDateTime(invoice.updatedAt)}
           </p>
         </div>
-        {canEdit || requestIds.length ? (
+        {canEdit ? (
           <div className="flex flex-wrap gap-2">
-            {requestIds.length ? (
-              <Button variant="outline" size="sm" asChild>
-                <Link
-                  href={`/imprimer/demandes?ids=${requestIds.join(",")}`}
-                  target="_blank"
-                >
-                  <Printer />
-                  Imprimer la demande de paiement
-                </Link>
-              </Button>
-            ) : null}
-            {canEdit ? (
-              <>
-                <InvoiceStatusActions
-                  invoice={invoice}
-                  today={today}
-                  deleteMode={deleteMode}
-                />
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={`/factures/${invoice.id}/modifier`}>
-                    <Pencil />
-                    Modifier
-                  </Link>
-                </Button>
-              </>
-            ) : null}
+            <InvoiceStatusActions invoice={invoice} today={today} deleteMode={deleteMode} />
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/factures/${invoice.id}/modifier`}>
+                <Pencil />
+                Modifier
+              </Link>
+            </Button>
           </div>
         ) : null}
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-col gap-4">
+        {requestIds.length ? <InvoiceDpActions items={requestIds} isAdmin={isAdmin} /> : null}
         <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
           {rows.map(([label, value]) => (
             <div key={label} className="min-w-0">
