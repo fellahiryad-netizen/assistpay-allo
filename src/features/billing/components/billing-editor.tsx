@@ -86,7 +86,11 @@ export function BillingEditor({ initial, issuedId, canEdit, scope = "all" }: Rea
         if (preset.m === "bdgpair" && !row.pu && draft.bdgType !== "deb") row.pu = "800";
         return row;
       })
-      .filter((row) => !/^(TOTAL|AGENCE)/i.test(row[keys[0] ?? ""] ?? ""));
+      // On écarte seulement l'en-tête du tableau et la ligne de total : les agences dont le nom commence par « AGENCE » restent.
+      .filter((row) => {
+        const first = (row[keys[0] ?? ""] ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+        return !/^(total|etiquettes? de lignes?$)/.test(first) && first !== "agence" && first !== "agences";
+      });
     if (!added.length) {
       setMessage({ tone: "error", text: "Rien à coller." });
       return;
