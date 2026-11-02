@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { can } from "@/features/access/services/access-rules";
-import { GamEtatsPanel } from "@/features/bdg/components/gam-etats-panel";
+import { EtatsAgencesPanel } from "@/features/bdg/components/etats-agences-panel";
 import { BdgSettleButton } from "@/features/bdg/components/bdg-settle-button";
 import { bdgQuerySchema } from "@/features/bdg/schemas";
 import { listBdg } from "@/features/bdg/services/bdg-service";
@@ -55,8 +55,8 @@ export default async function BdgPage({
                 Factures BDG GAM
               </Link>
               {can(user, "BDGV") ? (
-                <Link href="/bdg?onglet=gam" className={buttonVariants({ variant: "outline" })}>
-                  Vérification BDG GAM
+                <Link href="/bdg?onglet=etats" className={buttonVariants({ variant: "outline" })}>
+                  États par agence (BDG CAAT)
                 </Link>
               ) : null}
             </>
@@ -67,11 +67,11 @@ export default async function BdgPage({
         tabs={[
           { href: "/bdg?onglet=suivi", label: "Suivi des encaissements", active: tab === "suivi" },
           { href: "/bdg?onglet=factures", label: "Factures BDG établies", active: tab === "factures" },
-          ...(can(user, "BDGV") ? [{ href: "/bdg?onglet=gam", label: "Vérification BDG GAM", active: tab === "gam" }] : []),
+          ...(can(user, "BDGV") ? [{ href: "/bdg?onglet=etats", label: "États par agence (BDG CAAT)", active: tab === "etats" || tab === "gam" }] : []),
         ]}
       />
-      {tab === "gam" ? (
-        can(user, "BDGV") ? <GamEtatsPanel canExport={can(user, "A_EXPORT", "EDIT")} /> : <StateMessage kind="forbidden" title="Accès refusé" message="Le droit « Vérification BDG GAM » ne vous est pas accordé." />
+      {tab === "etats" || tab === "gam" ? (
+        can(user, "BDGV") ? <EtatsAgencesPanel canExport={can(user, "A_EXPORT", "EDIT")} userName={user.name} /> : <StateMessage kind="forbidden" title="Accès refusé" message="Le droit « États des factures par agence (BDG CAAT) » ne vous est pas accordé." />
       ) : tab === "factures" ? (
         issued && issued.success && issued.data.length ? <IssuedList items={issued.data} /> : <StateMessage kind="empty" title="Aucune facture BDG établie dans AssistPay" />
       ) : (

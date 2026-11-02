@@ -1,22 +1,22 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Download, Printer } from "lucide-react";
-import { exportGamEtatsAction, previewGamEtatsAction } from "@/app/actions/bdg-actions";
+import { Download, FileText, Printer } from "lucide-react";
+import { exportEtatsAgencesAction, previewEtatsAgencesAction } from "@/app/actions/bdg-actions";
 import { FileDrop } from "@/components/common/file-drop";
 import { Notice } from "@/components/common/notice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import type { GamEtats } from "@/features/bdg/services/gam-etats";
+import { buildEtatsPdf } from "@/features/bdg/components/etats-pdf";
+import type { EtatsAgences } from "@/features/bdg/services/etats-agences";
 import { cn } from "@/utils/cn";
 import { formatDA } from "@/utils/format";
 
 const MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 
-function download(filename: string, base64: string): void {
-  const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
-  const url = URL.createObjectURL(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+function saveBlob(filename: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
@@ -26,33 +26,49 @@ function download(filename: string, base64: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
+function download(filename: string, base64: string): void {
+  const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+  saveBlob(filename, new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+}
+
+const fileSafe = (text: string): string => text.replace(/[^\w\- ]/g, "_");
+
 /**
  * BDG GAM : on dépose l'Excel des factures, les factures sont réparties par agence, la TVA et le TTC calculés,
  * puis on imprime ou télécharge l'état de chaque agence et le récapitulatif général.
  */
-export function GamEtatsPanel({ canExport }: Readonly<{ canExport: boolean }>): React.JSX.Element {
+export function EtatsAgencesPanel({ canExport, userName }: Readonly<{ canExport: boolean; userName: string }>): React.JSX.Element {
   const [file, setFile] = useState<File | null>(null);
   const [tva, setTva] = useState("19");
   const [exclure, setExclure] = useState("Préstation; Frais de gestion");
   const [mois, setMois] = useState("");
-  const [etats, setEtats] = useState<GamEtats | null>(null);
+  const [logo, setLogo] = useState(true);
+  const [mh, setMh] = useState("1.5");
+  const [mb, setMb] = useState("1.5");
+  const [info, setInfo] = useState<string | null>(null);
+  const [etats, setEtats] = useState<EtatsAgences | null>(null);
   const [current, setCurrent] = useState(-1);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  function form(source: File): FormData {
+  function form(source: File, monthOverride?: string, only?: number): FormData {
     const data = new FormData();
     data.set("file", source);
     data.set("tva", tva);
     data.set("exclure", exclure);
-    data.set("mois", mois);
+    data.set("mois", monthOverride ?? mois);
+    data.set("logo", logo ? "1" : "0");
+    data.set("mh", mh);
+    data.set("mb", mb);
+    if (only !== undefined) data.set("only", String(only));
     return data;
   }
 
-  function run(source: File): void {
+  function run(source: File, monthOverride?: string): void {
     setError(null);
+    setInfo(null);
     startTransition(async () => {
-      const result = await previewGamEtatsAction(form(source));
+      const result = await previewEtatsAgencesAction(form(source, monthOverride));
       if (!result.success) {
         setEtats(null);
         setError(result.error);
@@ -64,24 +80,50 @@ export function GamEtatsPanel({ canExport }: Readonly<{ canExport: boolean }>): 
     });
   }
 
-  function exportExcel(): void {
+  function exportExcel(only?: number): void {
     if (!file) return;
+    setError(null);
     startTransition(async () => {
-      const result = await exportGamEtatsAction(form(file));
-      if (result.success) download(result.data.filename, result.data.base64);
-      else setError(result.error);
+      const result = await exportEtatsAgencesAction(form(file, undefined, only));
+      if (result.success) {
+        download(result.data.filename, result.data.base64);
+        setInfo("Fichier Excel enregistré.");
+      } else setError(result.error);
+    });
+  }
+
+  function exportPdf(which: number | "all"): void {
+    if (!etats) return;
+    setError(null);
+    startTransition(async () => {
+      try {
+        const date = new Date().toLocaleDateString("fr-FR", { timeZone: "Africa/Algiers" });
+        const blob = await buildEtatsPdf(etats, which, { logo, who: userName, date });
+        const month = MOIS[etats.mois - 1]?.toUpperCase() ?? "";
+        const name = which === "all" ? `TOUS_LES_ETATS_${month}` : `ETAT_${fileSafe(which < 0 ? "RECAPITULATIF_GENERAL" : (etats.agencies[which]?.sheet ?? "AGENCE"))}`;
+        saveBlob(`${name}.pdf`, blob);
+        setInfo("PDF enregistré : ouvrez-le puis imprimez-le (Ctrl+P).");
+      } catch {
+        setError("Le PDF n'a pas pu être créé.");
+      }
     });
   }
 
   function print(): void {
     document.body.dataset.print = "gam";
+    const page = document.createElement("style");
+    page.textContent = `@page { size: A4 landscape; margin: ${Math.max(Number(mh) || 1.5, 0.5)}cm 1.2cm ${Math.max(Number(mb) || 1.5, 0.5)}cm 1.2cm; }`;
+    document.head.appendChild(page);
     const clear = (): void => {
       delete document.body.dataset.print;
+      page.remove();
       window.removeEventListener("afterprint", clear);
     };
     window.addEventListener("afterprint", clear);
     window.print();
   }
+
+  const stamp = `Établi par : ${userName} - ${new Date().toLocaleDateString("fr-FR", { timeZone: "Africa/Algiers" })}`;
 
   const pc = etats ? `TVA ${Number(etats.tauxTva.toFixed(2))} %` : "TVA";
   const agency = etats && current >= 0 ? etats.agencies[current] : null;
@@ -105,7 +147,7 @@ export function GamEtatsPanel({ canExport }: Readonly<{ canExport: boolean }>): 
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
-        Déposez le fichier Excel des factures GAM (colonnes Agence, N° de dossier, Prix HT, Date). Chaque agence reçoit son état avec total HT, TVA et TTC, plus un récapitulatif général prêt à imprimer ou à télécharger. Rien n&apos;est enregistré dans la base.
+        Déposez le fichier Excel des factures BDG CAAT (colonnes Agence, N° de dossier, Prix HT, Date). Chaque agence reçoit son état sur papier en-tête Allo Assistance, avec total HT, TVA et TTC, plus un récapitulatif général : impression directe, PDF ou Excel. Rien n&apos;est enregistré dans la base.
       </p>
       <div className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-3">
         <label className="text-sm">
@@ -115,6 +157,18 @@ export function GamEtatsPanel({ canExport }: Readonly<{ canExport: boolean }>): 
         <label className="text-sm sm:col-span-2">
           Colonnes à ne pas reprendre
           <Input value={exclure} onChange={(event) => setExclure(event.target.value)} />
+        </label>
+        <label className="text-sm">
+          Marge haute (cm)
+          <Input type="number" min={0.5} max={5} step={0.5} value={mh} onChange={(event) => setMh(event.target.value)} />
+        </label>
+        <label className="text-sm">
+          Marge basse (cm)
+          <Input type="number" min={0.5} max={5} step={0.5} value={mb} onChange={(event) => setMb(event.target.value)} />
+        </label>
+        <label className="flex items-center gap-2 text-sm sm:pt-6">
+          <input type="checkbox" checked={logo} onChange={(event) => setLogo(event.target.checked)} />
+          Logo et pied de page Allo Assistance
         </label>
         <div className="sm:col-span-3">
           <FileDrop
@@ -146,6 +200,7 @@ export function GamEtatsPanel({ canExport }: Readonly<{ canExport: boolean }>): 
                 value={mois}
                 onChange={(event) => {
                   setMois(event.target.value);
+                  if (file) run(file, event.target.value);
                 }}
               >
                 {MOIS.map((name, index) => (
@@ -158,17 +213,34 @@ export function GamEtatsPanel({ canExport }: Readonly<{ canExport: boolean }>): 
             <Button type="button" variant="outline" disabled={pending || !file} onClick={() => file && run(file)}>
               Recalculer
             </Button>
-            {canExport ? (
-              <Button type="button" disabled={pending || !file} onClick={exportExcel}>
-                <Download />
-                Excel (tous les états)
-              </Button>
-            ) : null}
-            <Button type="button" variant="outline" onClick={print}>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" onClick={print}>
               <Printer />
               Imprimer cet état
             </Button>
+            <Button type="button" variant="outline" disabled={pending} onClick={() => exportPdf(current)}>
+              <FileText />
+              Enregistrer cet état (PDF)
+            </Button>
+            <Button type="button" variant="outline" disabled={pending} onClick={() => exportPdf("all")}>
+              <FileText />
+              Tous les états (PDF)
+            </Button>
+            {canExport ? (
+              <>
+                <Button type="button" variant="outline" disabled={pending || !file} onClick={() => exportExcel(current)}>
+                  <Download />
+                  Excel de cet état
+                </Button>
+                <Button type="button" variant="outline" disabled={pending || !file} onClick={() => exportExcel()}>
+                  <Download />
+                  Excel (tous les états)
+                </Button>
+              </>
+            ) : null}
           </div>
+          {info ? <Notice tone="success">{info}</Notice> : null}
           <div className="flex flex-wrap gap-1.5">
             {[{ name: "Récapitulatif général", index: -1 }, ...etats.agencies.map((a, index) => ({ name: a.name, index }))].map((tab) => (
               <button
@@ -182,6 +254,7 @@ export function GamEtatsPanel({ canExport }: Readonly<{ canExport: boolean }>): 
             ))}
           </div>
           <div className="gam-etat overflow-x-auto rounded-lg border bg-white p-6 text-neutral-900">
+            {logo ? <img src="/etats/logo.png" alt="Allo Assistance" className="mb-3 h-20 w-auto" /> : null}
             <h3 className="mb-4 text-center text-lg font-bold">{agency ? etats.titre : etats.titreGeneral}</h3>
             {agency ? (
               <>
@@ -251,6 +324,8 @@ export function GamEtatsPanel({ canExport }: Readonly<{ canExport: boolean }>): 
                 {totalBox(etats.totals.ht, etats.totals.tva, etats.totals.ttc)}
               </>
             )}
+            <p className="mt-4 text-xs italic text-neutral-600">{stamp}</p>
+            {logo ? <img src="/etats/pied.png" alt="" className="mx-auto mt-6 block w-full max-w-[560px]" /> : null}
           </div>
         </>
       ) : null}

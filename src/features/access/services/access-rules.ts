@@ -20,7 +20,7 @@ export const MODULES: readonly ModuleInfo[] = [
   { key: "ALERT", label: "Alertes impayés", group: "Pilotage", hint: "page des alertes clients et fournisseurs" },
   { key: "HIST", label: "Historique 2023-2025", group: "Factures" },
   { key: "PREST", label: "Prestataires (soldes)", group: "Factures" },
-  { key: "BDGV", label: "Vérification BDG GAM", group: "Ventes", hint: "états des factures par agence" },
+  { key: "BDGV", label: "États des factures par agence (BDG CAAT)", group: "Ventes", hint: "récapitulatifs par agence, PDF et Excel" },
   { key: "CAARB", label: "CAAR : barème et taux", group: "Ventes", hint: "Consultation = voir ; Modification = changer les tarifs et taux" },
   { key: "A_EXPORT", label: "Boutons d'export (Excel, PDF)", group: "Actions et boutons", action: true },
   { key: "A_IMPORT", label: "Boutons d'import de fichiers", group: "Actions et boutons", action: true },

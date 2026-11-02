@@ -1,4 +1,5 @@
-import { readWorkbook, writeWorkbook, type SheetCell, type SheetData, type SheetToWrite } from "@/lib/spreadsheet";
+import { readWorkbook, writeEtatsWorkbook, type SheetCell, type SheetData } from "@/lib/spreadsheet";
+import { ETATS_FOOTER_BASE64, ETATS_FOOTER_RATIO, ETATS_LOGO_BASE64, ETATS_LOGO_RATIO } from "@/features/bdg/services/etats-images";
 import { requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { logAction } from "@/features/journal/services/journal-service";
@@ -9,18 +10,25 @@ import { formatDA } from "@/utils/format";
 /** Mois en lettres capitales (titres des états). */
 const MOIS = ["JANVIER", "FÉVRIER", "MARS", "AVRIL", "MAI", "JUIN", "JUILLET", "AOÛT", "SEPTEMBRE", "OCTOBRE", "NOVEMBRE", "DÉCEMBRE"] as const;
 
-/** Réglages d'un récapitulatif GAM. */
-export interface GamOptions {
+/** Réglages d'un récapitulatif par agence. */
+export interface EtatsOptions {
   /** Taux de TVA en pourcentage (19 par défaut). */
   tva: number;
   /** Colonnes à ne pas reprendre, séparées par « ; ». */
   exclure: string;
   /** Mois du récapitulatif (1 à 12). */
   mois: number | null;
+  /** Papier en-tête : logo et pied de page. */
+  logo?: boolean;
+  /** Marges haute et basse en centimètres. */
+  mh?: number;
+  mb?: number;
+  /** Un seul état à exporter : -1 = récapitulatif, n = agence n ; null = tous. */
+  only?: number | null;
 }
 
 /** Ligne de facture reprise dans l'état d'une agence. */
-export interface GamRow {
+export interface EtatsRow {
   line: number;
   cells: string[];
   /** Montant HT lu ; null si illisible. */
@@ -30,28 +38,29 @@ export interface GamRow {
 }
 
 /** État d'une agence. */
-export interface GamAgency {
+export interface EtatsAgency {
   name: string;
   sheet: string;
-  rows: GamRow[];
+  rows: EtatsRow[];
   ht: number;
   tva: number;
   ttc: number;
 }
 
-/** Résultat de l'analyse d'un fichier de factures GAM. */
-export interface GamEtats {
+/** Résultat de l'analyse d'un fichier de factures BDG CAAT. */
+export interface EtatsAgences {
   fichier: string;
   feuille: string;
   headerLine: number;
   columns: string[];
   htIndex: number;
+  dateIndex: number;
   mois: number;
   months: Array<{ mois: number; count: number }>;
   titre: string;
   titreGeneral: string;
   tauxTva: number;
-  agencies: GamAgency[];
+  agencies: EtatsAgency[];
   totals: { n: number; ht: number; tva: number; ttc: number };
   controls: Array<{ tone: "ok" | "warn" | "err"; text: string }>;
 }
@@ -141,7 +150,7 @@ const titleFor = (mois: number, general: boolean): string => {
  * en-têtes trouvés dans les 60 premières lignes (colonnes Agence et Prix / Montant HT), une feuille par agence,
  * TVA et TTC calculés par agence, contrôles de cohérence avec la source.
  */
-export function buildGamEtats(sheets: SheetData[], fichier: string, options: GamOptions): ActionResult<GamEtats> {
+export function buildEtatsAgences(sheets: SheetData[], fichier: string, options: EtatsOptions): ActionResult<EtatsAgences> {
   let found: { sheet: SheetData; hdr: number; roles: Role[] } | null = null;
   for (const sheet of sheets) {
     for (let i = 0; i < Math.min(sheet.rows.length, 60) && !found; i += 1) {
@@ -166,7 +175,7 @@ export function buildGamEtats(sheets: SheetData[], fichier: string, options: Gam
     out.push(c);
   });
   const taux = options.tva / 100;
-  const groups = new Map<string, { name: string; rows: GamRow[] }>();
+  const groups = new Map<string, { name: string; rows: EtatsRow[] }>();
   const stat = { nonaff: 0, ko: 0, vide: 0, dup: 0, declared: [] as number[] };
   const seen = new Set<string>();
   const monthCount = new Map<number, number>();
@@ -211,7 +220,7 @@ export function buildGamEtats(sheets: SheetData[], fichier: string, options: Gam
   const months = [...monthCount.entries()].map(([mois, count]) => ({ mois, count })).sort((a, b) => b.count - a.count);
   const mois = options.mois && options.mois >= 1 && options.mois <= 12 ? options.mois : (months[0]?.mois ?? new Date().getMonth() + 1);
   const used = new Set<string>();
-  const agencies: GamAgency[] = [...groups.values()]
+  const agencies: EtatsAgency[] = [...groups.values()]
     .sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base", numeric: true }))
     .map((group) => {
       const ht = round2(group.rows.reduce((sum, r) => sum + (r.amount ?? 0), 0));
@@ -221,7 +230,7 @@ export function buildGamEtats(sheets: SheetData[], fichier: string, options: Gam
   if (agencies.length === 0) return fail("Aucune facture rattachée à une agence n'a été trouvée.", "VALIDATION");
   const n = agencies.reduce((sum, a) => sum + a.rows.length, 0);
   const totals = { n, ht: round2(agencies.reduce((s, a) => s + a.ht, 0)), tva: round2(agencies.reduce((s, a) => s + a.tva, 0)), ttc: round2(agencies.reduce((s, a) => s + a.ttc, 0)) };
-  const controls: GamEtats["controls"] = [{ tone: "ok", text: `Colonnes reprises : ${out.map((c) => cellText(header[c]).trim()).join(" · ")}` }];
+  const controls: EtatsAgences["controls"] = [{ tone: "ok", text: `Colonnes reprises : ${out.map((c) => cellText(header[c]).trim()).join(" · ")}` }];
   controls.push({ tone: "ok", text: `${n} facture(s) réparties entre ${agencies.length} agence(s) · total HT ${formatDA(totals.ht)} = somme des agences` });
   if (stat.declared.length === 1) {
     const declared = stat.declared[0] ?? 0;
@@ -239,6 +248,7 @@ export function buildGamEtats(sheets: SheetData[], fichier: string, options: Gam
     headerLine: hdr + 1,
     columns: out.map((c) => cellText(header[c]).trim()),
     htIndex: out.indexOf(cHt),
+    dateIndex: out.indexOf(cDt),
     mois,
     months,
     titre: titleFor(mois, false),
@@ -251,7 +261,7 @@ export function buildGamEtats(sheets: SheetData[], fichier: string, options: Gam
 }
 
 /** Aperçu des états GAM d'un fichier (rien n'est enregistré). */
-export async function previewGamEtats(actor: AuthUser, file: { name: string; bytes: Uint8Array }, options: GamOptions): Promise<ActionResult<GamEtats>> {
+export async function previewEtatsAgences(actor: AuthUser, file: { name: string; bytes: Uint8Array }, options: EtatsOptions): Promise<ActionResult<EtatsAgences>> {
   const guard = requireAccess(actor, "BDGV");
   if (!guard.success) return guard;
   let sheets: SheetData[];
@@ -260,60 +270,44 @@ export async function previewGamEtats(actor: AuthUser, file: { name: string; byt
   } catch {
     return fail("Ce fichier n'a pas pu être lu. Utilisez un fichier Excel (.xlsx, .xlsm) ou CSV.", "VALIDATION");
   }
-  return buildGamEtats(sheets, file.name, options);
+  return buildEtatsAgences(sheets, file.name, options);
 }
 
-/** Classeur Excel des états : récapitulatif général puis une feuille par agence. */
-export async function exportGamEtats(actor: AuthUser, file: { name: string; bytes: Uint8Array }, options: GamOptions): Promise<ActionResult<{ filename: string; base64: string }>> {
+/** Classeur Excel des états (tous, ou un seul) : papier en-tête, totaux en formules, mise en page A4 paysage. */
+export async function exportEtatsAgences(actor: AuthUser, file: { name: string; bytes: Uint8Array }, options: EtatsOptions): Promise<ActionResult<{ filename: string; base64: string }>> {
   const guard = requireAccess(actor, "BDGV");
   if (!guard.success) return guard;
   const allowed = requireAccess(actor, "A_EXPORT", "EDIT");
   if (!allowed.success) return allowed;
-  const result = await previewGamEtats(actor, file, options);
+  const result = await previewEtatsAgences(actor, file, options);
   if (!result.success) return result;
   const etats = result.data;
-  const pc = `TVA ${Number(etats.tauxTva.toFixed(2))} %`;
-  const stamp = `Établi par : ${actor.name} - ${new Date().toLocaleDateString("fr-FR", { timeZone: "Africa/Algiers" })}`;
-  const sheets: SheetToWrite[] = [
-    {
-      name: "RÉCAPITULATIF GÉNÉRAL",
-      widths: [6, 36, 20, 18, 18, 18],
-      rows: [
-        [etats.titreGeneral],
-        [],
-        ["N°", "Agence", "Nombre de factures", "TOTAL HT", pc, "TOTAL TTC"],
-        ...etats.agencies.map((a, i) => [i + 1, a.name, a.rows.length, a.ht, a.tva, a.ttc]),
-        ["", "TOTAL GÉNÉRAL", etats.totals.n, etats.totals.ht, etats.totals.tva, etats.totals.ttc],
-        [],
-        ["", "", "", "", "TOTAL HT", etats.totals.ht],
-        ["", "", "", "", pc, etats.totals.tva],
-        ["", "", "", "", "TOTAL TTC", etats.totals.ttc],
-        [],
-        [stamp],
-      ],
-    },
-    ...etats.agencies.map((a): SheetToWrite => ({
-      name: a.sheet,
-      widths: etats.columns.map((_, index) => (index === etats.htIndex ? 18 : 20)),
-      rows: [
-        [etats.titre],
-        [],
-        etats.columns,
-        ...a.rows.map((r) => r.cells.map((cell, index) => (index === etats.htIndex ? (r.amount ?? r.raw) : cell))),
-        [],
-        ...([["TOTAL HT", a.ht], [pc, a.tva], ["TOTAL TTC", a.ttc]] as const).map(([label, value]) => {
-          const line: Array<string | number> = etats.columns.map(() => "");
-          line[Math.max(etats.columns.length - 2, 0)] = label;
-          line[etats.columns.length - 1] = value;
-          return line;
-        }),
-        [],
-        [stamp],
-      ],
+  const only = options.only ?? null;
+  if (only !== null && only >= etats.agencies.length) return fail("Cet état n'existe pas.", "VALIDATION");
+  const withLogo = options.logo !== false;
+  const bytes = await writeEtatsWorkbook({
+    titre: etats.titre,
+    titreGeneral: etats.titreGeneral,
+    taux: etats.tauxTva / 100,
+    columns: etats.columns,
+    htIndex: etats.htIndex,
+    agencies: etats.agencies.map((a) => ({
+      name: a.name,
+      sheet: a.sheet,
+      ht: a.ht,
+      tva: a.tva,
+      ttc: a.ttc,
+      rows: a.rows.map((r) => ({ cells: r.cells, amount: r.amount })),
     })),
-  ];
-  const bytes = writeWorkbook(sheets);
-  await logAction(actor, "États des factures BDG GAM", `${etats.fichier} · ${etats.agencies.length} agences · ${etats.totals.n} factures · HT ${formatDA(etats.totals.ht)}`);
+    who: `Établi par : ${actor.name} - ${new Date().toLocaleDateString("fr-FR", { timeZone: "Africa/Algiers" })}`,
+    marginTop: options.mh ?? 1.5,
+    marginBottom: options.mb ?? 1.5,
+    logo: withLogo ? { data: Uint8Array.from(Buffer.from(ETATS_LOGO_BASE64, "base64")), ratio: ETATS_LOGO_RATIO } : null,
+    footer: withLogo ? { data: Uint8Array.from(Buffer.from(ETATS_FOOTER_BASE64, "base64")), ratio: ETATS_FOOTER_RATIO } : null,
+    only,
+  });
+  await logAction(actor, "États des factures BDG CAAT par agence", `${etats.fichier} · ${etats.agencies.length} agences · ${etats.totals.n} factures · HT ${formatDA(etats.totals.ht)}`);
   const month = MOIS[etats.mois - 1] ?? "";
-  return ok({ filename: `ETATS_FACTURES_GAM_${month}.xlsx`, base64: Buffer.from(bytes).toString("base64") });
+  const name = only === null ? `ETATS_FACTURES_${month}` : `ETAT_${(only < 0 ? "RECAPITULATIF_GENERAL" : (etats.agencies[only]?.sheet ?? "AGENCE")).replace(/[^\w\- ]/g, "_")}`;
+  return ok({ filename: `${name}.xlsx`, base64: Buffer.from(bytes).toString("base64") });
 }
