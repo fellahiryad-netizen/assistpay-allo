@@ -9,6 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { can } from "@/features/access/services/access-rules";
 import { InvoiceDetail } from "@/features/invoices/components/invoice-detail";
 import { invoiceIdSchema } from "@/features/invoices/schemas";
+import { requestIdsForInvoice } from "@/features/payment-requests/services/payment-request-service";
 import { getInvoice } from "@/features/invoices/services/invoice-service";
 import { todayIso } from "@/utils/dates";
 
@@ -26,6 +27,7 @@ export default async function InvoicePage({ params }: Readonly<{ params: Promise
     return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="Facture inaccessible" message={result.error} />;
   }
   const { invoice, canEdit } = result.data;
+  const requestIds = invoice.sens === "DEBIT" ? await requestIdsForInvoice(user, invoice.id) : [];
   return (
     <>
       <PageHeader
@@ -38,7 +40,7 @@ export default async function InvoicePage({ params }: Readonly<{ params: Promise
           </Link>
         }
       />
-      <InvoiceDetail invoice={invoice} canEdit={canEdit} deleteMode={user.isAdmin ? "direct" : can(user, "A_SUPPR", "EDIT") ? "request" : "none"} today={todayIso()} />
+      <InvoiceDetail invoice={invoice} canEdit={canEdit} deleteMode={user.isAdmin ? "direct" : can(user, "A_SUPPR", "EDIT") ? "request" : "none"} today={todayIso()} requestIds={requestIds} />
     </>
   );
 }

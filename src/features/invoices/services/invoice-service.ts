@@ -77,7 +77,7 @@ export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promis
       db.invoice.aggregate({ where, _sum: { montant: true } }),
       db.invoice.findMany({
         where,
-        orderBy: [{ dateOperation: { sort: "desc", nulls: "first" } }, { dateFacture: "desc" }, { createdAt: "desc" }],
+        orderBy: [{ createdAt: "desc" }, { dateFacture: "desc" }],
         skip: (query.page - 1) * PAGE_SIZE,
         take: PAGE_SIZE,
       }),

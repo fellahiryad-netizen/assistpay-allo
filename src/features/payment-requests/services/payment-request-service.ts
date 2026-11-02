@@ -154,7 +154,7 @@ export async function listRequests(
   };
   try {
     const [all, toValidate, next] = await Promise.all([
-      db.paymentRequest.findMany({ where, orderBy: [{ num: "desc" }, { legacyId: "desc" }] }),
+      db.paymentRequest.findMany({ where, orderBy: [{ createdAt: "desc" }, { num: "desc" }] }),
       db.paymentRequest.count({ where: { status: "a_valider" } }),
       nextNumber(),
     ]);
@@ -481,4 +481,18 @@ export async function applyRequestImport(actor: AuthUser, file: DpFile): Promise
     console.error("[dp] import :", error);
     return fail(`L'import a échoué (${created.length} demande(s) déjà créée(s)).`, "DATABASE");
   }
+}
+
+/** Demandes de paiement liées à une facture (par identifiant ou par référence), pour le bouton d'impression. */
+export async function requestIdsForInvoice(actor: AuthUser, invoiceId: string): Promise<string[]> {
+  if (!can(actor, "DP")) return [];
+  const invoice = await db.invoice.findUnique({ where: { id: invoiceId }, select: { legacyId: true, paymentRefs: true } });
+  if (!invoice) return [];
+  const rows = await db.paymentRequest.findMany({
+    where: { OR: [{ invoiceIds: { has: invoice.legacyId } }, ...(invoice.paymentRefs.length ? [{ ref: { in: invoice.paymentRefs } }] : [])] },
+    select: { id: true },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+  });
+  return rows.map((row) => row.id);
 }

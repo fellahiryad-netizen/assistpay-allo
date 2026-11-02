@@ -1,9 +1,12 @@
 import Link from "next/link";
-import { Pencil } from "lucide-react";
+import { Pencil, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InvoiceStatusActions } from "@/features/invoices/components/invoice-status-actions";
-import { SensBadge, StatusBadge } from "@/features/invoices/components/invoice-badges";
+import {
+  SensBadge,
+  StatusBadge,
+} from "@/features/invoices/components/invoice-badges";
 import { MODE_LABELS, type InvoiceDTO } from "@/features/invoices/types";
 import { formatDA, formatDate, formatDateTime } from "@/utils/format";
 
@@ -14,10 +17,18 @@ export interface InvoiceDetailProps {
   /** « direct » (administrateur), « request » (demande à valider) ou « none » (droit non accordé). */
   deleteMode: "direct" | "request" | "none";
   today: string;
+  /** Demandes de paiement liées à cette facture (impression directe). */
+  requestIds?: string[];
 }
 
 /** Fiche détaillée d'une facture avec les actions autorisées. */
-export function InvoiceDetail({ invoice, canEdit, deleteMode, today }: Readonly<InvoiceDetailProps>): React.JSX.Element {
+export function InvoiceDetail({
+  invoice,
+  canEdit,
+  deleteMode,
+  today,
+  requestIds = [],
+}: Readonly<InvoiceDetailProps>): React.JSX.Element {
   const rows: Array<[string, string]> = [
     ["Tiers", invoice.tiers || "—"],
     ["N° de facture", invoice.numero || "—"],
@@ -33,9 +44,12 @@ export function InvoiceDetail({ invoice, canEdit, deleteMode, today }: Readonly<
     ["Période", invoice.periode || "—"],
     ["Année", invoice.annee ? String(invoice.annee) : "—"],
   ];
-  if (invoice.debours !== null) rows.push(["Débours", formatDA(invoice.debours)]);
-  if (invoice.frais !== null) rows.push(["Frais de gestion", formatDA(invoice.frais)]);
-  if (invoice.montantGlobal !== null) rows.push(["Montant global du règlement", formatDA(invoice.montantGlobal)]);
+  if (invoice.debours !== null)
+    rows.push(["Débours", formatDA(invoice.debours)]);
+  if (invoice.frais !== null)
+    rows.push(["Frais de gestion", formatDA(invoice.frais)]);
+  if (invoice.montantGlobal !== null)
+    rows.push(["Montant global du règlement", formatDA(invoice.montantGlobal)]);
   if (invoice.origine) rows.push(["Origine", invoice.origine]);
 
   return (
@@ -45,20 +59,47 @@ export function InvoiceDetail({ invoice, canEdit, deleteMode, today }: Readonly<
           <div className="flex flex-wrap items-center gap-2">
             <SensBadge sens={invoice.sens} />
             <StatusBadge status={invoice.status} />
-            {invoice.archived ? <span className="text-xs text-muted-foreground">reprise des archives</span> : null}
+            {invoice.archived ? (
+              <span className="text-xs text-muted-foreground">
+                reprise des archives
+              </span>
+            ) : null}
           </div>
-          <CardTitle className="text-2xl tabular-nums">{formatDA(invoice.montant)}</CardTitle>
-          <p className="text-xs text-muted-foreground">Dernière modification : {formatDateTime(invoice.updatedAt)}</p>
+          <CardTitle className="text-2xl tabular-nums">
+            {formatDA(invoice.montant)}
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Dernière modification : {formatDateTime(invoice.updatedAt)}
+          </p>
         </div>
-        {canEdit ? (
+        {canEdit || requestIds.length ? (
           <div className="flex flex-wrap gap-2">
-            <InvoiceStatusActions invoice={invoice} today={today} deleteMode={deleteMode} />
-            <Button variant="outline" size="sm" asChild>
-              <Link href={`/factures/${invoice.id}/modifier`}>
-                <Pencil />
-                Modifier
-              </Link>
-            </Button>
+            {requestIds.length ? (
+              <Button variant="outline" size="sm" asChild>
+                <Link
+                  href={`/imprimer/demandes?ids=${requestIds.join(",")}`}
+                  target="_blank"
+                >
+                  <Printer />
+                  Imprimer la demande de paiement
+                </Link>
+              </Button>
+            ) : null}
+            {canEdit ? (
+              <>
+                <InvoiceStatusActions
+                  invoice={invoice}
+                  today={today}
+                  deleteMode={deleteMode}
+                />
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/factures/${invoice.id}/modifier`}>
+                    <Pencil />
+                    Modifier
+                  </Link>
+                </Button>
+              </>
+            ) : null}
           </div>
         ) : null}
       </CardHeader>
