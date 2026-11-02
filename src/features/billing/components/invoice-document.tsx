@@ -259,7 +259,7 @@ export function InvoiceDocument({ draft, entete }: Readonly<{ draft: BillingDraf
           <table className="fx-t wide">
             <thead>
               <tr>
-                {["N", "N° dossier", "Matricule", "Nom client", "Agence", "Prestation", "Date", "N° sinistre", "Prix HT", "TVA", "TTC"].map((label) => (
+                {["N", "N° dossier", "Matricule", "Nom client", "Agence", "Produit", "Date", "N° sinistre", "Prix HT", "TVA", "TTC"].map((label) => (
                   <th key={label}>{label}</th>
                 ))}
               </tr>

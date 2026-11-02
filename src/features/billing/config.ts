@@ -237,7 +237,7 @@ export const MODELS: Readonly<Record<string, BillingModel>> = {
   },
   bdggam: {
     lbl: "BDG GAM – facture globale (fourniture et pose) + détail des dossiers",
-    cols: [{ k: "dos", l: "N° dossier" }, { k: "mat", l: "Matricule" }, { k: "nom", l: "Nom client" }, { k: "ag", l: "Agence" }, { k: "pres", l: "Prestation" }, { k: "dt", l: "Date" }, { k: "sin", l: "N° sinistre" }, { k: "prix", l: "Prix HT", t: "money" }],
+    cols: [{ k: "dos", l: "N° dossier" }, { k: "mat", l: "Matricule" }, { k: "nom", l: "Nom client" }, { k: "ag", l: "Agence" }, { k: "pres", l: "Produit" }, { k: "dt", l: "Date" }, { k: "sin", l: "N° sinistre" }, { k: "prix", l: "Prix HT", t: "money" }],
     ht: "prix",
   },
   bdggamsum: {
