@@ -3,6 +3,8 @@ import Link from "next/link";
 import { Download } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/features/access/services/access-rules";
+import { CaatAdvancesButton } from "@/features/invoices/components/caat-advances-button";
+import { previousPeriod } from "@/features/invoices/services/caat-advances";
 import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
 import { buttonVariants } from "@/components/ui/button";
@@ -34,6 +36,21 @@ export default async function PartnersPage({
         title="Partenaires"
         description={`Créances, encaissements, délais de paiement et prévisions par partenaire (${year === "all" ? "toutes années" : `année ${year}`} pour facturé et encaissé ; solde dû toutes années).`}
       />
+      {can(user, "FCLI", "EDIT") ? (
+        <div className="mb-4 rounded-lg border bg-card p-3">
+          <p className="mb-2 text-sm text-muted-foreground">
+            Avances CAAT (honoraire assistance routière, 90 % HT) : les 9 lignes du mois écoulé sont créées automatiquement chaque 1er du mois. Vous pouvez aussi créer celles d&apos;un autre mois ; il suffit ensuite d&apos;y saisir le
+            montant, ou de les affecter depuis le relevé.
+          </p>
+          <CaatAdvancesButton
+            defaultPeriod={previousPeriod()}
+            periods={Array.from({ length: 14 }, (_, k) => {
+              const base = new Date(Date.UTC(currentYear, Number(todayIso().slice(5, 7)) - 1 + 1 - k, 1));
+              return `${base.getUTCFullYear()}-${String(base.getUTCMonth() + 1).padStart(2, "0")}`;
+            })}
+          />
+        </div>
+      ) : null}
       <div className="mb-4 flex flex-wrap gap-1">
         {[currentYear, currentYear - 1, currentYear - 2].map((value) => (
           <Link key={value} href={`/partenaires?annee=${value}`} className={buttonVariants({ size: "sm", variant: year === value ? "default" : "outline" })}>

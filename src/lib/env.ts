@@ -9,6 +9,8 @@ export const env = createEnv({
   server: {
     DATABASE_URL: z.string().url(),
     SESSION_SECRET: z.string().min(32, "SESSION_SECRET doit contenir au moins 32 caractères."),
+    /** Secret des tâches planifiées (Vercel Cron) ; sans lui, la route planifiée reste fermée. */
+    CRON_SECRET: z.string().min(16).optional(),
     SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(12),
     COOKIE_SECURE: z
       .enum(["true", "false"])
@@ -20,6 +22,7 @@ export const env = createEnv({
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
     SESSION_SECRET: process.env.SESSION_SECRET,
+    CRON_SECRET: process.env.CRON_SECRET,
     SESSION_TTL_HOURS: process.env.SESSION_TTL_HOURS,
     COOKIE_SECURE: process.env.COOKIE_SECURE,
     NODE_ENV: process.env.NODE_ENV,

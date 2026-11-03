@@ -1,3 +1,4 @@
 {
-  "regions": ["lhr1"]
+  "regions": ["lhr1"],
+  "crons": [{ "path": "/api/cron/avances", "schedule": "0 3 1 * *" }]
 }

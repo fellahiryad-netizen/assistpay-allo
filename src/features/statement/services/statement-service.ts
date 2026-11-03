@@ -456,7 +456,11 @@ export async function assignCandidates(actor: AuthUser, input: AssignSearchInput
   const invoices = rows.map(toPayable);
   type Entry = { invoice: PayableInvoice; part: PaymentPart; amount: number; paid: boolean };
   const entries: Entry[] = [
-    ...invoices.filter((invoice) => invoice.status === "EN_ATTENTE").flatMap((invoice) => paymentOptions(invoice, new Set()).map((option) => ({ invoice, part: option.part, amount: option.amount, paid: false }))),
+    ...invoices.filter((invoice) => invoice.status === "EN_ATTENTE").flatMap((invoice) => {
+      // Avance CAAT créée sans montant : elle prend le montant du virement reçu.
+      if (line.data.sens === "CREDIT" && invoice.extra.avance && invoice.montant === 0) return [{ invoice, part: "tout" as PaymentPart, amount: montant, paid: false }];
+      return paymentOptions(invoice, new Set()).map((option) => ({ invoice, part: option.part, amount: option.amount, paid: false }));
+    }),
     ...paidEntries(invoices).map((entry) => ({ invoice: entry.invoice, part: entry.part, amount: entry.amount, paid: true })),
   ];
   const label = (entry: Entry): string => {
@@ -506,7 +510,7 @@ export async function assignLine(actor: AuthUser, input: AssignLineInput): Promi
       const out: string[] = [];
       let left = montant;
       for (const item of input.items) {
-        const invoiceRow = await tx.invoice.findUnique({ where: { id: item.invoiceId } });
+        let invoiceRow = await tx.invoice.findUnique({ where: { id: item.invoiceId } });
         if (!invoiceRow) throw new Error("Facture introuvable.");
         if (item.paid) {
           // Règlement déjà enregistré : on relie seulement la ligne du relevé, la facture ne change pas.
@@ -514,6 +518,10 @@ export async function assignLine(actor: AuthUser, input: AssignLineInput): Promi
           out.push(`${invoiceRow.legacyId}:${item.part}`);
           left = round2(left - paidAmount);
           continue;
+        }
+        if (item.part === "tout" && row.sens === "CREDIT" && decimalToNumber(invoiceRow.montant) === 0 && toPayable(invoiceRow).extra.avance) {
+          // Avance CAAT sans montant : elle reçoit le montant du virement du relevé.
+          invoiceRow = await tx.invoice.update({ where: { id: invoiceRow.id }, data: { montant: Math.max(0, left) } });
         }
         const due = item.part === "tout" ? remaining(toPayable(invoiceRow)) || decimalToNumber(invoiceRow.montant) : item.part === "debours" ? decimalToNumber(invoiceRow.debours) ?? 0 : decimalToNumber(invoiceRow.frais) ?? 0;
         const amount = round2(Math.min(due, Math.max(0, left)));

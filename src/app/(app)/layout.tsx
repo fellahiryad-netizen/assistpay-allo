@@ -5,6 +5,7 @@ import { Header } from "@/components/common/header";
 import { filterNav, NAV_GROUPS } from "@/components/common/nav-items";
 import { Sidebar } from "@/components/common/sidebar";
 import { countAlerts } from "@/features/invoices/services/alert-service";
+import { autoCaatAdvances } from "@/features/invoices/services/caat-advances";
 import { countPendingDeletions } from "@/features/invoices/services/deletion-service";
 import { can, PROFILE_LABELS } from "@/features/access/services/access-rules";
 
@@ -19,6 +20,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
     if (module === "invoices") return can(user, "FCLI") || can(user, "FFOUR");
     return can(user, module);
   });
+  await autoCaatAdvances(user);
   const alerts = groups.some((group) => group.items.some((item) => item.href === "/alertes")) ? await countAlerts(user) : 0;
   const pendingDeletions = await countPendingDeletions(user);
   const withBadges = groups.map((group) => ({ ...group, items: group.items.map((item) => (item.href === "/alertes" ? { ...item, badge: alerts } : item.href === "/suppressions" ? { ...item, badge: pendingDeletions } : item)) }));

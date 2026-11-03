@@ -18,6 +18,7 @@ import {
   setInvoiceStatus,
   updateInvoice,
 } from "@/features/invoices/services/invoice-service";
+import { ensureCaatAdvances } from "@/features/invoices/services/caat-advances";
 import { applyInvoiceImport, previewInvoiceImport, type InvoiceImportPlan } from "@/features/invoices/services/invoice-import";
 import type { InvoiceDTO } from "@/features/invoices/types";
 import type { ActionResult } from "@/types";
@@ -85,6 +86,15 @@ export async function applyInvoiceImportAction(formData: FormData): Promise<Acti
     }
   }
   const result = await runUploadAction(formData, (actor, file) => applyInvoiceImport(actor, file, selection));
+  if (result.success) refresh();
+  return result;
+}
+
+const advancesSchema = z.object({ period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Mois invalide.") });
+
+/** Création des neuf avances CAAT d'un mois (« AAAA-MM »), sans doublon. */
+export async function createCaatAdvancesAction(input: unknown): Promise<ActionResult<{ created: number; existing: number }>> {
+  const result = await runAction(advancesSchema, input, (actor, values) => ensureCaatAdvances(actor, values.period));
   if (result.success) refresh();
   return result;
 }
