@@ -10,10 +10,16 @@ export interface SheetData {
   rows: SheetCell[][];
 }
 
+/** Cellule calculée par une formule Excel (valeur mise en cache comprise). */
+export interface FormulaCell {
+  f: string;
+  v: number;
+}
+
 /** Feuille à écrire. */
 export interface SheetToWrite {
   name: string;
-  rows: Array<Array<string | number | Date | null>>;
+  rows: Array<Array<string | number | Date | FormulaCell | null>>;
   /** Largeur des colonnes en caractères. */
   widths?: number[];
 }
@@ -54,7 +60,8 @@ export function cellAt(rows: SheetCell[][], address: string): SheetCell {
 export function writeWorkbook(sheets: SheetToWrite[]): Uint8Array {
   const workbook = XLSX.utils.book_new();
   for (const sheet of sheets) {
-    const worksheet = XLSX.utils.aoa_to_sheet(sheet.rows, { cellDates: true });
+    const rows = sheet.rows.map((row) => row.map((cell) => (cell !== null && typeof cell === "object" && "f" in cell ? { t: "n" as const, f: cell.f, v: cell.v } : cell)));
+    const worksheet = XLSX.utils.aoa_to_sheet(rows, { cellDates: true });
     for (const address of Object.keys(worksheet)) {
       if (address.startsWith("!")) continue;
       const cell = worksheet[address];
@@ -372,4 +379,48 @@ export async function writeEtatsWorkbook(spec: EtatsWorkbookSpec): Promise<Uint8
   }
   const buffer = await wb.xlsx.writeBuffer();
   return new Uint8Array(buffer as ArrayBuffer);
+}
+
+/**
+ * Lit un CSV en texte brut (séparateur « ; » ou « , » détecté, guillemets gérés), sans interpréter les nombres :
+ * « 1000,50 » reste du texte, à l'appelant de le convertir. UTF-8, à défaut Windows-1252.
+ */
+export function readCsvRows(bytes: Uint8Array): string[][] {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    text = new TextDecoder("windows-1252").decode(bytes);
+  }
+  const firstLine = text.split("\n", 1)[0] ?? "";
+  const sep = (firstLine.match(/;/g)?.length ?? 0) >= (firstLine.match(/,/g)?.length ?? 0) ? ";" : ",";
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else quoted = false;
+      } else field += c;
+    } else if (c === '"') quoted = true;
+    else if (c === sep) {
+      row.push(field);
+      field = "";
+    } else if (c === "\n") {
+      row.push(field);
+      field = "";
+      rows.push(row);
+      row = [];
+    } else if (c !== "\r") field += c;
+  }
+  if (field !== "" || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows;
 }
