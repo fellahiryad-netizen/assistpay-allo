@@ -73,5 +73,7 @@ export interface InvoiceListResult {
 export interface InvoiceFilterOptions {
   years: number[];
   categories: string[];
+  /** Succursales CAAT / CAAR présentes dans les factures visibles. */
+  branches: string[];
   sens: SensKey[];
 }

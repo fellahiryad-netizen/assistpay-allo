@@ -6,7 +6,7 @@ import type { AuthUser } from "@/features/access/types";
 import { isSplit, paidSum, remaining, toPayable, type PayableInvoice } from "@/features/invoices/services/invoice-balance";
 import { authorOf } from "@/features/invoices/services/invoice-extra";
 import { branchLabel } from "@/features/invoices/services/branch";
-import { buildInvoiceWhere } from "@/features/invoices/services/invoice-service";
+import { buildInvoiceWhereWithBranch } from "@/features/invoices/services/invoice-service";
 import type { InvoiceQuery } from "@/features/invoices/schemas";
 import { logAction } from "@/features/journal/services/journal-service";
 import { fail, ok, type ActionResult } from "@/types";
@@ -69,7 +69,7 @@ const SUIVI_HEADERS = [
 const SUIVI_WIDTHS = [7, 8, 8, 16, 16, 14, 30, 44, 14, 10, 12, 14, 14, 14, 14, 14, 14, 20, 22, 7];
 
 async function loadRows(actor: AuthUser, query: ExportQuery): Promise<ActionResult<Invoice[]>> {
-  const where = buildInvoiceWhere(actor, query);
+  const where = await buildInvoiceWhereWithBranch(actor, query);
   if (!where) return fail("Vous n'avez accès à aucune facture.", "FORBIDDEN");
   try {
     const rows = await db.invoice.findMany({ where, orderBy: [{ annee: "asc" }, { ordre: "asc" }, { createdAt: "asc" }], take: EXPORT_LIMIT });

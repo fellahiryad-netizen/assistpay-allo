@@ -1,3 +1,4 @@
+import { branchLabel } from "@/features/invoices/services/branch";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { can, requireAccess } from "@/features/access/services/access-rules";
@@ -36,8 +37,37 @@ function describe(invoice: { sens: "CREDIT" | "DEBIT"; tiers: string; numero: st
   return `${SENS_LABELS[invoice.sens]} – ${invoice.tiers}${numero} – ${formatDA(invoice.montant)}`;
 }
 
+/**
+ * Recherche par montant : « 27500 », « 27 500,00 » ou « 27500.5 » (espaces, virgule et « DA » acceptés).
+ * Sans décimales, tous les montants de la forme 27500,xx sont trouvés ; avec décimales, le montant exact.
+ */
+function amountConditions(q: string): Prisma.InvoiceWhereInput[] {
+  const cleaned = q.replace(/[\s\u00a0\u202f]/g, "").replace(/da$/i, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return [];
+  const value = Number(cleaned);
+  if (!Number.isFinite(value)) return [];
+  return cleaned.includes(".") ? [{ montant: { gte: value - 0.005, lte: value + 0.005 } }] : [{ montant: { gte: value, lt: value + 1 } }];
+}
+
+/** Identifiants des factures CAAT / CAAR d'une succursale (nom tel que proposé dans le filtre). */
+async function branchInvoiceIds(actor: AuthUser, label: string): Promise<string[] | null> {
+  const visibility = visibilityWhere(actor);
+  if (!visibility) return null;
+  const rows = await db.invoice.findMany({
+    where: { AND: [visibility, { categorie: { in: ["CAAT", "CAAR"] } }] },
+    select: { id: true, categorie: true, succursale: true, tiers: true, libelle: true },
+  });
+  return rows.filter((row) => branchLabel(row) === label).map((row) => row.id);
+}
+
+/** Comme `buildInvoiceWhere`, en résolvant aussi le filtre par succursale. */
+export async function buildInvoiceWhereWithBranch(actor: AuthUser, query: Omit<InvoiceQuery, "page">): Promise<Prisma.InvoiceWhereInput | null> {
+  const ids = query.succursale ? await branchInvoiceIds(actor, query.succursale) : undefined;
+  return buildInvoiceWhere(actor, query, ids ?? undefined);
+}
+
 /** Filtre complet d'une recherche de factures (visibilité + filtres de la liste) ; null si aucun accès. */
-export function buildInvoiceWhere(actor: AuthUser, query: Omit<InvoiceQuery, "page">): Prisma.InvoiceWhereInput | null {
+export function buildInvoiceWhere(actor: AuthUser, query: Omit<InvoiceQuery, "page">, branchIds?: string[]): Prisma.InvoiceWhereInput | null {
   const visibility = visibilityWhere(actor);
   if (!visibility) return null;
   if (query.sens && !visibleSens(actor).includes(query.sens)) return null;
@@ -48,9 +78,11 @@ export function buildInvoiceWhere(actor: AuthUser, query: Omit<InvoiceQuery, "pa
       query.status ? { status: query.status } : {},
       query.annee ? { annee: query.annee } : {},
       query.categorie ? { categorie: query.categorie } : {},
+      branchIds ? { id: { in: branchIds } } : {},
       query.q
         ? {
             OR: [
+              ...amountConditions(query.q),
               { tiers: { contains: query.q, mode: "insensitive" } },
               { numero: { contains: query.q, mode: "insensitive" } },
               { libelle: { contains: query.q, mode: "insensitive" } },
@@ -68,7 +100,7 @@ export function buildInvoiceWhere(actor: AuthUser, query: Omit<InvoiceQuery, "pa
  * La recherche libre porte sur le tiers, le numéro, le libellé et la catégorie.
  */
 export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promise<ActionResult<InvoiceListResult>> {
-  const where = buildInvoiceWhere(actor, query);
+  const where = await buildInvoiceWhereWithBranch(actor, query);
   if (!where) return fail(NO_ACCESS, "FORBIDDEN");
 
   try {
@@ -102,13 +134,15 @@ export async function getInvoiceFilterOptions(actor: AuthUser): Promise<ActionRe
   const visibility = visibilityWhere(actor);
   if (!visibility) return fail(NO_ACCESS, "FORBIDDEN");
   try {
-    const [years, categories] = await Promise.all([
+    const [years, categories, branchRows] = await Promise.all([
       db.invoice.findMany({ where: { ...visibility, annee: { not: null } }, distinct: ["annee"], select: { annee: true }, orderBy: { annee: "desc" } }),
       db.invoice.findMany({ where: { ...visibility, categorie: { not: "" } }, distinct: ["categorie"], select: { categorie: true }, orderBy: { categorie: "asc" } }),
+      db.invoice.findMany({ where: { ...visibility, categorie: { in: ["CAAT", "CAAR"] } }, select: { categorie: true, succursale: true, tiers: true, libelle: true } }),
     ]);
     return ok({
       years: years.flatMap((row) => (row.annee === null ? [] : [row.annee])),
       categories: categories.map((row) => row.categorie),
+      branches: [...new Set(branchRows.map((row) => branchLabel(row)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr")),
       sens: visibleSens(actor),
     });
   } catch (error) {

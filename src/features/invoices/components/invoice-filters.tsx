@@ -20,7 +20,7 @@ export function InvoiceFilters({ query, options }: Readonly<InvoiceFiltersProps>
     <form method="get" className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6" role="search">
       <div className="relative sm:col-span-2">
         <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input name="q" defaultValue={query.q ?? ""} placeholder="Tiers, numéro, libellé…" className="pl-9" aria-label="Recherche" />
+        <Input name="q" defaultValue={query.q ?? ""} placeholder="Tiers, numéro, libellé, montant…" className="pl-9" aria-label="Recherche" />
       </div>
       <NativeSelect name="sens" defaultValue={query.sens ?? ""} aria-label="Sens">
         {options.sens.length > 1 ? <option value="">Crédit et débit</option> : null}
@@ -54,6 +54,16 @@ export function InvoiceFilters({ query, options }: Readonly<InvoiceFiltersProps>
           </option>
         ))}
       </NativeSelect>
+      {options.branches.length > 0 ? (
+        <NativeSelect name="succursale" defaultValue={query.succursale ?? ""} aria-label="Succursale">
+          <option value="">Toutes les succursales</option>
+          {options.branches.map((branch) => (
+            <option key={branch} value={branch}>
+              {branch}
+            </option>
+          ))}
+        </NativeSelect>
+      ) : null}
       <div className="flex gap-2 sm:col-span-2 lg:col-span-6 lg:justify-end">
         <Button type="submit" className="flex-1 sm:flex-none">
           Filtrer

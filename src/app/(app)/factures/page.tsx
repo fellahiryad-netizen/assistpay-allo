@@ -34,6 +34,7 @@ function exportHref(query: InvoiceQuery, format?: "suivi"): string {
   if (query.annee) params.set("annee", String(query.annee));
   if (query.categorie) params.set("categorie", query.categorie);
   if (query.q) params.set("q", query.q);
+  if (query.succursale) params.set("succursale", query.succursale);
   return `/api/factures/export?${params.toString()}`;
 }
 
@@ -44,6 +45,7 @@ function toSearch(query: InvoiceQuery, page: number): string {
   if (query.annee) params.set("annee", String(query.annee));
   if (query.categorie) params.set("categorie", query.categorie);
   if (query.q) params.set("q", query.q);
+  if (query.succursale) params.set("succursale", query.succursale);
   if (page > 1) params.set("page", String(page));
   const search = params.toString();
   return search ? `/factures?${search}` : "/factures";
@@ -58,6 +60,7 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
   const query = invoiceQuerySchema.parse({
     sens: first(raw.sens),
     status: first(raw.status),
+    succursale: first(raw.succursale),
     annee: first(raw.annee),
     categorie: first(raw.categorie),
     q: first(raw.q),
