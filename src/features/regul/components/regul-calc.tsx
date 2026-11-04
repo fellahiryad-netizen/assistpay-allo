@@ -39,7 +39,7 @@ interface Props {
 }
 
 const YEAR = 2026;
-const ZIP_OK = /\.(csv|txt|xlsx|xls|xlsm)$/i;
+const ZIP_OK = /\.(csv|txt|xlsx|xls|xlsm|xltx|xltm)$/i;
 
 /** Onglet « Régulariser » : succursale, période, dépôt des fichiers, calcul 10 % + TVA, contrôles et export. */
 export function RegulCalc({ index, sinMeta, canEdit, canExport, initialSucc, onSaved }: Readonly<Props>): React.JSX.Element {
@@ -104,10 +104,12 @@ export function RegulCalc({ index, sinMeta, canEdit, canExport, initialSucc, onS
         const bytes = new Uint8Array(await f.arrayBuffer());
         const sheets = /\.(csv|txt)$/i.test(f.name) ? [{ name: f.name, rows: readCsvRows(bytes) }] : readWorkbook(bytes);
         const parsed = parseRegulFile(f.name, f.size, sheets, YEAR);
-        if (!parsed) throw new Error("colonnes IMMATRICULATION / POLICE / PRIME / PART_ASSISTEUR introuvables");
-        const at = next.findIndex((x) => x.id === parsed.id);
-        if (at >= 0) next.splice(at, 1);
-        next.push(parsed);
+        if (!parsed.length) throw new Error("colonnes IMMATRICULATION / POLICE / PRIME / PART_ASSISTEUR introuvables");
+        for (const part of parsed) {
+          const at = next.findIndex((x) => x.id === part.id);
+          if (at >= 0) next.splice(at, 1);
+          next.push(part);
+        }
       } catch (error) {
         setMsg({ tone: "error", text: `« ${f.name} » : ${error instanceof Error ? error.message : "fichier illisible"}` });
       }
@@ -233,7 +235,7 @@ export function RegulCalc({ index, sinMeta, canEdit, canExport, initialSucc, onS
             </NativeSelect>
           </label>
         </div>
-        <input ref={input} type="file" multiple accept=".csv,.txt,.xlsx,.xls,.xlsm,.zip" className="hidden" onChange={(e) => { if (e.target.files) void addFiles(e.target.files); e.target.value = ""; }} />
+        <input ref={input} type="file" multiple accept=".csv,.txt,.xlsx,.xls,.xlsm,.xltx,.xltm,.zip" className="hidden" onChange={(e) => { if (e.target.files) void addFiles(e.target.files); e.target.value = ""; }} />
         <button
           type="button"
           onClick={() => input.current?.click()}

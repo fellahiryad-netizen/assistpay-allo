@@ -173,8 +173,8 @@ export function monthFromName(name: string): number {
   return FILE_MONTHS.find(([prefix]) => plain.includes(prefix))?.[1] ?? 0;
 }
 
-/** Lit un fichier de production (feuille DETAIL en priorité) ; null si les colonnes attendues manquent. */
-export function parseRegulFile(name: string, size: number, sheets: SheetData[], defaultYear: number): RegulFile | null {
+/** Lit un fichier de production (feuille DETAIL en priorité) ; liste vide si les colonnes attendues manquent. Un fichier de plusieurs mois sans mois dans son nom est scindé par mois d'émission. */
+export function parseRegulFile(name: string, size: number, sheets: SheetData[], defaultYear: number): RegulFile[] {
   void defaultYear;
   const ordered = [...sheets].sort((a, b) => Number(/DETAIL/i.test(b.name)) - Number(/DETAIL/i.test(a.name)));
   for (const sheet of ordered) {
@@ -214,9 +214,20 @@ export function parseRegulFile(name: string, size: number, sheets: SheetData[], 
     if (!lignes.length) continue;
     const top = [...months.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
     const fm = monthFromName(name);
-    return { id: `${name}|${size}`, name, mois: fm || top, moisFichier: fm, moisEmission: top, lignes };
+    if (!fm && months.size > 1) {
+      // Fichier couvrant plusieurs mois (ex. un trimestre) sans mois dans son nom : un lot par mois d'émission.
+      const parMois = new Map<number, RegulLine[]>();
+      for (const ligne of lignes) {
+        const key = ligne.em || top;
+        parMois.set(key, [...(parMois.get(key) ?? []), ligne]);
+      }
+      return [...parMois.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([mois, part]) => ({ id: `${name}|${size}|${mois}`, name: `${name} (${(REGUL_MOIS[mois - 1] ?? "").toLowerCase()})`, mois, moisFichier: 0, moisEmission: mois, lignes: part }));
+    }
+    return [{ id: `${name}|${size}`, name, mois: fm || top, moisFichier: fm, moisEmission: top, lignes }];
   }
-  return null;
+  return [];
 }
 
 /** Normalise une immatriculation ou un numéro (sans espace, tiret ni point, majuscules). */

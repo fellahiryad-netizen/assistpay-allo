@@ -32,7 +32,7 @@ export async function runAction<S extends z.ZodTypeAny, T>(
 }
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
-const ALLOWED_EXTENSIONS = /\.(xlsx|xlsm|xls|csv)$/i;
+const ALLOWED_EXTENSIONS = /\.(xlsx|xlsm|xltx|xltm|xls|csv)$/i;
 
 /** Fichier Excel/CSV reçu par une server action. */
 export interface UploadedSpreadsheet {
@@ -44,7 +44,7 @@ export interface UploadedSpreadsheet {
 export async function readUploadedSpreadsheet(formData: FormData): Promise<ActionResult<UploadedSpreadsheet>> {
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return fail("Choisissez un fichier.", "VALIDATION");
-  if (!ALLOWED_EXTENSIONS.test(file.name)) return fail("Format non pris en charge : utilisez un fichier Excel (.xlsx, .xls) ou CSV.", "VALIDATION");
+  if (!ALLOWED_EXTENSIONS.test(file.name)) return fail("Format non pris en charge : utilisez un fichier Excel (.xlsx, .xlsm, .xltx, .xls) ou CSV.", "VALIDATION");
   if (file.size > MAX_UPLOAD_BYTES) return fail("Fichier trop volumineux (4 Mo maximum).", "VALIDATION");
   return { success: true, data: { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) } };
 }

@@ -14,7 +14,7 @@ export interface FileDropProps {
 }
 
 /** Zone de dépôt de fichier (glisser-déposer ou clic). */
-export function FileDrop({ label, hint, accept = ".xlsx,.xls,.xlsm,.csv", disabled = false, onFile }: Readonly<FileDropProps>): React.JSX.Element {
+export function FileDrop({ label, hint, accept = ".xlsx,.xls,.xlsm,.xltx,.xltm,.csv", disabled = false, onFile }: Readonly<FileDropProps>): React.JSX.Element {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
 
