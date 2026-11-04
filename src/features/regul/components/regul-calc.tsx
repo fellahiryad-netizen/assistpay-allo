@@ -178,10 +178,21 @@ export function RegulCalc({ index, sinMeta, canEdit, canExport, initialSucc, onS
   }
 
   const alerts: string[] = [];
+  const nbMois = A ? new Set(A.files.map((f) => f.mois)).size : 0;
+  const parAgence = new Map<number, { nom: string; mois: number[]; pa: number }>();
+  for (const x of A?.manquantes ?? []) {
+    const cur = parAgence.get(x.code) ?? { nom: x.nom, mois: [], pa: 0 };
+    cur.mois.push(x.m);
+    cur.pa += x.basePa;
+    parAgence.set(x.code, cur);
+  }
+  const absentes = [...parAgence.entries()].filter(([, v]) => nbMois > 0 && v.mois.length >= nbMois);
+  const codesAbsents = new Set(absentes.map(([code]) => code));
+  const partielles = (A?.manquantes ?? []).filter((x) => !codesAbsents.has(x.code));
   if (A && C) {
     const nonCred = C.rows.filter((r) => /non/i.test(r.statut));
     if (nonCred.length) alerts.push(`Avance non créditée selon le TCD : ${nonCred.map((r) => (REGUL_MOIS[r.m - 1] ?? "").toLowerCase()).join(", ")} — à vérifier avec le relevé bancaire.`);
-    if (A.manquantes.length) alerts.push(`Agences présentes dans le consolidé et absentes des fichiers : ${A.manquantes.map((x) => `${x.code} (${(REGUL_MOIS[x.m - 1] ?? "").toLowerCase()}, ${fm(x.basePa)} DA au consolidé)`).join(" ; ")}.`);
+    if (partielles.length) alerts.push(`Agences présentes dans le consolidé et absentes de certains mois : ${partielles.map((x) => `${x.code} (${(REGUL_MOIS[x.m - 1] ?? "").toLowerCase()}, ${fm(x.basePa)} DA au consolidé)`).join(" ; ")}.`);
     if (A.nouvelles.length) alerts.push(`Agence(s) nouvelle(s), jamais vue(s) auparavant : ${A.nouvelles.map((a) => `${a.code} ${a.nom}`).join(" ; ")}.`);
     if (A.onlyFile.length || A.onlyBase.length) alerts.push(`Écart ligne à ligne avec le consolidé : ${A.onlyFile.length} ligne(s) seulement dans les fichiers, ${A.onlyBase.length} seulement dans le consolidé (détail dans l'export).${A.immatDiff ? ` ${A.immatDiff} autre(s) ligne(s) identiques mais avec une immatriculation différente ou absente d'un côté.` : ""}`);
     else if (A.immatDiff) alerts.push(`${A.immatDiff} ligne(s) identiques au consolidé (police, prime, part assisteur) mais avec une immatriculation différente ou absente d'un côté.`);
@@ -319,6 +330,18 @@ export function RegulCalc({ index, sinMeta, canEdit, canExport, initialSucc, onS
           </Card>
           <p className="text-xs text-muted-foreground">Montant Total et Somme Avance viennent du TCD du consolidé ; vous pouvez les corriger (virement confirmé par la banque) : le calcul se met à jour.</p>
           <h3 className="font-semibold">Points à contrôler</h3>
+          {absentes.length ? (
+            <Notice tone="error" className="mb-2">
+              <p className="font-semibold">{absentes.length === 1 ? "Une agence est entièrement absente des fichiers reçus" : `${absentes.length} agences sont entièrement absentes des fichiers reçus`}</p>
+              <ul className="mt-1 list-disc pl-5">
+                {absentes.map(([code, v]) => (
+                  <li key={code}>
+                    {code} {v.nom} : aucune ligne sur la période, alors que le consolidé en contient pour {fm(v.pa)} DA de part assisteur. Demandez le fichier à la succursale avant de régulariser.
+                  </li>
+                ))}
+              </ul>
+            </Notice>
+          ) : null}
           {alerts.length ? <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">{alerts.map((t) => <li key={t}>{t}</li>)}</ul> : <p className="text-sm text-muted-foreground">Rien à signaler.</p>}
           {sins.length ? (
             <>
