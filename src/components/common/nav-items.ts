@@ -54,6 +54,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     items: [
       { href: "/factures", label: "Toutes les factures", icon: "invoice", module: "invoices" },
       { href: "/factures?sens=CREDIT", label: "Factures clients", icon: "credit", module: "FCLI" },
+      { href: "/avances", label: "Tableau CAAT / CAAR", icon: "credit", module: "FCLI" },
       { href: "/factures?sens=DEBIT", label: "Factures fournisseurs", icon: "debit", module: "FFOUR" },
       { href: "/prestataires", label: "Prestataires (soldes)", icon: "partners", module: "PREST" },
       { href: "/historique", label: "Historique 2023-2025", icon: "journal", module: "HIST" },
