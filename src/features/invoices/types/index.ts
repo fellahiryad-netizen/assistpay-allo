@@ -65,6 +65,8 @@ export interface InvoiceListResult {
   pageSize: number;
   pageCount: number;
   sumMontant: number;
+  /** Factures émises (module Facturation) liées aux lignes de la page : id de la ligne → id de la facture imprimable. */
+  printable: Record<string, string>;
   /** Peut-on modifier les factures de chaque sens ? */
   canEdit: Record<SensKey, boolean>;
 }

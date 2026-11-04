@@ -95,6 +95,19 @@ export function buildInvoiceWhere(actor: AuthUser, query: Omit<InvoiceQuery, "pa
   };
 }
 
+/** Id de la facture émise (imprimable) correspondant à chaque ligne, pour les utilisateurs ayant accès à la facturation. */
+async function printableIds(actor: AuthUser, rows: ReadonlyArray<{ id: string; legacyId: string }>): Promise<Record<string, string>> {
+  if (!can(actor, "FACT", "VIEW") || rows.length === 0) return {};
+  const issued = await db.issuedInvoice.findMany({ where: { invoiceLegacyId: { in: rows.map((row) => row.legacyId) } }, select: { id: true, invoiceLegacyId: true } });
+  const byLegacy = new Map(issued.flatMap((doc) => (doc.invoiceLegacyId ? [[doc.invoiceLegacyId, doc.id] as const] : [])));
+  return Object.fromEntries(rows.flatMap((row) => (byLegacy.has(row.legacyId) ? [[row.id, byLegacy.get(row.legacyId) as string] as const] : [])));
+}
+
+/** Id de la facture imprimable liée à une facture du suivi (null s'il n'y en a pas). */
+export async function printableIdFor(actor: AuthUser, invoice: { id: string; legacyId: string }): Promise<string | null> {
+  return (await printableIds(actor, [invoice]))[invoice.id] ?? null;
+}
+
 /**
  * Recherche paginée des factures, limitée à ce que l'utilisateur a le droit de voir.
  * La recherche libre porte sur le tiers, le numéro, le libellé et la catégorie.
@@ -114,8 +127,10 @@ export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promis
         take: PAGE_SIZE,
       }),
     ]);
+    const printable = await printableIds(actor, rows);
     return ok({
       items: rows.map(toInvoiceDTO),
+      printable,
       total,
       page: query.page,
       pageSize: PAGE_SIZE,

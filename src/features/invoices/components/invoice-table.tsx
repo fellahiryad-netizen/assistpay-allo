@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Printer } from "lucide-react";
 import { useTransition } from "react";
 import { markInvoicePaidAction } from "@/app/actions/invoice-actions";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -34,13 +35,15 @@ export interface InvoiceTableProps {
   canEdit: Record<SensKey, boolean>;
   today: string;
   showSens: boolean;
+  /** id de la ligne → id de la facture émise à imprimer. */
+  printable?: Record<string, string>;
 }
 
 /**
  * Liste des factures (cartes sur mobile, tableau à partir de la tablette) avec règlement en un clic.
  * Le passage à « Réglé » est affiché immédiatement (useOptimistic) puis confirmé par le serveur.
  */
-export function InvoiceTable({ items, canEdit, today, showSens }: Readonly<InvoiceTableProps>): React.JSX.Element {
+export function InvoiceTable({ items, canEdit, today, showSens, printable = {} }: Readonly<InvoiceTableProps>): React.JSX.Element {
   const [optimisticItems, applyPatch] = useOptimisticInvoices(items);
   const [, startTransition] = useTransition();
 
@@ -54,10 +57,22 @@ export function InvoiceTable({ items, canEdit, today, showSens }: Readonly<Invoi
     });
   }
 
-  const action = (invoice: InvoiceDTO): React.JSX.Element | null =>
-    invoice.status === "EN_ATTENTE" && canEdit[invoice.sens] ? (
-      <MarkPaidDialog invoice={invoice} today={today} onConfirm={confirmPaid} compact />
-    ) : null;
+  const action = (invoice: InvoiceDTO): React.JSX.Element | null => {
+    const printId = printable[invoice.id];
+    const pay = invoice.status === "EN_ATTENTE" && canEdit[invoice.sens] ? <MarkPaidDialog invoice={invoice} today={today} onConfirm={confirmPaid} compact /> : null;
+    if (!printId && !pay) return null;
+    return (
+      <div className="flex items-center justify-end gap-2">
+        {printId ? (
+          <Link href={`/imprimer/factures?ids=${printId}`} target="_blank" className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium hover:bg-muted" title="Imprimer la facture">
+            <Printer className="size-3.5" aria-hidden />
+            Imprimer
+          </Link>
+        ) : null}
+        {pay}
+      </div>
+    );
+  };
 
   return (
     <>

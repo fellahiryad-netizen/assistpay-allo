@@ -127,7 +127,7 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
         <StateMessage kind="empty" title="Aucune facture ne correspond" message="Modifiez les filtres ou la recherche." />
       ) : (
         <>
-          <InvoiceTable items={data.items} canEdit={data.canEdit} today={todayIso()} showSens={!query.sens} />
+          <InvoiceTable items={data.items} canEdit={data.canEdit} today={todayIso()} showSens={!query.sens} printable={data.printable} />
           <Pagination page={data.page} pageCount={data.pageCount} hrefFor={(page) => toSearch(query, page)} />
         </>
       )}
