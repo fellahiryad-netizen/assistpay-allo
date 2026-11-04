@@ -2,6 +2,8 @@ import type { SheetCell, SheetData } from "@/lib/spreadsheet";
 import { round2 } from "@/utils/amounts";
 import { upperPlain } from "@/utils/text";
 
+/* Moteur de la régularisation CAAT 10 % + TVA : fonctions pures, utilisables dans le navigateur (les fichiers déposés n'en sortent pas). */
+
 /** Succursales CAAT régularisées. */
 export const REGUL_SUCCURSALES = ["ALGER I", "ALGER II", "ALGER III", "ANNABA", "CONSTANTINE", "ORAN", "SETIF", "SUD", "TLEMCEN"] as const;
 
@@ -18,13 +20,86 @@ export const REGUL_LABELS: Readonly<Record<string, string>> = {
   TLEMCEN: "Tlemcen",
 };
 
+/** Mois en toutes lettres. */
+export const REGUL_MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"] as const;
+
 /** Périodes de régularisation : mois couverts. */
-export const REGUL_PERIODS: Readonly<Record<string, number[]>> = { T1: [1, 2, 3], T2: [4, 5, 6], T3: [7, 8, 9], T4: [10, 11, 12], S1: [1, 2, 3, 4, 5, 6], S2: [7, 8, 9, 10, 11, 12] };
+export const REGUL_PERIODS: Readonly<Record<string, number[]>> = { T1: [1, 2, 3], T2: [4, 5, 6], T3: [7, 8, 9], T4: [10, 11, 12], S1: [1, 2, 3, 4, 5, 6] };
+
+/** Garanties de la base de production (position = code stocké). */
+export const REGUL_PROD = ["Rapide", "Securite", "Aisance", "10 --20 tonnes", "3,5 --10 tonnes", "Plusde 20tonnes"] as const;
+
+/** Ligne de la base de production : [mois, code agence, police, immatriculation, garantie, prime, part assisteur]. */
+export type BaseRow = [number, number, string, string, number, number, number];
+
+/** Avance et total d'un mois (TCD du consolidé ou saisie). */
+export interface TcdMonth {
+  total: number;
+  avance: number;
+  statut: string;
+}
+
+/** Régularisation déjà faite (classeur, historique ou résultat enregistré). */
+export interface Fait {
+  total: number;
+  avance: number;
+  regule: number;
+  ecart: number;
+  tva: number;
+  pa: number;
+  releve?: number | null;
+  statut?: string;
+  src?: string;
+  base?: number | null;
+  top?: string;
+}
+
+/** Index de la base de production. */
+export interface RegulIndex {
+  prod: string[];
+  faits: Record<string, Record<string, Fait>>;
+  baseMois: Record<string, Record<string, number>>;
+  tcd: Record<string, Record<string, TcdMonth>>;
+  agences: Record<string, string>;
+  lignes: Record<string, number>;
+  maj: string;
+  source: string;
+}
+
+/** Base sinistres : clés « police sans avenant | immatriculation ». */
+export interface RegulSin {
+  keys: string[];
+  jusqua: string;
+  maj: string;
+  dossiers: number;
+}
+
+/** Montants saisis à la main pour un mois (clé « SUCC_ID-AAAA-MM »). */
+export interface Saisie {
+  succ: string;
+  total?: number | null;
+  avance?: number | null;
+}
+
+/** Résultat enregistré dans le suivi. */
+export interface RegulSaved {
+  succ: string;
+  mois: number;
+  annee: number;
+  total: number;
+  avance: number;
+  regule: number;
+  ecart: number;
+  tva: number;
+  pa: number;
+  base: number;
+  top: string;
+  fichiers: string[];
+  maj: string;
+}
 
 /** Ligne d'un fichier « arrêté comptablement ». */
 export interface RegulLine {
-  m: number;
-  fichier: string;
   immat: string;
   agence: string;
   client: string;
@@ -32,7 +107,6 @@ export interface RegulLine {
   ville: string;
   marque: string;
   emis: string;
-  /** Mois d'émission lu (0 si illisible). */
   em: number;
   police: string;
   debut: string;
@@ -40,25 +114,34 @@ export interface RegulLine {
   produit: string;
   prime: number;
   pa: number;
-  /** Nombre de garanties distinctes pour la même immatriculation (lignes négatives seulement). */
+}
+
+/** Fichier lu : lignes et mois. */
+export interface RegulFile {
+  id: string;
+  name: string;
+  mois: number;
+  moisFichier: number;
+  moisEmission: number;
+  lignes: RegulLine[];
+}
+
+/** Ligne analysée. */
+export interface AnalysedLine extends RegulLine {
+  m: number;
+  fichier: string;
+  im: string;
+  bp: string;
   nprod: number;
-  /** Une ligne positive de la même police et du même véhicule existe dans la période. */
   plus: boolean;
+  sinistre: boolean | null;
   soldePrime: number;
   soldePa: number;
   autres: string;
 }
 
-/** Fichier lu : lignes et mois détecté. */
-export interface RegulFile {
-  name: string;
-  mois: number;
-  lignes: Omit<RegulLine, "m" | "fichier" | "nprod" | "plus" | "soldePrime" | "soldePa" | "autres">[];
-}
-
 const COLUMNS = ["IMMATRICULATION", "AGENCE", "CLIENT", "CODE_AGENCE", "VILLE", "MARQUE", "DATE_EMMISSION", "POLICE", "DATE_DEBUT", "DATE_FIN", "PRODUIT", "PRIME", "PART_ASSISTEUR"] as const;
 const FILE_MONTHS: ReadonlyArray<[string, number]> = [["JANV", 1], ["FEV", 2], ["MARS", 3], ["AVR", 4], ["MAI", 5], ["JUIN", 6], ["JUIL", 7], ["AOUT", 8], ["SEPT", 9], ["OCT", 10], ["NOV", 11], ["DEC", 12]];
-
 const pad = (n: number): string => String(n).padStart(2, "0");
 
 function text(cell: SheetCell | undefined): string {
@@ -67,14 +150,15 @@ function text(cell: SheetCell | undefined): string {
   return String(cell).trim();
 }
 
-function amount(cell: SheetCell | undefined): number {
+/** Nombre lu dans une cellule (« 1 000,50 » accepté). */
+export function toAmount(cell: SheetCell | undefined): number {
   if (typeof cell === "number") return cell;
   if (cell === null || cell === undefined || cell instanceof Date) return 0;
   const value = parseFloat(String(cell).replace(/[\s  ]/g, "").replace(",", "."));
   return Number.isNaN(value) ? 0 : value;
 }
 
-/** Mois d'émission d'une ligne (0 si illisible). */
+/** Mois d'émission d'une cellule (0 si illisible). */
 function emissionMonth(cell: SheetCell | undefined): number {
   if (cell instanceof Date) return cell.getUTCMonth() + 1;
   if (typeof cell === "number" && cell < 100000) return new Date(Math.round((cell - 25569) * 864e5)).getUTCMonth() + 1;
@@ -83,14 +167,15 @@ function emissionMonth(cell: SheetCell | undefined): number {
   return digits.length === 8 ? Number(digits.slice(2, 4)) : 0;
 }
 
-/** Mois cité dans le nom d'un fichier (« ALLO_ASS_AOUT_2026.xlsx »), 0 si absent. */
+/** Mois cité dans un nom de fichier (« ALLO_ASS_AOUT_2026.xlsx »), 0 si absent. */
 export function monthFromName(name: string): number {
   const plain = upperPlain(name);
   return FILE_MONTHS.find(([prefix]) => plain.includes(prefix))?.[1] ?? 0;
 }
 
-/** Lit un fichier de production : feuille « DETAIL » en priorité, sinon la première qui porte les colonnes attendues. */
-export function parseRegulFile(name: string, sheets: SheetData[]): RegulFile | null {
+/** Lit un fichier de production (feuille DETAIL en priorité) ; null si les colonnes attendues manquent. */
+export function parseRegulFile(name: string, size: number, sheets: SheetData[], defaultYear: number): RegulFile | null {
+  void defaultYear;
   const ordered = [...sheets].sort((a, b) => Number(/DETAIL/i.test(b.name)) - Number(/DETAIL/i.test(a.name)));
   for (const sheet of ordered) {
     const headIndex = sheet.rows.findIndex((row) => row.some((cell) => text(cell).toUpperCase() === "IMMATRICULATION"));
@@ -98,7 +183,7 @@ export function parseRegulFile(name: string, sheets: SheetData[]): RegulFile | n
     const head = (sheet.rows[headIndex] ?? []).map((cell) => text(cell).toUpperCase());
     const at = Object.fromEntries(COLUMNS.map((column) => [column, head.indexOf(column)])) as Record<(typeof COLUMNS)[number], number>;
     if (at.POLICE < 0 || at.PRIME < 0 || at.PART_ASSISTEUR < 0 || at.CODE_AGENCE < 0) continue;
-    const lignes: RegulFile["lignes"] = [];
+    const lignes: RegulLine[] = [];
     const months = new Map<number, number>();
     for (const row of sheet.rows.slice(headIndex + 1)) {
       const get = (column: (typeof COLUMNS)[number]): SheetCell | undefined => (at[column] >= 0 ? row[at[column]] : undefined);
@@ -122,160 +207,267 @@ export function parseRegulFile(name: string, sheets: SheetData[]): RegulFile | n
         debut: text(get("DATE_DEBUT")),
         fin: text(get("DATE_FIN")),
         produit: text(get("PRODUIT")),
-        prime: amount(get("PRIME")),
-        pa: amount(get("PART_ASSISTEUR")),
+        prime: toAmount(get("PRIME")),
+        pa: toAmount(get("PART_ASSISTEUR")),
       });
     }
     if (!lignes.length) continue;
     const top = [...months.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
-    return { name, mois: monthFromName(name) || top, lignes };
+    const fm = monthFromName(name);
+    return { id: `${name}|${size}`, name, mois: fm || top, moisFichier: fm, moisEmission: top, lignes };
   }
   return null;
 }
 
-const norm = (value: string): string => value.replace(/[ \-.]/g, "").toUpperCase();
-const basePolice = (value: string): string => {
+/** Normalise une immatriculation ou un numéro (sans espace, tiret ni point, majuscules). */
+export const norm = (value: string): string => value.replace(/[ \-.]/g, "").toUpperCase();
+const cmpKey = (value: string): string => norm(value).replace(/^0+/, "");
+/** Police sans avenant (partie avant la dernière barre oblique). */
+export const basePolice = (value: string): string => {
   const trimmed = value.trim();
   const slash = trimmed.lastIndexOf("/");
   return (slash > 0 ? trimmed.slice(0, slash) : trimmed).toUpperCase();
 };
+/** Identifiant d'une succursale pour les clés (espaces remplacés). */
+export const succId = (succ: string): string => succ.replace(/ /g, "_");
 
-/** Montants saisis (ou repris des avances) pour un mois. */
-export interface RegulMonthInput {
-  /** Montant total arrêté (vide : égal au régule des fichiers). */
-  total?: number;
-  avance: number;
+/** Ligne du tableau de contrôle par agence. */
+export interface AgencyRow {
+  code: number;
+  nom: string;
+  par: Array<{ m: number; b: { n: number; pa: number }; f: { n: number; pa: number } }>;
 }
 
-/** Ligne du récapitulatif mensuel. */
-export interface RegulMonthRow {
+/** Résultat de l'analyse d'une succursale pour une période. */
+export interface Analysis {
+  s: string;
+  months: number[];
+  files: RegulFile[];
+  L: AnalysedLine[];
+  valid: AnalysedLine[];
+  annul: AnalysedLine[];
+  garan: AnalysedLine[];
+  regule: Record<number, number>;
+  baseM: Record<number, { n: number; pa: number }>;
+  agTab: AgencyRow[];
+  manquantes: Array<{ code: number; nom: string; m: number; basePa: number; baseN: number }>;
+  nouvelles: AgencyRow[];
+  flottes: Array<{ police: string; mois: number[] }>;
+  horsMois: number;
+  illisibles: number;
+  onlyFile: AnalysedLine[];
+  onlyBase: Array<{ m: number; code: number; police: string; immat: string; produit: string; prime: number; pa: number }>;
+  immatDiff: number;
+  baseN: number;
+}
+
+/** Analyse les fichiers d'une succursale : valides, annulations, changements de garantie, sinistres et comparaison avec la base de production. */
+export function analyse(succ: string, periode: string, allFiles: RegulFile[], base: BaseRow[], sin: Set<string> | null, idx: RegulIndex | null): Analysis {
+  const months = REGUL_PERIODS[periode] ?? [];
+  const files = allFiles.filter((f) => months.includes(f.mois));
+  const L: AnalysedLine[] = [];
+  for (const f of files) {
+    for (const l of f.lignes) L.push({ ...l, m: f.mois, fichier: f.name, im: norm(l.immat), bp: basePolice(l.police), nprod: 1, plus: false, sinistre: null, soldePrime: 0, soldePa: 0, autres: "" });
+  }
+  const byIm = new Map<string, AnalysedLine[]>();
+  for (const x of L) {
+    if (!x.im) continue;
+    byIm.set(x.im, [...(byIm.get(x.im) ?? []), x]);
+  }
+  const plusSet = new Set<string>();
+  for (const x of L) if (x.prime > 0) plusSet.add(`${x.bp}|${x.im}`);
+  const valid: AnalysedLine[] = [];
+  const annul: AnalysedLine[] = [];
+  const garan: AnalysedLine[] = [];
+  for (const x of L) {
+    if (x.prime >= 0) {
+      valid.push(x);
+      continue;
+    }
+    x.nprod = x.im ? new Set((byIm.get(x.im) ?? []).map((y) => y.produit)).size : 1;
+    (x.nprod > 1 ? garan : annul).push(x);
+  }
+  for (const x of annul) {
+    x.plus = plusSet.has(`${x.bp}|${x.im}`);
+    x.sinistre = sin ? sin.has(`${x.bp}|${x.im}`) : null;
+    const inSet = (byIm.get(x.im) ?? []).filter((y) => y.prime >= 0 || y.nprod <= 1);
+    x.soldePrime = round2(inSet.reduce((a, y) => a + y.prime, 0));
+    x.soldePa = round2(inSet.reduce((a, y) => a + y.pa, 0));
+  }
+  for (const x of garan) x.autres = [...new Set((byIm.get(x.im) ?? []).map((y) => y.produit))].filter((p) => p !== x.produit).join(", ");
+  const cmp = (a: AnalysedLine, b: AnalysedLine): number => a.m - b.m || a.code - b.code || (a.police < b.police ? -1 : a.police > b.police ? 1 : 0);
+  valid.sort(cmp);
+  annul.sort(cmp);
+  garan.sort(cmp);
+  const regule: Record<number, number> = {};
+  for (const m of months) regule[m] = 0;
+  for (const x of L) regule[x.m] = round2((regule[x.m] ?? 0) + x.pa);
+
+  const bm = new Map<string, BaseRow[]>();
+  const bAg: Record<number, Record<number, { n: number; pa: number }>> = {};
+  const hist = new Set<number>();
+  for (const r of base) hist.add(r[1]);
+  const fAg: Record<number, Record<number, { n: number; pa: number }>> = {};
+  for (const x of L) {
+    const byMonth = (fAg[x.code] ??= {});
+    const cell = (byMonth[x.m] ??= { n: 0, pa: 0 });
+    cell.n++;
+    cell.pa += x.pa;
+  }
+  const baseM: Record<number, { n: number; pa: number }> = {};
+  for (const m of months) baseM[m] = { n: 0, pa: 0 };
+  for (const r of base) {
+    if (!months.includes(r[0])) continue;
+    const byMonth = (bAg[r[1]] ??= {});
+    const cell = (byMonth[r[0]] ??= { n: 0, pa: 0 });
+    cell.n++;
+    cell.pa += r[6];
+    const bmCell = baseM[r[0]];
+    if (bmCell) {
+      bmCell.n++;
+      bmCell.pa += r[6];
+    }
+    const k = `${r[0]}|${r[2]}|${cmpKey(r[3])}|${r[5].toFixed(2)}|${r[6].toFixed(2)}`;
+    bm.set(k, [...(bm.get(k) ?? []), r]);
+  }
+  const fm = new Map<string, AnalysedLine[]>();
+  for (const x of L) {
+    const k = `${x.m}|${x.police}|${cmpKey(x.immat)}|${x.prime.toFixed(2)}|${x.pa.toFixed(2)}`;
+    fm.set(k, [...(fm.get(k) ?? []), x]);
+  }
+  let onlyFile: AnalysedLine[] = [];
+  let onlyBase: Analysis["onlyBase"] = [];
+  const prod = idx?.prod ?? [...REGUL_PROD];
+  if (base.length && L.length) {
+    for (const [k, v] of fm) {
+      const b = bm.get(k) ?? [];
+      if (v.length > b.length) onlyFile.push(...v.slice(b.length));
+    }
+    for (const [k, v] of bm) {
+      const f = fm.get(k) ?? [];
+      if (v.length > f.length) for (const r of v.slice(f.length)) onlyBase.push({ m: r[0], code: r[1], police: r[2], immat: r[3], produit: prod[r[4]] ?? "", prime: r[5], pa: r[6] });
+    }
+  }
+  let immatDiff = 0;
+  if (onlyFile.length && onlyBase.length) {
+    const k2 = (m: number, p: string, pr: number, pa: number): string => `${m}|${p}|${pr.toFixed(2)}|${pa.toFixed(2)}`;
+    const bb = new Map<string, number[]>();
+    onlyBase.forEach((r, i) => {
+      const k = k2(r.m, r.police, r.prime, r.pa);
+      bb.set(k, [...(bb.get(k) ?? []), i]);
+    });
+    const dropF = new Set<number>();
+    const dropB = new Set<number>();
+    onlyFile.forEach((x, i) => {
+      const list = bb.get(k2(x.m, x.police, x.prime, x.pa));
+      const taken = list?.shift();
+      if (taken !== undefined) {
+        dropB.add(taken);
+        dropF.add(i);
+        immatDiff++;
+      }
+    });
+    if (dropF.size) {
+      onlyFile = onlyFile.filter((_, i) => !dropF.has(i));
+      onlyBase = onlyBase.filter((_, i) => !dropB.has(i));
+    }
+  }
+  const codes = [...new Set([...Object.keys(fAg).map(Number), ...Object.keys(bAg).map(Number), ...hist])].filter((c) => c).sort((a, b) => a - b);
+  const names: Record<number, string> = {};
+  for (const x of L) if (x.agence) names[x.code] = x.agence;
+  const idxN = idx?.agences ?? {};
+  const agTab: AgencyRow[] = codes.map((c) => ({
+    code: c,
+    nom: names[c] ?? idxN[String(c)] ?? "",
+    par: months.map((m) => ({ m, b: bAg[c]?.[m] ?? { n: 0, pa: 0 }, f: fAg[c]?.[m] ?? { n: 0, pa: 0 } })),
+  }));
+  const manquantes: Analysis["manquantes"] = [];
+  const nouvelles: AgencyRow[] = [];
+  const m0 = months.length ? Math.min(...months) : 1;
+  for (const a of agTab) {
+    for (const p of a.par) if (hist.has(a.code) && !p.f.n && files.some((f) => f.mois === p.m)) manquantes.push({ code: a.code, nom: a.nom, m: p.m, basePa: p.b.pa, baseN: p.b.n });
+    if (m0 > 1 && a.par.some((p) => p.f.n) && !base.some((r) => r[1] === a.code && r[0] < m0)) nouvelles.push(a);
+  }
+  const polM = new Map<string, Set<number>>();
+  for (const x of valid) polM.set(x.police, (polM.get(x.police) ?? new Set<number>()).add(x.m));
+  const flottes = [...polM.entries()].filter(([, s]) => s.size > 1).map(([police, s]) => ({ police, mois: [...s].sort((a, b) => a - b) }));
+  return {
+    s: succ,
+    months,
+    files,
+    L,
+    valid,
+    annul,
+    garan,
+    regule,
+    baseM,
+    agTab,
+    manquantes,
+    nouvelles,
+    flottes,
+    horsMois: L.filter((x) => x.em !== 0 && x.em !== x.m).length,
+    illisibles: L.filter((x) => x.im.length < 4).length,
+    onlyFile,
+    onlyBase,
+    immatDiff,
+    baseN: base.length,
+  };
+}
+
+/** Total et avance d'un mois : saisie manuelle, sinon TCD du consolidé. */
+export function saisieOf(succ: string, year: number, m: number, idx: RegulIndex | null, saisies: Record<string, Saisie>): { key: string; total: number; avance: number; statut: string; edited: boolean } {
+  const mm = pad(m);
+  const key = `${succId(succ)}-${year}-${mm}`;
+  const sv = saisies[key];
+  const t = idx?.tcd?.[succ]?.[`${year}-${mm}`];
+  return { key, total: sv?.total != null ? sv.total : (t?.total ?? 0), avance: sv?.avance != null ? sv.avance : (t?.avance ?? 0), statut: t?.statut ?? "", edited: Boolean(sv) };
+}
+
+/** Ligne du tableau de régularisation. */
+export interface CalcRow {
   m: number;
-  fichier: boolean;
   total: number;
   avance: number;
   regule: number;
   ecart: number;
   tva: number;
   pa: number;
+  statut: string;
+  key: string;
+  hasFile: boolean;
 }
 
-/** Agence : production par mois dans les fichiers. */
-export interface RegulAgency {
-  code: number;
-  nom: string;
-  mois: Array<{ m: number; n: number; pa: number }>;
-}
-
-/** Résultat complet de l'analyse. */
-export interface RegulAnalysis {
-  succursale: string;
-  periode: string;
-  annee: number;
-  months: number[];
-  fichiers: Array<{ name: string; mois: number; lignes: number; hors: boolean }>;
-  nonLus: string[];
-  valid: RegulLine[];
-  annul: RegulLine[];
-  garan: RegulLine[];
-  rows: RegulMonthRow[];
-  totals: { total: number; avance: number; regule: number; ecart: number; tva: number; pa: number };
-  agences: RegulAgency[];
-  flottes: Array<{ police: string; mois: number[] }>;
-  horsMois: number;
-  illisibles: number;
-  /** Mois de la période pour lesquels aucun fichier n'a été déposé. */
-  sansFichier: number[];
-}
-
-/** Analyse les fichiers d'une succursale pour une période : valides, annulations, changements de garantie, 10 % HT + TVA. */
-export function analyseRegul(
-  succursale: string,
-  periode: string,
-  annee: number,
-  files: RegulFile[],
-  nonLus: string[],
-  inputs: Record<number, RegulMonthInput>,
-): RegulAnalysis {
-  const months = REGUL_PERIODS[periode] ?? [];
-  const used = files.filter((file) => months.includes(file.mois));
-  const lines: RegulLine[] = [];
-  for (const file of used) {
-    for (const l of file.lignes) lines.push({ ...l, m: file.mois, fichier: file.name, nprod: 1, plus: false, soldePrime: 0, soldePa: 0, autres: "" });
-  }
-  const byImmat = new Map<string, RegulLine[]>();
-  for (const l of lines) {
-    const key = norm(l.immat);
-    if (!key) continue;
-    byImmat.set(key, [...(byImmat.get(key) ?? []), l]);
-  }
-  const plusSet = new Set(lines.filter((l) => l.prime > 0).map((l) => `${basePolice(l.police)}|${norm(l.immat)}`));
-  const valid: RegulLine[] = [];
-  const annul: RegulLine[] = [];
-  const garan: RegulLine[] = [];
-  for (const l of lines) {
-    if (l.prime >= 0) {
-      valid.push(l);
-      continue;
-    }
-    const same = byImmat.get(norm(l.immat)) ?? [];
-    l.nprod = norm(l.immat) ? new Set(same.map((y) => y.produit)).size : 1;
-    (l.nprod > 1 ? garan : annul).push(l);
-  }
-  for (const l of annul) {
-    l.plus = plusSet.has(`${basePolice(l.police)}|${norm(l.immat)}`);
-    const kept = (byImmat.get(norm(l.immat)) ?? []).filter((y) => y.prime >= 0 || y.nprod <= 1);
-    l.soldePrime = round2(kept.reduce((s, y) => s + y.prime, 0));
-    l.soldePa = round2(kept.reduce((s, y) => s + y.pa, 0));
-  }
-  for (const l of garan) l.autres = [...new Set((byImmat.get(norm(l.immat)) ?? []).map((y) => y.produit))].filter((p) => p !== l.produit).join(", ");
-  const cmp = (a: RegulLine, b: RegulLine): number => a.m - b.m || a.code - b.code || a.police.localeCompare(b.police);
-  valid.sort(cmp);
-  annul.sort(cmp);
-  garan.sort(cmp);
-
-  const regule = new Map<number, number>(months.map((m) => [m, 0]));
-  for (const l of lines) regule.set(l.m, round2((regule.get(l.m) ?? 0) + l.pa));
-  const rows: RegulMonthRow[] = months.map((m) => {
-    const input = inputs[m] ?? { avance: 0 };
-    const reg = regule.get(m) ?? 0;
-    const ecart = round2(reg - input.avance);
-    const tva = round2(reg * 0.19);
-    return { m, fichier: used.some((f) => f.mois === m), total: input.total ?? reg, avance: input.avance, regule: reg, ecart, tva, pa: round2(ecart + tva) };
+/** Calcule 10 % HT + TVA 19 % mois par mois. */
+export function calc(a: Analysis, year: number, idx: RegulIndex | null, saisies: Record<string, Saisie>): { rows: CalcRow[]; tot: { total: number; avance: number; regule: number; ecart: number; tva: number; pa: number } } {
+  const rows = a.months.map((m) => {
+    const sa = saisieOf(a.s, year, m, idx, saisies);
+    const reg = a.regule[m] ?? 0;
+    const ec = reg - sa.avance;
+    const tva = reg * 0.19;
+    return { m, total: sa.total, avance: sa.avance, regule: reg, ecart: ec, tva, pa: ec + tva, statut: sa.statut, key: sa.key, hasFile: a.files.some((f) => f.mois === m) };
   });
-  const sum = (pick: (r: RegulMonthRow) => number): number => round2(rows.reduce((s, r) => s + pick(r), 0));
-  const names = new Map<number, string>();
-  for (const l of lines) if (l.agence) names.set(l.code, l.agence);
-  const agg = new Map<number, Map<number, { n: number; pa: number }>>();
-  for (const l of lines) {
-    const perMonth = agg.get(l.code) ?? new Map<number, { n: number; pa: number }>();
-    const cell = perMonth.get(l.m) ?? { n: 0, pa: 0 };
-    cell.n += 1;
-    cell.pa += l.pa;
-    perMonth.set(l.m, cell);
-    agg.set(l.code, perMonth);
+  const tot = { total: 0, avance: 0, regule: 0, ecart: 0, tva: 0, pa: 0 };
+  for (const r of rows) {
+    tot.total += r.total;
+    tot.avance += r.avance;
+    tot.regule += r.regule;
+    tot.ecart += r.ecart;
+    tot.tva += r.tva;
+    tot.pa += r.pa;
   }
-  const agences: RegulAgency[] = [...agg.keys()]
-    .filter((c) => c)
-    .sort((a, b) => a - b)
-    .map((code) => ({ code, nom: names.get(code) ?? "", mois: months.map((m) => ({ m, n: agg.get(code)?.get(m)?.n ?? 0, pa: round2(agg.get(code)?.get(m)?.pa ?? 0) })) }));
-  const polices = new Map<string, Set<number>>();
-  for (const l of valid) polices.set(l.police, (polices.get(l.police) ?? new Set<number>()).add(l.m));
-  return {
-    succursale,
-    periode,
-    annee,
-    months,
-    fichiers: files.map((f) => ({ name: f.name, mois: f.mois, lignes: f.lignes.length, hors: !months.includes(f.mois) })),
-    nonLus,
-    valid,
-    annul,
-    garan,
-    rows,
-    totals: { total: sum((r) => r.total), avance: sum((r) => r.avance), regule: sum((r) => r.regule), ecart: sum((r) => r.ecart), tva: sum((r) => r.tva), pa: sum((r) => r.pa) },
-    agences,
-    flottes: [...polices.entries()].filter(([, set]) => set.size > 1).map(([police, set]) => ({ police, mois: [...set].sort((a, b) => a - b) })),
-    horsMois: lines.filter((l) => l.em !== 0 && l.em !== l.m).length,
-    illisibles: lines.filter((l) => norm(l.immat).length < 4).length,
-    sansFichier: months.filter((m) => !used.some((f) => f.mois === m)),
-  };
+  return { rows, tot: { total: round2(tot.total), avance: round2(tot.avance), regule: round2(tot.regule), ecart: round2(tot.ecart), tva: round2(tot.tva), pa: round2(tot.pa) } };
+}
+
+/** Agences qui expliquent l'écart d'un mois (écart fichier − base, 4 plus grands). */
+export function topAgencies(a: Analysis, m: number): string {
+  return a.agTab
+    .map((ag) => {
+      const p = ag.par.find((x) => x.m === m);
+      return { c: ag.code, d: p ? round2(p.f.pa - p.b.pa) : 0 };
+    })
+    .filter((x) => Math.abs(x.d) >= 500)
+    .sort((x, y) => Math.abs(y.d) - Math.abs(x.d))
+    .slice(0, 4)
+    .map((x) => `${x.c} (${x.d > 0 ? "+" : ""}${Math.round(x.d).toLocaleString("fr-FR")})`)
+    .join(" · ");
 }

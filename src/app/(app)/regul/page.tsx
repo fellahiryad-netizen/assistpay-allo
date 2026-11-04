@@ -3,22 +3,23 @@ import { requireUser } from "@/lib/auth";
 import { can } from "@/features/access/services/access-rules";
 import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
-import { RegulWorkbench } from "@/features/regul/components/regul-workbench";
-import { todayIso } from "@/utils/dates";
+import { RegulApp } from "@/features/regul/components/regul-app";
+import { regulOverview } from "@/features/regul/services/regul-store";
 
 export const metadata: Metadata = { title: "CAAT Régul 10 %" };
 
-/** Régularisation trimestrielle 10 % HT + TVA des succursales CAAT. */
+/** Régularisation des avances 90 % HT des succursales CAAT : 10 % HT + TVA, suivi, contrôle qualité et bases de données. */
 export default async function RegulPage(): Promise<React.JSX.Element> {
   const user = await requireUser();
-  if (!can(user, "FCLI", "VIEW")) return <StateMessage kind="forbidden" title="Accès refusé" message="Vous n'avez pas accès aux factures clients." />;
+  const result = await regulOverview(user);
+  if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="CAAT Régul 10 % indisponible" message={result.error} />;
   return (
     <>
       <PageHeader
         title="CAAT Régul 10 %"
-        description="Déposez les fichiers « arrêté comptablement » d'une succursale : le calcul du 10 % HT + TVA se fait seul, avec le contrôle des annulations et des changements de garantie, puis vous récupérez le classeur."
+        description="Régularisation des avances 90 % HT des succursales CAAT : comparaison ligne à ligne avec la production, contrôle des annulations et des sinistres, calcul du 10 % HT + TVA et export du classeur."
       />
-      <RegulWorkbench defaultYear={Number(todayIso().slice(0, 4))} canExport={can(user, "A_EXPORT", "EDIT")} />
+      <RegulApp overview={result.data} isAdmin={user.isAdmin} canEdit={can(user, "FCLI", "EDIT")} canExport={can(user, "A_EXPORT", "EDIT")} />
     </>
   );
 }

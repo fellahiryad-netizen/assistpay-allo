@@ -1,4 +1,4 @@
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
 import * as XLSX from "xlsx";
 
 /** Cellule lue dans un classeur : texte, nombre, booléen, date ou vide. */
@@ -151,7 +151,8 @@ const etatsFont = (bold: boolean, size = 11): Partial<ExcelJS.Font> => ({ name: 
  * totaux en formules, mise en page A4 paysage centrée, logo en tête et pied de page Allo Assistance.
  */
 export async function writeEtatsWorkbook(spec: EtatsWorkbookSpec): Promise<Uint8Array> {
-  const wb = new ExcelJS.Workbook();
+  const ExcelRuntime = (await import("exceljs")).default;
+  const wb = new ExcelRuntime.Workbook();
   const { taux, agencies } = spec;
   const pc = `${Number((taux * 100).toFixed(2))} %`;
   const logo = spec.logo;
