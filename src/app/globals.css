@@ -486,3 +486,39 @@ html[data-skin="neo"] .skin-btn { border-color: rgba(59, 232, 255, 0.4); color: 
     background: #fff;
   }
 }
+
+/* Impression en noir et blanc : tout en noir et en gras, bordures franches, pas de fond clair ni de texte pâle. */
+@media print {
+  .fx-page,
+  .fx-page * {
+    color: #000 !important;
+    font-weight: 700 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .fx-page .fx-box,
+  .fx-page .fx-words,
+  .fx-page .fx-meta td:first-child,
+  .fx-page .fx-t th,
+  .fx-page .fx-t tr.sum td,
+  .fx-page .fx-kv th,
+  .fx-page .fx-tot tr.ttc td {
+    background: #fff !important;
+  }
+  .fx-page .fx-t th,
+  .fx-page .fx-t td,
+  .fx-page .fx-meta td,
+  .fx-page .fx-kv td,
+  .fx-page .fx-kv th,
+  .fx-page .fx-tot td,
+  .fx-page .fx-box {
+    border: 1.5px solid #000 !important;
+  }
+  .fx-page .fx-top { border-bottom-color: #000 !important; }
+  .fx-page .fx-words { border-left: 4px solid #000 !important; }
+  .fx-page .fx-legal { border-top-color: #000 !important; }
+  .fx-page .fx-t tr.sum td,
+  .fx-page .fx-tot tr.ttc td { border-width: 2.5px !important; }
+  .fx-page .fx-t tr.info td { font-style: normal !important; }
+  .fx-page .fx-t th { text-decoration: underline; }
+}
