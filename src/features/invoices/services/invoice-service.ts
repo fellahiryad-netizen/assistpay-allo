@@ -156,7 +156,7 @@ export async function getInvoiceFilterOptions(actor: AuthUser): Promise<ActionRe
   try {
     const [years, categories, branchRows] = await Promise.all([
       db.invoice.findMany({ where: { ...visibility, annee: { not: null } }, distinct: ["annee"], select: { annee: true }, orderBy: { annee: "desc" } }),
-      db.invoice.findMany({ where: { ...visibility, categorie: { not: "" } }, distinct: ["categorie"], select: { categorie: true }, orderBy: { categorie: "asc" } }),
+      db.invoice.findMany({ where: { ...visibility, categorie: { not: "" }, origine: { not: "rh" } }, distinct: ["categorie"], select: { categorie: true }, orderBy: { categorie: "asc" } }),
       db.invoice.findMany({ where: { ...visibility, categorie: { in: ["CAAT", "CAAR"] } }, select: { categorie: true, succursale: true, tiers: true, libelle: true } }),
     ]);
     return ok({
