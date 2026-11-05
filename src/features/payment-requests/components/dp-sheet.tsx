@@ -12,7 +12,8 @@ function Box({ checked }: Readonly<{ checked: boolean }>): React.JSX.Element {
 /** Fiche « Demande de paiement » (modèle EURL ALLO ASSISTANCE), prête à imprimer. */
 export function DpSheet({ data }: Readonly<{ data: DpSheetData }>): React.JSX.Element {
   const pieces = [...data.pieces.slice(0, 12)];
-  while (pieces.length < 12) pieces.push("");
+  // Pas de lignes pointillées vides : seules les pièces réelles sont imprimées (une ligne minimum).
+  if (pieces.length === 0) pieces.push("");
   return (
     <div className="dp-sheet">
       <div style={{ display: "flex", alignItems: "center", gap: "6mm" }}>
@@ -52,7 +53,6 @@ export function DpSheet({ data }: Readonly<{ data: DpSheetData }>): React.JSX.El
       <p className="dp-line" style={{ fontWeight: 700 }}>
         {data.nature}
       </p>
-      <p className="dp-line" />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", marginTop: "5mm", fontWeight: 700 }}>
         <span>Type de règlement :</span>
         <span>Type de prestataire :</span>
@@ -79,7 +79,7 @@ export function DpSheet({ data }: Readonly<{ data: DpSheetData }>): React.JSX.El
           {piece}
         </p>
       ))}
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: "10mm", fontWeight: 700 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: "8mm", fontWeight: 700 }}>
         <span>VISA ORDONNATEUR</span>
         <span>VISA DFC</span>
         <span>VISA DG</span>

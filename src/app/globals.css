@@ -126,8 +126,27 @@
   .no-print {
     display: none !important;
   }
+  /* Une demande = une seule page A4 : visas compris, sans page blanche à la suite. */
   .dp-sheet {
+    box-sizing: border-box;
+    width: 194mm;
+    height: 280mm;
+    min-height: 0;
+    padding: 4mm 6mm;
+    overflow: hidden;
+    break-inside: avoid;
     page-break-after: always;
+    font-size: 10.5pt;
+  }
+  .dp-sheet:last-child {
+    page-break-after: auto;
+  }
+  .dp-sheet .dp-row {
+    margin-top: 3mm;
+  }
+  .dp-sheet .dp-line {
+    min-height: 5mm;
+    margin: 1mm 0;
   }
 }
 
