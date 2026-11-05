@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { Printer } from "lucide-react";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { markInvoicePaidAction } from "@/app/actions/invoice-actions";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SensBadge, StatusBadge } from "@/features/invoices/components/invoice-badges";
+import { InvoiceBulkBar } from "@/features/invoices/components/invoice-bulk-bar";
 import { MarkPaidDialog } from "@/features/invoices/components/mark-paid-dialog";
 import { useOptimisticInvoices } from "@/features/invoices/hooks/use-optimistic-invoices";
 import type { MarkPaidInput } from "@/features/invoices/schemas";
@@ -46,6 +47,29 @@ export interface InvoiceTableProps {
 export function InvoiceTable({ items, canEdit, today, showSens, printable = {} }: Readonly<InvoiceTableProps>): React.JSX.Element {
   const [optimisticItems, applyPatch] = useOptimisticInvoices(items);
   const [, startTransition] = useTransition();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const selectable = optimisticItems.filter((invoice) => canEdit[invoice.sens]);
+  const chosen = selectable.filter((invoice) => selected.has(invoice.id));
+  const allChecked = selectable.length > 0 && chosen.length === selectable.length;
+
+  function toggle(id: string): void {
+    setSelected((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll(): void {
+    setSelected(allChecked ? new Set() : new Set(selectable.map((invoice) => invoice.id)));
+  }
+
+  const check = (invoice: InvoiceDTO): React.JSX.Element | null =>
+    canEdit[invoice.sens] ? (
+      <input type="checkbox" className="size-4 cursor-pointer accent-primary" checked={selected.has(invoice.id)} onChange={() => toggle(invoice.id)} aria-label={`Sélectionner ${invoice.numero || invoice.tiers}`} />
+    ) : null;
 
   function confirmPaid(input: MarkPaidInput): Promise<string | null> {
     return new Promise((resolve) => {
@@ -76,11 +100,25 @@ export function InvoiceTable({ items, canEdit, today, showSens, printable = {} }
 
   return (
     <>
+      {selectable.length > 0 ? (
+        <label className="mb-2 flex w-fit cursor-pointer items-center gap-2 text-sm md:hidden">
+          <input type="checkbox" className="size-4 accent-primary" checked={allChecked} onChange={toggleAll} />
+          Tout sélectionner
+        </label>
+      ) : null}
+      <InvoiceBulkBar
+        ids={chosen.map((invoice) => invoice.id)}
+        payableIds={chosen.filter((invoice) => invoice.status === "EN_ATTENTE").map((invoice) => invoice.id)}
+        total={chosen.reduce((sum, invoice) => sum + invoice.montant, 0)}
+        today={today}
+        onClear={() => setSelected(new Set())}
+      />
       <ul className="flex flex-col gap-2 md:hidden">
         {optimisticItems.map((invoice) => (
           <li key={invoice.id} className="rounded-lg border bg-card p-3">
             <div className="flex items-start justify-between gap-2">
-              <Link href={`/factures/${invoice.id}`} className="min-w-0 font-medium hover:underline">
+              {check(invoice)}
+              <Link href={`/factures/${invoice.id}`} className="min-w-0 flex-1 font-medium hover:underline">
                 <span className="block truncate">{headline(invoice)}</span>
                 <span className="block truncate text-xs font-normal text-muted-foreground">
                   {invoice.numero || "sans numéro"} · {invoice.categorie || "sans catégorie"}
@@ -103,6 +141,9 @@ export function InvoiceTable({ items, canEdit, today, showSens, printable = {} }
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8">
+                {selectable.length > 0 ? <input type="checkbox" className="size-4 cursor-pointer accent-primary" checked={allChecked} onChange={toggleAll} aria-label="Tout sélectionner" /> : null}
+              </TableHead>
               <TableHead>Dépôt facture</TableHead>
               {showSens ? <TableHead>Sens</TableHead> : null}
               <TableHead>Tiers et libellé</TableHead>
@@ -121,7 +162,8 @@ export function InvoiceTable({ items, canEdit, today, showSens, printable = {} }
             {optimisticItems.map((invoice) => {
               const waiting = invoice.status === "EN_ATTENTE" && invoice.dateFacture ? daysBetween(invoice.dateFacture, today) : null;
               return (
-                <TableRow key={invoice.id}>
+                <TableRow key={invoice.id} data-state={selected.has(invoice.id) ? "selected" : undefined}>
+                  <TableCell>{check(invoice)}</TableCell>
                   <TableCell className="whitespace-nowrap tabular-nums">
                     {formatDate(invoice.dateFacture)}
                     {waiting !== null && waiting >= 0 ? (

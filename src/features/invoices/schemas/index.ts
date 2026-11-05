@@ -73,3 +73,20 @@ export type MarkPaidInput = z.infer<typeof markPaidSchema>;
 /** Changement d'état simple (remise en attente, annulation). */
 export const setStatusSchema = z.object({ id: invoiceIdSchema, status: z.enum(["EN_ATTENTE", "ANNULE"]) });
 export type SetStatusInput = z.infer<typeof setStatusSchema>;
+
+/** Règlement groupé de plusieurs factures. */
+export const bulkPaidSchema = z.object({
+  ids: z.array(invoiceIdSchema).min(1, "Sélectionnez au moins une facture.").max(200, "200 factures au maximum à la fois."),
+  date: isoDate,
+  mode: z.enum(PAYMENT_MODE_KEYS),
+  reference: text(80),
+  banque: text(80),
+});
+export type BulkPaidInput = z.infer<typeof bulkPaidSchema>;
+
+/** Suppression groupée de plusieurs factures. */
+export const bulkDeleteSchema = z.object({
+  ids: z.array(invoiceIdSchema).min(1, "Sélectionnez au moins une facture.").max(200, "200 factures au maximum à la fois."),
+  motif: z.string().trim().max(300).default(""),
+});
+export type BulkDeleteInput = z.input<typeof bulkDeleteSchema>;

@@ -7,6 +7,10 @@ import {
   invoiceIdSchema,
   invoiceInputSchema,
   markPaidSchema,
+  bulkDeleteSchema,
+  bulkPaidSchema,
+  type BulkDeleteInput,
+  type BulkPaidInput,
   setStatusSchema,
   type MarkPaidInput,
   type SetStatusInput,
@@ -18,10 +22,11 @@ import {
   setInvoiceStatus,
   updateInvoice,
 } from "@/features/invoices/services/invoice-service";
+import { requestDeletion } from "@/features/invoices/services/deletion-service";
 import { ensureCaatAdvances } from "@/features/invoices/services/caat-advances";
 import { applyInvoiceImport, previewInvoiceImport, type InvoiceImportPlan } from "@/features/invoices/services/invoice-import";
 import type { InvoiceDTO } from "@/features/invoices/types";
-import type { ActionResult } from "@/types";
+import { ok, type ActionResult } from "@/types";
 
 function refresh(id?: string): void {
   revalidatePath("/factures");
@@ -95,6 +100,45 @@ const advancesSchema = z.object({ period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2
 /** Création des neuf avances CAAT d'un mois (« AAAA-MM »), sans doublon. */
 export async function createCaatAdvancesAction(input: unknown): Promise<ActionResult<{ created: number; existing: number }>> {
   const result = await runAction(advancesSchema, input, (actor, values) => ensureCaatAdvances(actor, values.period));
+  if (result.success) refresh();
+  return result;
+}
+
+/** Bilan d'une action de masse : nombre de réussites et motifs d'échec par facture. */
+export interface BulkReport {
+  done: number;
+  /** Suppressions envoyées pour validation (utilisateur non administrateur). */
+  pending: number;
+  failures: string[];
+}
+
+/** Règle plusieurs factures en une fois (même date, mode, référence et banque). */
+export async function markInvoicesPaidBulkAction(input: BulkPaidInput): Promise<ActionResult<BulkReport>> {
+  const result = await runAction(bulkPaidSchema, input, async (actor, value): Promise<ActionResult<BulkReport>> => {
+    const report: BulkReport = { done: 0, pending: 0, failures: [] };
+    for (const id of value.ids) {
+      const one = await markInvoicePaid(actor, { id, date: value.date, mode: value.mode, reference: value.reference, banque: value.banque });
+      if (one.success) report.done += 1;
+      else report.failures.push(`${one.error}`);
+    }
+    return ok(report);
+  });
+  if (result.success) refresh();
+  return result;
+}
+
+/** Supprime plusieurs factures (demande de validation pour les non-administrateurs). */
+export async function deleteInvoicesBulkAction(input: BulkDeleteInput): Promise<ActionResult<BulkReport>> {
+  const result = await runAction(bulkDeleteSchema, input, async (actor, value): Promise<ActionResult<BulkReport>> => {
+    const report: BulkReport = { done: 0, pending: 0, failures: [] };
+    for (const id of value.ids) {
+      const one = await requestDeletion(actor, { kind: "facture", id, motif: value.motif });
+      if (!one.success) report.failures.push(one.error);
+      else if (one.data.done) report.done += 1;
+      else report.pending += 1;
+    }
+    return ok(report);
+  });
   if (result.success) refresh();
   return result;
 }
