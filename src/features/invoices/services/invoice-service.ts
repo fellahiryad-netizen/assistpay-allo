@@ -1,7 +1,7 @@
 import { branchLabel } from "@/features/invoices/services/branch";
 import { recordPayrollInHr } from "@/features/hr/services/hr-service";
-import { fpSyncAmount } from "@/features/provider-invoices/services/fp-store";
-import { autoRequestForInvoice, syncRequestsAmount } from "@/features/payment-requests/services/payment-request-service";
+import { fpInvoiceDeleted, fpSyncAmount } from "@/features/provider-invoices/services/fp-store";
+import { autoRequestForInvoice, detachDeletedInvoice, syncRequestsAmount } from "@/features/payment-requests/services/payment-request-service";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { can, requireAccess } from "@/features/access/services/access-rules";
@@ -329,6 +329,11 @@ export async function deleteInvoice(actor: AuthUser, id: string): Promise<Action
     const dto = toInvoiceDTO(current);
     await db.invoice.delete({ where: { id } });
     await logAction(actor, "Suppression facture", describe(dto));
+    // La demande de paiement et la demande de facture prestataire liées suivent la suppression.
+    if (current.sens === "DEBIT") {
+      await detachDeletedInvoice(actor, current);
+      await fpInvoiceDeleted(actor, current.legacyId);
+    }
     return ok({ id });
   } catch (error) {
     console.error("[invoices] suppression impossible :", error);

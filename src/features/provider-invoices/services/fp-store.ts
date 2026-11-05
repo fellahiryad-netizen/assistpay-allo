@@ -234,3 +234,16 @@ export async function fpSyncAmount(actor: AuthUser, invoiceLegacyId: string, mon
     console.error("[factures-prestataires] synchronisation du montant impossible :", error);
   }
 }
+
+/** La facture fournisseur liée a été supprimée : la demande de facture prestataire retourne à « À établir ». */
+export async function fpInvoiceDeleted(actor: AuthUser, invoiceLegacyId: string): Promise<void> {
+  try {
+    const found = (await readReqs()).find((req) => req.invoiceLegacyId === invoiceLegacyId);
+    if (!found) return;
+    const { invoiceLegacyId: _removed, ...rest } = found;
+    await writeJson(`${REQ}${found.id}`, { ...rest, st: "A_ETABLIR", hist: [...found.hist, { st: "A_ETABLIR", le: new Date().toISOString(), par: actor.name }] });
+    await logAction(actor, "Facture prestataire", `${found.num} : facture supprimée, retour à « À établir »`);
+  } catch (error) {
+    console.error("[factures-prestataires] retour à établir impossible :", error);
+  }
+}

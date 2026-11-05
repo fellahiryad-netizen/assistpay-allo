@@ -296,6 +296,38 @@ export async function syncRequestsAmount(actor: AuthUser, invoice: { legacyId: s
   }
 }
 
+/**
+ * Appelée quand une facture fournisseur est supprimée : sa demande de paiement disparaît avec elle si elle est encore
+ * « à valider » et sans virement envoyé. Si la demande regroupe d'autres factures, la facture en est seulement retirée
+ * et le montant recalculé. Une demande déjà émise ou virée est conservée (à traiter à la main).
+ */
+export async function detachDeletedInvoice(actor: AuthUser, invoice: { legacyId: string; id: string }): Promise<string[]> {
+  const notes: string[] = [];
+  try {
+    const requests = await db.paymentRequest.findMany({ where: { invoiceIds: { has: invoice.legacyId } } });
+    for (const request of requests) {
+      const others = request.invoiceIds.filter((id) => id !== invoice.legacyId);
+      const locked = request.status !== "a_valider" || transferSent(request.extra) !== null;
+      if (others.length === 0 && !locked) {
+        await db.paymentRequest.delete({ where: { id: request.id } });
+        await logAction(actor, "Suppression demande de paiement", `${request.ref} – ${request.beneficiaire} (facture supprimée)`);
+        notes.push(`${request.ref} supprimée`);
+      } else if (others.length > 0 && !locked) {
+        const rows = await db.invoice.findMany({ where: { legacyId: { in: others } } });
+        const total = round2(rows.map(toPayable).reduce((sum, item) => sum + (remaining(item) || item.montant), 0));
+        await db.paymentRequest.update({ where: { id: request.id }, data: { invoiceIds: others, montant: total } });
+        await logAction(actor, "Demande de paiement mise à jour", `${request.ref} : facture retirée, nouveau montant ${formatDA(total)}`);
+        notes.push(`${request.ref} mise à jour`);
+      } else {
+        notes.push(`${request.ref} conservée (déjà émise ou virée)`);
+      }
+    }
+  } catch (error) {
+    console.error("[dp] nettoyage après suppression impossible :", error);
+  }
+  return notes;
+}
+
 async function buildFromInvoices(actor: AuthUser, input: DpCreateInput): Promise<ActionResult<{ id: string; ref: string }>> {
   try {
     const rows = await db.invoice.findMany({ where: { id: { in: input.invoiceIds } } });
