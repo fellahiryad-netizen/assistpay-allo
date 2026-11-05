@@ -48,7 +48,7 @@ export async function computeSheetAction(input: SheetInput): Promise<ActionResul
 }
 
 /** Génération de l'état des virements. */
-export async function generateSheetAction(input: SheetInput): Promise<ActionResult<{ batchId: string; name: string }>> {
+export async function generateSheetAction(input: SheetInput): Promise<ActionResult<{ batchId: string; name: string; batches: Array<{ id: string; name: string }> }>> {
   const result = await runAction(sheetSchema, input, generateSheet);
   if (result.success) refresh();
   return result;

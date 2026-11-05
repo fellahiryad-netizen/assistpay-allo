@@ -91,11 +91,23 @@ export function SheetBuilder({ requests, others, scoped, canEdit }: Readonly<She
         setError(response.error);
         return;
       }
-      window.location.href = `/api/virements/${response.data.batchId}/fichier`;
+      // Un fichier par part : les téléchargements s'enchaînent, la page du premier fichier s'ouvre ensuite.
+      response.data.batches.forEach((entry, index) => {
+        setTimeout(() => {
+          const link = document.createElement("a");
+          link.href = `/api/virements/${entry.id}/fichier`;
+          link.download = `${entry.name}.xlsx`;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+        }, index * 900);
+      });
       router.push(`/virements/${response.data.batchId}?genere=1`);
     });
   }
 
+  const split = result?.lines.filter((line) => line.parts.length > 1) ?? [];
+  const fileCount = result?.lines.reduce((max, line) => Math.max(max, line.parts.length), 1) ?? 1;
   const countFor = (code: TransferProduct): number => requests.filter((request) => request.product === code && selected.has(request.id)).length;
 
   return (
@@ -120,7 +132,7 @@ export function SheetBuilder({ requests, others, scoped, canEdit }: Readonly<She
       <Notice tone="info">
         {scoped
           ? `Fiche limitée aux ${requests.length} demande(s) choisie(s)${others ? ` · ${others} autre(s) non concernée(s) (chèque, produit Autre ou Tiers payant)` : ""}.`
-          : "Cochez les demandes à virer. Un fichier par produit, au format de la banque : compte AGB d'ALLO en débit, puis un crédit par prestataire ; jamais plus de 1 000 000 DA par virement."}
+          : "Cochez les demandes à virer. Un fichier par produit, au format de la banque : compte AGB d'ALLO en débit, puis un crédit par prestataire ; jamais plus de 1 000 000 DA par virement ; au-delà, le montant est réparti sur plusieurs fichiers."}
       </Notice>
 
       <Card>
@@ -180,6 +192,12 @@ export function SheetBuilder({ requests, others, scoped, canEdit }: Readonly<She
         <CardContent className="flex flex-col gap-3">
           {result?.problems ? <Notice tone="warning">À signaler avant l&apos;envoi : {result.problems} ligne(s) incomplète(s), en rouge ci-dessous.</Notice> : null}
           {error ? <Notice tone="error">{error}</Notice> : null}
+          {fileCount > 1 ? (
+            <Notice tone="info">
+              {split.length} prestataire(s) dépassent 1 000 000 DA : {split.map((line) => line.beneficiaire).join(", ")}. La banque refuse deux virements du même bénéficiaire dans un même fichier, donc leur montant est réparti sur {fileCount} fichiers : la
+              part n° 1 va dans le fichier 1, la part n° 2 dans le fichier 2. {fileCount} fichiers seront générés ; les autres prestataires sont dans le fichier 1.
+            </Notice>
+          ) : null}
           {result && result.lines.length ? (
             <div className="overflow-x-auto rounded-md border">
               <table className="w-full min-w-max text-sm">
@@ -191,7 +209,7 @@ export function SheetBuilder({ requests, others, scoped, canEdit }: Readonly<She
                     <th className="px-2 py-2 text-left">Prénom</th>
                     <th className="px-2 py-2 text-left">Adresse</th>
                     <th className="px-2 py-2 text-right">Montant</th>
-                    <th className="px-2 py-2 text-left">Virements</th>
+                    <th className="px-2 py-2 text-left">Fichier</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -249,7 +267,19 @@ export function SheetBuilder({ requests, others, scoped, canEdit }: Readonly<She
                         </td>
                       ))}
                       <td className="whitespace-nowrap px-2 py-2 text-right font-medium tabular-nums">{formatDA(line.montant)}</td>
-                      <td className="px-2 py-2 text-xs">{line.parts.length > 1 ? `${line.parts.length} × ${line.parts.map((part) => formatDA(part)).join(" + ")}` : "1"}</td>
+                      <td className="px-2 py-2 text-xs">
+                        {line.parts.length > 1 ? (
+                          <ul className="font-medium text-warning">
+                            {line.parts.map((part, index) => (
+                              <li key={index}>
+                                Fichier {index + 1} : {formatDA(part)}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          "Fichier 1"
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -262,7 +292,7 @@ export function SheetBuilder({ requests, others, scoped, canEdit }: Readonly<She
             <div className="flex justify-end">
               <Button type="button" onClick={generate} disabled={pending || !result?.lines.length || Boolean(result?.problems)}>
                 <Download />
-                Générer {TRANSFER_PRODUCTS[product].file} (Excel banque)
+                {fileCount > 1 ? `Générer les ${fileCount} fichiers ${TRANSFER_PRODUCTS[product].file} (Excel banque)` : `Générer ${TRANSFER_PRODUCTS[product].file} (Excel banque)`}
               </Button>
             </div>
           ) : null}

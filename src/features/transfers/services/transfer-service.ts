@@ -440,44 +440,61 @@ async function nextFileName(product: TransferProduct): Promise<string> {
  * Génère l'état des virements d'un produit : enregistre l'envoi « en attente » (contrôlé),
  * complète le référentiel RIB (nouveaux comptes, changements signalés) et marque les demandes « virement préparé ».
  */
-export async function generateSheet(actor: AuthUser, input: SheetInput): Promise<ActionResult<{ batchId: string; name: string }>> {
+export async function generateSheet(actor: AuthUser, input: SheetInput): Promise<ActionResult<{ batchId: string; name: string; batches: Array<{ id: string; name: string }> }>> {
   const guard = requireAccess(actor, "VIR", "EDIT");
   if (!guard.success) return guard;
   const computed = await computeSheet(actor, input);
   if (!computed.success) return computed;
-  const { lines, total } = computed.data;
+  const { lines } = computed.data;
   if (lines.length === 0) return fail("Aucun virement à générer pour ce produit.", "VALIDATION");
   if (computed.data.problems) return fail("Complétez ou confirmez les lignes signalées (RIB, clé, adresse, nom) avant de générer le fichier.", "VALIDATION");
   try {
-    const name = await nextFileName(input.product);
-    const stored: TransferLine[] = [{ row: 2, banque: DONOR.banque, agence: DONOR.agence, compte: DONOR.compte, cle: DONOR.cle, nom: DONOR.nom, prenom: DONOR.prenom, adresse: DONOR.adresse, montant: total, sens: "D" }];
-    for (const line of lines) {
-      const parts = ribParts(line.rib);
-      if (!parts) continue;
-      for (const amount of line.parts) {
-        stored.push({ row: stored.length + 2, banque: parts.banque, agence: parts.agence, compte: parts.compte, cle: parts.cle, nom: line.nom, prenom: line.prenom, adresse: line.adresse, montant: amount, sens: "C" });
-      }
-    }
+    const firstName = await nextFileName(input.product);
+    const prefix = TRANSFER_PRODUCTS[input.product].file;
+    const startNumber = Number(firstName.slice(prefix.length + 1));
+    // La banque refuse deux virements au même bénéficiaire dans un fichier : la part n° k de chaque prestataire va dans le fichier n° k.
+    const fileCount = Math.max(...lines.map((line) => line.parts.length));
     const today = todayIso();
     const knowledge = await loadKnowledge();
-    const analysis = analyseTransfer(stored, knowledge, { type: input.product, mois: MONTHS_FR[Number(today.slice(5, 7)) - 1] ?? "", fileName: `${name}.xlsx`, selfId: null });
-    const batch = await db.transferBatch.create({
-      data: {
-        legacyId: `env-${crypto.randomUUID()}`,
-        ref: name,
-        fichier: `${name}.xlsx`,
-        type: input.product,
-        annee: Number(today.slice(0, 4)),
-        mois: MONTHS_FR[Number(today.slice(5, 7)) - 1] ?? "",
-        debit: total,
-        credit: total,
-        nb: stored.length - 1,
-        status: "attente",
-        verdict: analysis.verdict,
-        lines: stored.map(storeTransferLine) as Prisma.InputJsonValue,
-        extra: { src: "crm", cree: actor.name, demandes: lines.flatMap((line) => line.requestIds) },
-      },
-    });
+    const created: Array<{ id: string; name: string }> = [];
+    for (let k = 0; k < fileCount; k++) {
+      const name = `${prefix}_${startNumber + k}`;
+      const credits: TransferLine[] = [];
+      for (const line of lines) {
+        const amount = line.parts[k];
+        const parts = ribParts(line.rib);
+        if (amount === undefined || !parts) continue;
+        credits.push({ row: 0, banque: parts.banque, agence: parts.agence, compte: parts.compte, cle: parts.cle, nom: line.nom, prenom: line.prenom, adresse: line.adresse, montant: amount, sens: "C" });
+      }
+      const fileTotal = round2(credits.reduce((sum, credit) => sum + credit.montant, 0));
+      const stored: TransferLine[] = [
+        { row: 2, banque: DONOR.banque, agence: DONOR.agence, compte: DONOR.compte, cle: DONOR.cle, nom: DONOR.nom, prenom: DONOR.prenom, adresse: DONOR.adresse, montant: fileTotal, sens: "D" },
+        ...credits.map((credit, index) => ({ ...credit, row: index + 3 })),
+      ];
+      const analysis = analyseTransfer(stored, knowledge, { type: input.product, mois: MONTHS_FR[Number(today.slice(5, 7)) - 1] ?? "", fileName: `${name}.xlsx`, selfId: null });
+      const batch = await db.transferBatch.create({
+        data: {
+          legacyId: `env-${crypto.randomUUID()}`,
+          ref: name,
+          fichier: `${name}.xlsx`,
+          type: input.product,
+          annee: Number(today.slice(0, 4)),
+          mois: MONTHS_FR[Number(today.slice(5, 7)) - 1] ?? "",
+          debit: fileTotal,
+          credit: fileTotal,
+          nb: credits.length,
+          status: "attente",
+          verdict: analysis.verdict,
+          lines: stored.map(storeTransferLine) as Prisma.InputJsonValue,
+          extra: { src: "crm", cree: actor.name, demandes: k === 0 ? lines.flatMap((line) => line.requestIds) : [], ...(fileCount > 1 ? { partie: `${k + 1}/${fileCount}` } : {}) },
+        },
+      });
+      created.push({ id: batch.id, name });
+    }
+    const name = created.map((entry) => entry.name).join(", ");
+    const total = computed.data.total;
+    const first = created[0];
+    if (!first) return fail("L'état des virements n'a pas pu être généré.", "DATABASE");
     for (const line of lines) {
       if (line.ribSource !== "saisi") continue;
       const key = accountKey(line.rib);
@@ -524,8 +541,8 @@ export async function generateSheet(actor: AuthUser, input: SheetInput): Promise
         await db.paymentRequest.update({ where: { id: requestId }, data: { extra: { ...obj(request.extra), virEnvoi: { ref: name, le: new Date().toISOString(), par: actor.name } } as Prisma.InputJsonObject } });
       }
     }
-    await logAction(actor, "État des virements généré", `${name} – ${TRANSFER_PRODUCTS[input.product].label} – ${stored.length - 1} virement(s) – ${formatDA(total)}`);
-    return ok({ batchId: batch.id, name });
+    await logAction(actor, "État des virements généré", `${name} – ${TRANSFER_PRODUCTS[input.product].label} – ${computed.data.transfers} virement(s) – ${formatDA(total)}`);
+    return ok({ batchId: first.id, name, batches: created });
   } catch (error) {
     console.error("[virements] génération :", error);
     return fail("L'état des virements n'a pas pu être généré.", "DATABASE");
