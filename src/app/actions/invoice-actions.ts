@@ -32,6 +32,7 @@ import { ok, type ActionResult } from "@/types";
 function refresh(id?: string): void {
   revalidatePath("/factures");
   revalidatePath("/demandes");
+  revalidatePath("/rh");
   revalidatePath("/factures-prestataires");
   revalidatePath("/");
   if (id) revalidatePath(`/factures/${id}`);

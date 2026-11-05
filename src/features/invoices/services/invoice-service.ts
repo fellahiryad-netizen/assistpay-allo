@@ -1,4 +1,5 @@
 import { branchLabel } from "@/features/invoices/services/branch";
+import { recordPayrollInHr } from "@/features/hr/services/hr-service";
 import { fpSyncAmount } from "@/features/provider-invoices/services/fp-store";
 import { autoRequestForInvoice, syncRequestsAmount } from "@/features/payment-requests/services/payment-request-service";
 import { db } from "@/lib/db";
@@ -115,10 +116,12 @@ export async function printableIdFor(actor: AuthUser, invoice: { id: string; leg
  * La recherche libre porte sur le tiers, le numéro, le libellé et la catégorie.
  */
 export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promise<ActionResult<InvoiceListResult>> {
-  const where = await buildInvoiceWhereWithBranch(actor, query);
+  let where = await buildInvoiceWhereWithBranch(actor, query);
   if (!where) return fail(NO_ACCESS, "FORBIDDEN");
 
   try {
+    // Les totaux mensuels « Charges de personnel » appartiennent à l'onglet RH : jamais dans la liste.
+    where = { AND: [where, { origine: { not: "rh" } }] };
     const [total, sum, rows] = await Promise.all([
       db.invoice.count({ where }),
       db.invoice.aggregate({ where, _sum: { montant: true } }),
@@ -209,7 +212,14 @@ export async function createInvoice(actor: AuthUser, input: InvoiceInput): Promi
   const guard = requireAccess(actor, moduleForSens(input.sens), "EDIT");
   if (!guard.success) return guard;
   const data = toWriteData(input);
-  if (data.payroll) return fail("Les salaires, CNAS, G50 et IRG se saisissent dans l'onglet RH, pas dans les factures.", "VALIDATION");
+  if (data.payroll) {
+    // Salaires, CNAS, G50, IRG, frais de mission : enregistrés directement dans l'onglet RH.
+    const hr = await recordPayrollInHr(actor, { ...input });
+    if (!hr.success) return hr;
+    const aggregate = await db.invoice.findFirst({ where: { origine: "rh" }, orderBy: { updatedAt: "desc" } });
+    if (!aggregate) return fail("L'écriture RH est enregistrée, mais son total n'a pas pu être relu.", "DATABASE");
+    return ok(toInvoiceDTO(aggregate));
+  }
   try {
     if (input.numero) {
       const duplicate = await db.invoice.findFirst({

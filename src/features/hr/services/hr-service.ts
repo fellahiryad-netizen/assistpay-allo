@@ -192,7 +192,7 @@ export async function exportHr(actor: AuthUser, query: HrQuery): Promise<ActionR
 }
 
 /** Nature RH déduite du texte d'une facture de paie. */
-function hrNatureOf(text: string): string {
+export function hrNatureOf(text: string): string {
   const t = ` ${normalizeText(text).toUpperCase()} `;
   if (/CASNOS/.test(t)) return "CASNOS";
   if (/CNAS/.test(t)) return "CNAS";
@@ -266,4 +266,27 @@ export async function transferInvoicesToHr(actor: AuthUser, ids: string[]): Prom
     console.error("[rh] transfert impossible :", error);
     return fail("Le transfert vers RH n'a pas pu être terminé.", "DATABASE");
   }
+}
+
+/**
+ * Une facture saisie avec une nature de paie (salaire, CNAS, G50, IRG, frais de mission…) devient directement
+ * une écriture de l'onglet RH. Nécessite l'accès RH en modification.
+ */
+export async function recordPayrollInHr(
+  actor: AuthUser,
+  input: { sens: "CREDIT" | "DEBIT"; categorie: string; tiers: string; libelle: string; nature: string; montant: number; dateFacture: string | null; dateOperation: string | null; mode: string | null; cheque: string; banque: string },
+): Promise<ActionResult<{ id: string }>> {
+  const date = input.dateOperation ?? input.dateFacture ?? todayIso();
+  return saveHrEntry(actor, {
+    nature: hrNatureOf(`${input.categorie} ${input.tiers} ${input.libelle} ${input.nature}`) as HrEntryInput["nature"],
+    sens: input.sens === "CREDIT" ? "RETOUR" : "PAIEMENT",
+    beneficiaire: input.tiers || input.categorie,
+    mois: date.slice(0, 7),
+    date,
+    montant: input.montant,
+    mode: input.mode === "CHEQUE" ? "CHEQUE" : input.mode === "VIREMENT" ? "VIRMT" : "",
+    cheque: input.mode === "CHEQUE" ? input.cheque : "",
+    banque: input.banque,
+    libelle: input.libelle,
+  });
 }

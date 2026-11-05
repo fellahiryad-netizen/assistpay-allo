@@ -112,7 +112,7 @@ export function useInvoiceForm(initial: InvoiceFormValues, invoiceId: string | n
         setErrors({ form: result.error });
         return;
       }
-      router.push(`/factures/${result.data.id}`);
+      router.push(result.data.origine === "rh" ? "/rh" : `/factures/${result.data.id}`);
       router.refresh();
     });
   }
