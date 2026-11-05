@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { autoRequestForInvoice } from "@/features/payment-requests/services/payment-request-service";
 import { requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { logAction } from "@/features/journal/services/journal-service";
@@ -141,7 +142,7 @@ export async function fpMove(actor: AuthUser, input: FpMoveInput): Promise<Actio
       if (existing) next.invoiceLegacyId = existing.legacyId;
       else {
         const legacyId = `fp-${req.id}`;
-        await db.invoice.create({
+        const created = await db.invoice.create({
           data: {
             legacyId,
             sens: "DEBIT",
@@ -162,6 +163,7 @@ export async function fpMove(actor: AuthUser, input: FpMoveInput): Promise<Actio
           },
         });
         next.invoiceLegacyId = legacyId;
+        await autoRequestForInvoice(actor, created.id);
       }
     }
     if (to === "A_PAYER") next.recuLe = today;

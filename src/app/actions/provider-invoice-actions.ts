@@ -10,6 +10,7 @@ import type { ActionResult } from "@/types";
 const any = z.record(z.string(), z.unknown());
 function refresh(): void {
   revalidatePath("/factures-prestataires");
+  revalidatePath("/demandes");
   revalidatePath("/", "layout");
 }
 

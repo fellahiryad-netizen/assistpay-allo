@@ -1,4 +1,5 @@
 import { branchLabel } from "@/features/invoices/services/branch";
+import { autoRequestForInvoice } from "@/features/payment-requests/services/payment-request-service";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { can, requireAccess } from "@/features/access/services/access-rules";
@@ -227,6 +228,8 @@ export async function createInvoice(actor: AuthUser, input: InvoiceInput): Promi
     });
     const dto = toInvoiceDTO(row);
     await logAction(actor, "Ajout facture", describe(dto));
+    // Une facture fournisseur génère tout de suite sa demande de paiement.
+    await autoRequestForInvoice(actor, row.id);
     return ok(dto);
   } catch (error) {
     console.error("[invoices] création impossible :", error);

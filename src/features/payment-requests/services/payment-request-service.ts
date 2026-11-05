@@ -250,6 +250,29 @@ export async function createWithNextNumber(data: Omit<Prisma.PaymentRequestCreat
 export async function createFromInvoices(actor: AuthUser, input: DpCreateInput): Promise<ActionResult<{ id: string; ref: string }>> {
   const guard = requireAccess(actor, "DP", "EDIT");
   if (!guard.success) return guard;
+  return buildFromInvoices(actor, input);
+}
+
+/**
+ * Crée automatiquement la demande de paiement d'une facture fournisseur qui vient d'être enregistrée.
+ * Aucun droit « Demandes de paiement » n'est exigé (c'est la saisie de la facture qui la déclenche) ;
+ * sans effet pour une facture client, un salaire, une facture annulée ou déjà liée à une demande.
+ * Un échec ne bloque jamais l'enregistrement de la facture.
+ */
+export async function autoRequestForInvoice(actor: AuthUser, invoiceId: string): Promise<string | null> {
+  try {
+    const row = await db.invoice.findUnique({ where: { id: invoiceId } });
+    if (!row || row.sens !== "DEBIT" || row.status !== "EN_ATTENTE" || row.paymentRefs.length > 0) return null;
+    if (toPayable(row).payroll) return null;
+    const result = await buildFromInvoices(actor, { invoiceIds: [row.id] });
+    return result.success ? result.data.ref : null;
+  } catch (error) {
+    console.error("[dp] création automatique impossible :", error);
+    return null;
+  }
+}
+
+async function buildFromInvoices(actor: AuthUser, input: DpCreateInput): Promise<ActionResult<{ id: string; ref: string }>> {
   try {
     const rows = await db.invoice.findMany({ where: { id: { in: input.invoiceIds } } });
     const invoices = rows.map(toPayable);
