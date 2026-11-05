@@ -222,3 +222,15 @@ export async function fpSavePrest(actor: AuthUser, input: FpPrestInput): Promise
   await logAction(actor, "Prestataire (envoi des factures)", `${entry.nom} – ${entry.email}`);
   return ok(true);
 }
+
+/** Reporte un nouveau montant de facture fournisseur sur la demande de facture prestataire correspondante. */
+export async function fpSyncAmount(actor: AuthUser, invoiceLegacyId: string, montant: number): Promise<void> {
+  try {
+    const found = (await readReqs()).find((req) => req.invoiceLegacyId === invoiceLegacyId);
+    if (!found || found.mt === montant) return;
+    await writeJson(`${REQ}${found.id}`, { ...found, mt: montant });
+    await logAction(actor, "Facture prestataire", `${found.num} : montant corrigé ${found.mt ?? "—"} → ${montant}`);
+  } catch (error) {
+    console.error("[factures-prestataires] synchronisation du montant impossible :", error);
+  }
+}

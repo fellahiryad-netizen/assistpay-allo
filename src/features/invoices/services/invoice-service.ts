@@ -1,5 +1,6 @@
 import { branchLabel } from "@/features/invoices/services/branch";
-import { autoRequestForInvoice } from "@/features/payment-requests/services/payment-request-service";
+import { fpSyncAmount } from "@/features/provider-invoices/services/fp-store";
+import { autoRequestForInvoice, syncRequestsAmount } from "@/features/payment-requests/services/payment-request-service";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { can, requireAccess } from "@/features/access/services/access-rules";
@@ -250,6 +251,11 @@ export async function updateInvoice(actor: AuthUser, id: string, input: InvoiceI
     const row = await db.invoice.update({ where: { id }, data: { ...data, classe: current.classe ?? data.classe, updatedById: actor.id } });
     const dto = toInvoiceDTO(row);
     await logAction(actor, "Modification facture", describe(dto));
+    // Le montant corrigé est reporté sur la demande de paiement et sur la demande de facture prestataire.
+    if (row.sens === "DEBIT" && !row.montant.equals(current.montant)) {
+      await syncRequestsAmount(actor, row);
+      await fpSyncAmount(actor, row.legacyId, dto.montant);
+    }
     return ok(dto);
   } catch (error) {
     console.error("[invoices] modification impossible :", error);
