@@ -133,7 +133,37 @@ export async function fpMove(actor: AuthUser, input: FpMoveInput): Promise<Actio
     if (to === "ENVOYEE" && !(mt ?? req.mt)) return fail("Saisissez le montant de la facture établie.", "VALIDATION");
     const today = todayIso();
     const next: FpRequest = { ...req, st: to as FpStatut, mt: mt ?? req.mt, obs: obs ?? req.obs, hist: [...req.hist, { st: to as FpStatut, le: new Date().toISOString(), par: actor.name }] };
-    if (to === "ENVOYEE") next.envoyeLe = today;
+    if (to === "ENVOYEE") {
+      next.envoyeLe = today;
+      // La facture établie rejoint les factures fournisseurs (en attente), sauf si elle y figure déjà.
+      const tiers = `${req.nom} ${req.prenom}`.replace(/\s+/g, " ").trim();
+      const existing = await db.invoice.findFirst({ where: { sens: "DEBIT", numero: { equals: req.num, mode: "insensitive" }, status: { not: "ANNULE" } }, select: { legacyId: true } });
+      if (existing) next.invoiceLegacyId = existing.legacyId;
+      else {
+        const legacyId = `fp-${req.id}`;
+        await db.invoice.create({
+          data: {
+            legacyId,
+            sens: "DEBIT",
+            status: "EN_ATTENTE",
+            categorie: req.p === "B" ? "Prestataire BDG" : "Prestataire assistance routière",
+            tiers,
+            numero: req.num,
+            libelle: req.p === "B" ? "Sinistre BDG 2026" : "SINISTRE ASSISTANCE ROUTIERE",
+            montant: next.mt ?? 0,
+            dateFacture: new Date(`${today}T00:00:00Z`),
+            annee: Number(today.slice(0, 4)),
+            nature: "Charge",
+            origine: "factures prestataires",
+            ordre: Date.now(),
+            createdById: actor.id,
+            updatedById: actor.id,
+            extra: { dateDoc: req.date },
+          },
+        });
+        next.invoiceLegacyId = legacyId;
+      }
+    }
     if (to === "A_PAYER") next.recuLe = today;
     await writeJson(`${REQ}${id}`, next);
     await logAction(actor, "Facture prestataire", `${req.num} : ${FP_STATUTS[to as FpStatut]}${mt ? ` – ${mt}` : ""}`);
@@ -142,6 +172,18 @@ export async function fpMove(actor: AuthUser, input: FpMoveInput): Promise<Actio
     console.error("[factures-prestataires] étape :", error);
     return fail("Le changement n'a pas pu être enregistré.", "DATABASE");
   }
+}
+
+/** Supprime une ligne du suivi (la facture fournisseur déjà créée n'est pas touchée). */
+export async function fpDelete(actor: AuthUser, id: string): Promise<ActionResult<true>> {
+  const guard = requireAccess(actor, "FFOUR", "EDIT");
+  if (!guard.success) return guard;
+  const row = await db.setting.findUnique({ where: { key: `${REQ}${id}` } });
+  if (!row) return fail("Facture introuvable.", "NOT_FOUND");
+  const req = row.value as unknown as FpRequest;
+  await db.setting.delete({ where: { key: `${REQ}${id}` } });
+  await logAction(actor, "Facture prestataire supprimée du suivi", `${req.num} – ${req.nom} ${req.prenom}`);
+  return ok(true);
 }
 
 const noteSchema = z.object({ id: z.string().min(1).max(64), obs: z.string().max(200) });

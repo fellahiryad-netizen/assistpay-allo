@@ -51,6 +51,8 @@ export interface FpRequest {
   /** Date d'envoi au prestataire. */
   envoyeLe?: string | null;
   recuLe?: string | null;
+  /** Facture fournisseur créée (ou retrouvée) quand la facture a été établie. */
+  invoiceLegacyId?: string | null;
   hist: FpEvent[];
 }
 

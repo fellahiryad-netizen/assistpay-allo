@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
-import { fpCreateAction, fpMoveAction, fpNoteAction, fpSavePrestAction } from "@/app/actions/provider-invoice-actions";
+import { fpCreateAction, fpDeleteAction, fpMoveAction, fpNoteAction, fpSavePrestAction } from "@/app/actions/provider-invoice-actions";
 import { Notice } from "@/components/common/notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -161,7 +161,7 @@ export function FpApp({ data, canEdit }: Readonly<{ data: FpOverview; canEdit: b
           {toIssue.length ? (
             <Card className="flex flex-col gap-2 border-warning p-4">
               <h3 className="font-semibold">À établir : {toIssue.length} facture(s)</h3>
-              <p className="text-xs text-muted-foreground">Établissez la facture dans le système interne, saisissez son montant, puis validez : elle passe en « envoyée, original attendu ».</p>
+              <p className="text-xs text-muted-foreground">Établissez la facture dans le système interne, saisissez son montant, puis validez : elle quitte cette liste et arrive dans les factures fournisseurs (en attente).</p>
               {toIssue.map((r) => (
                 <div key={r.id} className="flex flex-wrap items-center gap-2 border-t pt-2 text-sm">
                   <b className="w-40 font-mono">{r.num}</b>
@@ -226,6 +226,7 @@ export function FpApp({ data, canEdit }: Readonly<{ data: FpOverview; canEdit: b
                                 Relancer
                               </a>
                             ) : null}
+                            {canEdit ? <Button type="button" size="sm" variant="ghost" className="text-destructive" disabled={pending} onClick={() => { if (window.confirm(`Supprimer définitivement la ligne ${r.num} (${fullName(r)}) du suivi ?${r.invoiceLegacyId ? " La facture fournisseur déjà créée reste dans Factures fournisseurs." : ""}`)) run(() => fpDeleteAction({ id: r.id }), "Ligne supprimée."); }}>Supprimer</Button> : null}
                             {canEdit && r.st !== "ANNULEE" && r.st !== "PAYEE" ? <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => { if (window.confirm(`Annuler la facture ${r.num} ?`)) run(() => fpMoveAction({ id: r.id, to: "ANNULEE" })); }}>Annuler</Button> : null}
                           </div>
                         </td>

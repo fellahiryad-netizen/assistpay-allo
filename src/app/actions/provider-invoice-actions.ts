@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { runAction } from "@/app/actions/action-helpers";
-import { fpCreate, fpMove, fpNote, fpSavePrest, type FpCreateInput, type FpMoveInput, type FpPrestInput } from "@/features/provider-invoices/services/fp-store";
+import { fpCreate, fpDelete, fpMove, fpNote, fpSavePrest, type FpCreateInput, type FpMoveInput, type FpPrestInput } from "@/features/provider-invoices/services/fp-store";
 import type { FpRequest } from "@/features/provider-invoices/services/fp-engine";
 import type { ActionResult } from "@/types";
 
@@ -37,6 +37,13 @@ export async function fpNoteAction(input: { id: string; obs: string }): Promise<
 /** Ajoute ou modifie un prestataire de la liste d'envoi. */
 export async function fpSavePrestAction(input: FpPrestInput): Promise<ActionResult<true>> {
   const result = await runAction(any, input, (actor, data) => fpSavePrest(actor, data as unknown as FpPrestInput));
+  if (result.success) refresh();
+  return result;
+}
+
+/** Supprime une ligne du suivi. */
+export async function fpDeleteAction(input: { id: string }): Promise<ActionResult<true>> {
+  const result = await runAction(any, input, (actor, data) => fpDelete(actor, String(data.id ?? "")));
   if (result.success) refresh();
   return result;
 }
