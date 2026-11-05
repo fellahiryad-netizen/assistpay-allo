@@ -88,7 +88,7 @@ const createSchema = z.object({ p: z.enum(["A", "B"]), nom: z.string().trim().mi
 /** Données d'une nouvelle demande. */
 export type FpCreateInput = z.infer<typeof createSchema>;
 
-/** Soheib enregistre une demande : prestataire et numéro pris au portail ; Kenza la voit dans « À établir ». */
+/** Soheib enregistre une demande : prestataire et numéro pris au portail ; le chargé de facturation la voit dans « À établir ». */
 export async function fpCreate(actor: AuthUser, input: FpCreateInput): Promise<ActionResult<FpRequest>> {
   const guard = requireAccess(actor, "FFOUR", "EDIT");
   if (!guard.success) return guard;

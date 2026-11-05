@@ -65,7 +65,7 @@ export function FpApp({ data, canEdit }: Readonly<{ data: FpOverview; canEdit: b
         setNum("");
       }
       return r;
-    }, "Demande enregistrée : Kenza la voit dans « À établir ».");
+    }, "Demande enregistrée : le chargé de facturation la voit dans « À établir ».");
   }
 
   const tab = (active: boolean): string => cn("rounded-md px-3 py-1.5 text-sm font-medium", active ? "bg-primary text-primary-foreground" : "border bg-card hover:bg-muted");
@@ -130,7 +130,7 @@ export function FpApp({ data, canEdit }: Readonly<{ data: FpOverview; canEdit: b
               <p className="text-xs text-muted-foreground">À confirmer avec le portail</p>
             </Card>
             <Card className={cn("p-3", toIssue.length && "border-warning")}>
-              <p className="text-xs text-muted-foreground">À établir (Kenza)</p>
+              <p className="text-xs text-muted-foreground">À établir</p>
               <p className="text-lg font-bold">{toIssue.length}</p>
             </Card>
             <Card className={cn("p-3", late.length && "border-destructive")}>
@@ -153,7 +153,7 @@ export function FpApp({ data, canEdit }: Readonly<{ data: FpOverview; canEdit: b
                   <label className="text-xs text-muted-foreground" htmlFor="fp-num">N° de facture (portail)</label>
                   <Input id="fp-num" className="w-44 font-mono" value={num} onChange={(e) => setNum(e.target.value.toUpperCase())} placeholder={info.next} />
                 </div>
-                <Button type="button" disabled={pending || name.trim().length < 2} onClick={create}>Envoyer la demande à Kenza</Button>
+                <Button type="button" disabled={pending || name.trim().length < 2} onClick={create}>Envoyer la demande au chargé de facturation</Button>
               </div>
             </Card>
           ) : null}

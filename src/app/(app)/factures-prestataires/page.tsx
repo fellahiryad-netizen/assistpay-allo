@@ -15,7 +15,7 @@ export default async function ProviderInvoicesPage(): Promise<React.JSX.Element>
   if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="Demandes de facture prestataire indisponibles" message={result.error} />;
   return (
     <>
-      <PageHeader title="Demande facture prestataire" description="Du numéro pris au portail jusqu'au paiement : demande de Soheib, facture établie et envoyée par Kenza, original reçu, à payer." />
+      <PageHeader title="Demande facture prestataire" description="Du numéro pris au portail jusqu'au paiement : demande enregistrée, facture établie et envoyée, original reçu, à payer." />
       <FpApp data={result.data} canEdit={can(user, "FFOUR", "EDIT")} />
     </>
   );
