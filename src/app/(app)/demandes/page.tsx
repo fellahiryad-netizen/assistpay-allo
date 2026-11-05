@@ -70,7 +70,7 @@ export default async function RequestsPage({
         <StateMessage kind="empty" title={query.filtre === "a_valider" ? "Aucune demande en attente de validation" : "Aucune demande"} />
       ) : (
         <>
-          <DpList items={data.items} />
+          <DpList items={data.items} isAdmin={user.isAdmin} />
           <Pagination page={data.page} pageCount={data.pageCount} hrefFor={(page) => href(query, page)} />
         </>
       )}

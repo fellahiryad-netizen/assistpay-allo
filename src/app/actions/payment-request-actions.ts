@@ -15,7 +15,7 @@ import {
 } from "@/features/payment-requests/services/payment-request-service";
 import { applySupplierImport, previewSupplierImport, type SupplierPlan } from "@/features/payment-requests/services/supplier-import";
 import type { DpImportPlan, DpInvoiceOption, PaymentRequestDTO } from "@/features/payment-requests/types";
-import type { ActionResult } from "@/types";
+import { ok, type ActionResult } from "@/types";
 
 function refresh(id?: string): void {
   revalidatePath("/demandes");
@@ -80,5 +80,23 @@ export async function applySupplierImportAction(formData: FormData): Promise<Act
     refresh();
     revalidatePath("/");
   }
+  return result;
+}
+
+const bulkIdsSchema = z.object({ ids: z.array(dpIdSchema).min(1).max(200) });
+
+/** Suppression de plusieurs demandes (administrateurs) ; renvoie le nombre supprimé et les refus. */
+export async function deleteRequestsBulkAction(input: { ids: string[] }): Promise<ActionResult<{ done: number; failures: string[] }>> {
+  const result = await runAction(bulkIdsSchema, input, async (actor, value): Promise<ActionResult<{ done: number; failures: string[] }>> => {
+    let done = 0;
+    const failures: string[] = [];
+    for (const id of value.ids) {
+      const one = await deleteRequest(actor, id);
+      if (one.success) done += 1;
+      else failures.push(one.error);
+    }
+    return ok({ done, failures });
+  });
+  if (result.success) refresh();
   return result;
 }
