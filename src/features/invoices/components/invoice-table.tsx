@@ -38,13 +38,14 @@ export interface InvoiceTableProps {
   showSens: boolean;
   /** id de la ligne → id de la facture émise à imprimer. */
   printable?: Record<string, string>;
+  isAdmin?: boolean;
 }
 
 /**
  * Liste des factures (cartes sur mobile, tableau à partir de la tablette) avec règlement en un clic.
  * Le passage à « Réglé » est affiché immédiatement (useOptimistic) puis confirmé par le serveur.
  */
-export function InvoiceTable({ items, canEdit, today, showSens, printable = {} }: Readonly<InvoiceTableProps>): React.JSX.Element {
+export function InvoiceTable({ items, canEdit, today, showSens, printable = {}, isAdmin = false }: Readonly<InvoiceTableProps>): React.JSX.Element {
   const [optimisticItems, applyPatch] = useOptimisticInvoices(items);
   const [, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -111,6 +112,7 @@ export function InvoiceTable({ items, canEdit, today, showSens, printable = {} }
         payableIds={chosen.filter((invoice) => invoice.status === "EN_ATTENTE").map((invoice) => invoice.id)}
         total={chosen.reduce((sum, invoice) => sum + invoice.montant, 0)}
         today={today}
+        isAdmin={isAdmin}
         onClear={() => setSelected(new Set())}
       />
       <ul className="flex flex-col gap-2 md:hidden">

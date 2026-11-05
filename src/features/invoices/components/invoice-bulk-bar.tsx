@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useTransition, type FormEvent } from "react";
-import { CheckCircle2, Trash2, X } from "lucide-react";
-import { deleteInvoicesBulkAction, markInvoicesPaidBulkAction, type BulkReport } from "@/app/actions/invoice-actions";
+import { Briefcase, CheckCircle2, Trash2, X } from "lucide-react";
+import { deleteInvoicesBulkAction, markInvoicesPaidBulkAction, transferToHrAction, type BulkReport } from "@/app/actions/invoice-actions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
@@ -20,6 +20,8 @@ export interface InvoiceBulkBarProps {
   /** Total des montants cochés. */
   total: number;
   today: string;
+  /** Seuls les administrateurs peuvent transférer des lignes de paie vers l'onglet RH. */
+  isAdmin?: boolean;
   onClear: () => void;
 }
 
@@ -36,7 +38,7 @@ function summary(report: BulkReport, verb: string): string {
 }
 
 /** Barre fixe affichée quand des factures sont cochées : règlement groupé ou suppression groupée. */
-export function InvoiceBulkBar({ ids, payableIds, total, today, onClear }: Readonly<InvoiceBulkBarProps>): React.JSX.Element {
+export function InvoiceBulkBar({ ids, payableIds, total, today, isAdmin = false, onClear }: Readonly<InvoiceBulkBarProps>): React.JSX.Element {
   const [dialog, setDialog] = useState<"paid" | "delete" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +58,18 @@ export function InvoiceBulkBar({ ids, payableIds, total, today, onClear }: Reado
       if (!result.success) return setError(result.error);
       setDialog(null);
       setMessage(summary(result.data, "réglée(s)"));
+      onClear();
+    });
+  }
+
+  function transferHr(): void {
+    if (!window.confirm(`Transférer ${ids.length} ligne(s) vers l'onglet RH ? Les factures d'origine seront remplacées par les écritures RH.`)) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await transferToHrAction({ ids });
+      if (!result.success) return setMessage(result.error);
+      const { done, failures } = result.data;
+      setMessage([done ? `${done} ligne(s) transférée(s) vers RH` : "", failures.length ? `${failures.length} refusée(s) : ${failures.join(" / ")}` : ""].filter(Boolean).join(". ") + ".");
       onClear();
     });
   }
@@ -89,6 +103,12 @@ export function InvoiceBulkBar({ ids, payableIds, total, today, onClear }: Reado
             <CheckCircle2 />
             Marquer réglées ({payableIds.length})
           </Button>
+          {isAdmin ? (
+            <Button type="button" size="sm" variant="outline" disabled={pending} onClick={transferHr}>
+              <Briefcase />
+              Transférer vers RH
+            </Button>
+          ) : null}
           <Button type="button" size="sm" variant="destructive" disabled={pending} onClick={() => { setError(null); setDialog("delete"); }}>
             <Trash2 />
             Supprimer ({ids.length})

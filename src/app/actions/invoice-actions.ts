@@ -22,6 +22,7 @@ import {
   setInvoiceStatus,
   updateInvoice,
 } from "@/features/invoices/services/invoice-service";
+import { transferInvoicesToHr } from "@/features/hr/services/hr-service";
 import { requestDeletion } from "@/features/invoices/services/deletion-service";
 import { ensureCaatAdvances } from "@/features/invoices/services/caat-advances";
 import { applyInvoiceImport, previewInvoiceImport, type InvoiceImportPlan } from "@/features/invoices/services/invoice-import";
@@ -142,5 +143,17 @@ export async function deleteInvoicesBulkAction(input: BulkDeleteInput): Promise<
     return ok(report);
   });
   if (result.success) refresh();
+  return result;
+}
+
+const transferSchema = z.object({ ids: z.array(invoiceIdSchema).min(1).max(200) });
+
+/** Transfère des factures de paie (G50, IRG, CNAS, salaires) vers l'onglet RH (administrateur). */
+export async function transferToHrAction(input: { ids: string[] }): Promise<ActionResult<{ done: number; failures: string[] }>> {
+  const result = await runAction(transferSchema, input, (actor, value) => transferInvoicesToHr(actor, value.ids));
+  if (result.success) {
+    refresh();
+    revalidatePath("/rh");
+  }
   return result;
 }

@@ -1,9 +1,10 @@
 import { db } from "@/lib/db";
 import { writeWorkbook } from "@/lib/spreadsheet";
 import type { HrEntry, Prisma } from "@/generated/prisma/client";
-import { can, requireAccess } from "@/features/access/services/access-rules";
+import { can, requireAccess, requireAdmin } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import type { HrEntryInput, HrQuery } from "@/features/hr/schemas";
+import { normalizeText } from "@/utils/text";
 import { HR_GROUP_LABELS, hrGroup, type HrEntryDTO, type HrGroup, type HrTotals } from "@/features/hr/types";
 import { logAction } from "@/features/journal/services/journal-service";
 import { fail, ok, type ActionResult } from "@/types";
@@ -188,4 +189,81 @@ export async function exportHr(actor: AuthUser, query: HrQuery): Promise<ActionR
   const body = list.map((row) => [yearOf(row), row.mois, toIsoDate(row.date) ?? "", row.nature, HR_GROUP_LABELS[hrGroup(row.nature) as HrGroup], row.beneficiaire, row.libelle, row.sens === "RETOUR" ? "Retour / remboursement" : "Paiement", signed(row), row.mode === "CHEQUE" ? "Chèque" : row.mode === "VIRMT" ? "Virement" : "", row.cheque, row.banque]);
   await logAction(actor, "Export RH", `${list.length} saisie(s)`);
   return ok({ name: `RH_confidentiel_${year === "all" ? "toutes_annees" : year}_${todayIso()}.xlsx`, bytes: writeWorkbook([{ name: "RH", rows: [header, ...body], widths: [6, 9, 12, 20, 18, 28, 36, 18, 14, 10, 12, 12] }]) });
+}
+
+/** Nature RH déduite du texte d'une facture de paie. */
+function hrNatureOf(text: string): string {
+  const t = ` ${normalizeText(text).toUpperCase()} `;
+  if (/CASNOS/.test(t)) return "CASNOS";
+  if (/CNAS/.test(t)) return "CNAS";
+  if (/[^A-Z0-9]G50[^A-Z0-9]/.test(t)) return "G50";
+  if (/[^A-Z0-9]IRG[^A-Z0-9]/.test(t)) return "IRG";
+  if (/[^A-Z0-9]IBS[^A-Z0-9]/.test(t)) return "IBS";
+  if (/MISSION/.test(t)) return "Frais de mission";
+  if (/AVANCE/.test(t)) return "Avance sur salaire";
+  if (/SALAIRE/.test(t)) return "Salaire";
+  return "Autre charge de personnel";
+}
+
+/**
+ * Transfère vers l'onglet RH des factures de paie (G50, IRG, CNAS, salaires…) restées dans le suivi des factures.
+ * Réservé aux administrateurs. La ligne RH reprend date, montant, mode, chèque et banque ; la facture d'origine
+ * est supprimée (le total mensuel agrégé du suivi la remplace). Les factures non réglées ou liées à une demande
+ * de paiement sont refusées.
+ */
+export async function transferInvoicesToHr(actor: AuthUser, ids: string[]): Promise<ActionResult<{ done: number; failures: string[] }>> {
+  const guard = requireAdmin(actor);
+  if (!guard.success) return guard;
+  const failures: string[] = [];
+  let done = 0;
+  try {
+    const rows = await db.invoice.findMany({ where: { id: { in: ids } } });
+    for (const row of rows) {
+      const label = `${row.tiers} ${row.numero}`.trim();
+      if (row.origine === "rh") {
+        failures.push(`${label} : ligne déjà agrégée depuis l'onglet RH`);
+        continue;
+      }
+      if (row.status !== "REGLE") {
+        failures.push(`${label} : à transférer une fois réglée (l'onglet RH enregistre des paiements)`);
+        continue;
+      }
+      if (row.paymentRefs.length > 0) {
+        failures.push(`${label} : liée à une demande de paiement`);
+        continue;
+      }
+      const date = row.dateOperation ?? row.dateFacture;
+      const iso = toIsoDate(date) ?? "";
+      const nature = hrNatureOf(`${row.categorie} ${row.tiers} ${row.libelle} ${row.nature}`);
+      await db.hrEntry.create({
+        data: {
+          legacyId: `rh-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+          date,
+          annee: iso ? Number(iso.slice(0, 4)) : row.annee,
+          mois: iso.slice(0, 7),
+          beneficiaire: row.tiers,
+          libelle: row.libelle,
+          montant: row.montant,
+          sens: row.sens === "CREDIT" ? "RETOUR" : "PAIEMENT",
+          nature,
+          mode: row.mode ?? "",
+          banque: row.banque,
+          cheque: row.cheque,
+          classe: 6,
+          ordre: Date.now(),
+          origine: "transfert facture",
+          categorieOrigine: row.categorie,
+          extra: { cree: { le: new Date().toISOString(), nom: actor.name, par: actor.id }, factureLegacyId: row.legacyId, numero: row.numero },
+        },
+      });
+      await db.invoice.delete({ where: { id: row.id } });
+      await logAction(actor, "Transfert vers RH", `${nature} – ${row.tiers} – ${formatDA(Number(row.montant))}`);
+      done += 1;
+    }
+    if (done > 0) await syncHrAggregates();
+    return ok({ done, failures });
+  } catch (error) {
+    console.error("[rh] transfert impossible :", error);
+    return fail("Le transfert vers RH n'a pas pu être terminé.", "DATABASE");
+  }
 }

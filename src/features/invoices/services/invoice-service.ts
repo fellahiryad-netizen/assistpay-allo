@@ -209,7 +209,7 @@ export async function createInvoice(actor: AuthUser, input: InvoiceInput): Promi
   const guard = requireAccess(actor, moduleForSens(input.sens), "EDIT");
   if (!guard.success) return guard;
   const data = toWriteData(input);
-  if (data.payroll && !can(actor, "RH", "EDIT")) return fail("Les lignes de paie sont réservées à l'accès RH.", "FORBIDDEN");
+  if (data.payroll) return fail("Les salaires, CNAS, G50 et IRG se saisissent dans l'onglet RH, pas dans les factures.", "VALIDATION");
   try {
     if (input.numero) {
       const duplicate = await db.invoice.findFirst({
