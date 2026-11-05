@@ -26,6 +26,7 @@ import {
   type RegulSin,
   type Saisie,
 } from "@/features/regul/services/regul-engine";
+import { buildRegulMessage } from "@/features/regul/services/regul-message";
 import { writeRegulWorkbook } from "@/features/regul/services/regul-export";
 import { readCsvRows, readWorkbook } from "@/lib/spreadsheet";
 import { cn } from "@/utils/cn";
@@ -217,6 +218,12 @@ export function RegulCalc({ index, sinMeta, canEdit, canExport, initialSucc, onS
     if (!sinKeys) alerts.push("Base sinistres non chargée : le croisement annulations / sinistres n'est pas fait.");
     if (!A.baseN) alerts.push("Aucune ligne de cette succursale dans la base de production : pas de comparaison possible.");
   }
+  const periodeTxt = per.startsWith("T") ? `le trimestre ${per.slice(1)} ${YEAR}` : per === "S1" ? `le 1er semestre ${YEAR}` : `${per} ${YEAR}`;
+  const message = useMemo(() => (A && C ? buildRegulMessage(A, C.rows, periodeTxt) : null), [A, C, periodeTxt]);
+  const [mailText, setMailText] = useState("");
+  useEffect(() => {
+    setMailText(message?.body ?? "");
+  }, [message]);
   const sins = A ? A.annul.filter((x) => x.sinistre) : [];
   const th = "px-2 py-1.5 text-xs font-semibold";
 
@@ -404,6 +411,18 @@ export function RegulCalc({ index, sinMeta, canEdit, canExport, initialSucc, onS
               </table>
             </div>
           </details>
+          {message ? (
+            <Card className="flex flex-col gap-2 p-4">
+              <h3 className="font-semibold">Message à envoyer à la succursale</h3>
+              <p className="text-sm text-muted-foreground">Écarts négatifs et agences absentes détectés. Relisez et modifiez le texte avant de l'envoyer.</p>
+              <p className="text-sm"><b>Objet :</b> {message.subject}</p>
+              <textarea className="min-h-64 w-full rounded-md border bg-background p-3 text-sm" value={mailText} onChange={(e) => setMailText(e.target.value)} />
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={() => { void navigator.clipboard.writeText(`Objet : ${message.subject}\n\n${mailText}`).then(() => setMsg({ tone: "success", text: "Message copié." })); }}>Copier le message</Button>
+                <a className="inline-flex h-9 items-center rounded-md border px-4 text-sm font-medium hover:bg-muted" href={`mailto:?subject=${encodeURIComponent(message.subject)}&body=${encodeURIComponent(mailText)}`}>Ouvrir dans ma messagerie</a>
+              </div>
+            </Card>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             {canExport ? <Button type="button" onClick={exportXlsx}>Exporter le classeur Excel</Button> : null}
             {canEdit ? <Button type="button" variant="outline" disabled={pending} onClick={save}>Enregistrer ce résultat dans le suivi</Button> : null}
