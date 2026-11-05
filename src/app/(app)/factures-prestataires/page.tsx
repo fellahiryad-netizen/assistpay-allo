@@ -1,0 +1,22 @@
+import type { Metadata } from "next";
+import { PageHeader } from "@/components/common/page-header";
+import { StateMessage } from "@/components/common/state-message";
+import { can } from "@/features/access/services/access-rules";
+import { FpApp } from "@/features/provider-invoices/components/fp-app";
+import { fpOverview } from "@/features/provider-invoices/services/fp-store";
+import { requireUser } from "@/lib/auth";
+
+export const metadata: Metadata = { title: "Factures prestataires" };
+
+/** Suivi des factures que les prestataires font cacheter et signer : demande, établissement, envoi, original reçu, paiement. */
+export default async function ProviderInvoicesPage(): Promise<React.JSX.Element> {
+  const user = await requireUser();
+  const result = await fpOverview(user);
+  if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="Factures prestataires indisponibles" message={result.error} />;
+  return (
+    <>
+      <PageHeader title="Factures prestataires" description="Du numéro pris au portail jusqu'au paiement : demande de Soheib, facture établie et envoyée par Kenza, original reçu, à payer." />
+      <FpApp data={result.data} canEdit={can(user, "FFOUR", "EDIT")} />
+    </>
+  );
+}
