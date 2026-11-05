@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { regulWorkDataAction, saveResultsAction, saveSaisieAction } from "@/app/actions/regul-actions";
 import { Notice } from "@/components/common/notice";
@@ -147,6 +148,18 @@ export function RegulCalc({ index, sinMeta, canEdit, canExport, initialSucc, onS
     } catch {
       setMsg({ tone: "error", text: "Le fichier n'a pas pu être créé." });
     }
+  }
+
+  const MOIS_COURTS = ["janv", "févr", "mars", "avr", "mai", "juin", "juil", "août", "sept", "oct", "nov", "déc"];
+  /** Lien vers la Facturation avec la facture « Régul CAAT » préremplie (succursale, période, lignes mensuelles). */
+  function invoiceHref(): string | null {
+    if (!A || !C || !C.rows.length || !C.rows.every((r) => r.hasFile)) return null;
+    const last = C.rows[C.rows.length - 1]?.m ?? 1;
+    const names = C.rows.map((r) => REGUL_MOIS[r.m - 1] ?? "").join(", ");
+    const head = per.startsWith("T") ? `Trimestre ${per.slice(1)}` : per === "S1" ? "Semestre 1" : `Période ${per}`;
+    const lignes = C.rows.map((r) => `${MOIS_COURTS[r.m - 1]}-${String(YEAR).slice(2)}:${r.total}:${r.avance}:${r.regule}`).join(";");
+    const query = new URLSearchParams({ modele: "c_regul", succ: REGUL_LABELS[A.s] ?? A.s, per: `${YEAR}-${String(last).padStart(2, "0")}`, perTxt: `${head} ${YEAR} : ${names}`, lignes });
+    return `/facturation/nouvelle?${query.toString()}`;
   }
 
   function save(): void {
@@ -394,6 +407,11 @@ export function RegulCalc({ index, sinMeta, canEdit, canExport, initialSucc, onS
           <div className="flex flex-wrap items-center gap-2">
             {canExport ? <Button type="button" onClick={exportXlsx}>Exporter le classeur Excel</Button> : null}
             {canEdit ? <Button type="button" variant="outline" disabled={pending} onClick={save}>Enregistrer ce résultat dans le suivi</Button> : null}
+            {canEdit && invoiceHref() ? (
+              <Link href={invoiceHref() ?? "#"} className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+                Établir la facture CAAT (ajoutée aux factures clients en attente)
+              </Link>
+            ) : null}
           </div>
         </>
       ) : null}

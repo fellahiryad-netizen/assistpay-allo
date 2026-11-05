@@ -22,6 +22,10 @@ export default async function NewBillingPage({
     client: one(raw.client),
     duplicateOf: one(raw.dupliquer),
     caarId: one(raw.caar),
+    succ: one(raw.succ),
+    per: one(raw.per),
+    perTxt: one(raw.perTxt),
+    lignes: one(raw.lignes),
   });
   if (!parsed.success) return <StateMessage kind="error" title="Paramètres invalides" />;
   const result = await prepareDraft(user, parsed.data);

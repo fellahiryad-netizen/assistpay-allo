@@ -167,7 +167,7 @@ async function prepareDraftBase(actor: AuthUser, input: PrepareBillingInput): Pr
       const draft = draftFromPayload(previous.payload);
       rows = draft.rows.map((row) => ({ ...row }));
       notes = draft.notes || notes;
-      succ = draft.succ;
+      succ = preset.succ ? "" : draft.succ;
       cli = { ...cli, ...Object.fromEntries(Object.entries(draft.cli).filter(([, value]) => value)) };
       fromPrev = previous.num;
       if (!["mens", "qte"].includes(preset.m)) {
@@ -185,6 +185,23 @@ async function prepareDraftBase(actor: AuthUser, input: PrepareBillingInput): Pr
     rows[1].per = periodLabel(previousMonth);
   }
   let caarProd = "";
+  let regulPer = "";
+  let regulPerTxt = "";
+  if (preset.id === "c_regul" && input.lignes && input.succ) {
+    const parsedRows = input.lignes.split(";").flatMap((part) => {
+      const [label, tot, av, reg] = part.split(":");
+      if (!label || [tot, av, reg].some((value) => value === undefined || Number.isNaN(Number(value)))) return [];
+      return [{ succ: label.slice(0, 20), tot: moneyFr(Number(tot)), av: moneyFr(Number(av)), reg: moneyFr(Number(reg)) }];
+    });
+    const branch = BRANCHES.CAAT?.find((entry) => entry === input.succ);
+    if (branch && parsedRows.length) {
+      rows = parsedRows;
+      succ = branch;
+      fromPrev = "";
+      regulPer = input.per ?? "";
+      regulPerTxt = input.perTxt ?? "";
+    }
+  }
   if (input.caarId) {
     const production = await db.caarProduction.findUnique({ where: { id: input.caarId } });
     if (production) {
@@ -204,8 +221,8 @@ async function prepareDraftBase(actor: AuthUser, input: PrepareBillingInput): Pr
     ...numbers,
     date: today,
     objet: preset.objet ?? "",
-    per: previousMonth,
-    perTxt: periodLabel(previousMonth),
+    per: regulPer || previousMonth,
+    perTxt: regulPerTxt || periodLabel(previousMonth),
     succ,
     bc: "",
     origine: "",
@@ -257,6 +274,12 @@ export async function listIssued(actor: AuthUser, filter: "all" | "bdg" | "gam" 
 }
 
 /** Facture émise complète (pour l'affichage, l'impression et la rectification). */
+/** Montant au format français avec espaces (« 1 819 000,00 »). */
+function moneyFr(value: number): string {
+  const [int = "0", dec = "00"] = Math.abs(value).toFixed(2).split(".");
+  return `${value < 0 ? "-" : ""}${int.replace(/\B(?=(\d{3})+(?!\d))/g, " ")},${dec}`;
+}
+
 export async function getIssued(actor: AuthUser, id: string): Promise<ActionResult<{ id: string; draft: BillingDraft; canEdit: boolean; canRectify: boolean; isAdmin: boolean; versions: number }>> {
   const guard = requireAccess(actor, "FACT");
   if (!guard.success) return guard;
@@ -283,7 +306,7 @@ export async function saveDraft(actor: AuthUser, input: SaveBillingInput): Promi
   const isBdg = preset.m === "bdgpair";
   if (!draft.num.trim() && !(isBdg && draft.bdgType === "fra")) return fail("Indiquez le n° de facture.", "VALIDATION");
   if (isBdg && draft.bdgType !== "deb" && !draft.num2.trim()) return fail("Indiquez le n° de la facture de frais de gestion.", "VALIDATION");
-  if (isBdg && preset.succ && !draft.succ) return fail("Choisissez la succursale.", "VALIDATION");
+  if (preset.succ && !draft.succ) return fail("Choisissez la succursale : elle figure sur la facture imprimée.", "VALIDATION");
   if (!(totals.ttc > 0)) return fail("Le total de la facture est nul : vérifiez les montants.", "VALIDATION");
   if (!draft.cli.nom || !draft.cli.nif) return fail("Coordonnées du client incomplètes (raison sociale et NIF obligatoires).", "VALIDATION");
   const existingDoc = input.issuedId ? await db.issuedInvoice.findUnique({ where: { id: input.issuedId } }) : null;
