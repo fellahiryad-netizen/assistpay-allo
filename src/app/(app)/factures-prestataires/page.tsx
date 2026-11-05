@@ -6,16 +6,16 @@ import { FpApp } from "@/features/provider-invoices/components/fp-app";
 import { fpOverview } from "@/features/provider-invoices/services/fp-store";
 import { requireUser } from "@/lib/auth";
 
-export const metadata: Metadata = { title: "Demandes de facture" };
+export const metadata: Metadata = { title: "Demande facture prestataire" };
 
 /** Suivi des factures que les prestataires font cacheter et signer : demande, établissement, envoi, original reçu, paiement. */
 export default async function ProviderInvoicesPage(): Promise<React.JSX.Element> {
   const user = await requireUser();
   const result = await fpOverview(user);
-  if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="Demandes de facture indisponibles" message={result.error} />;
+  if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="Demandes de facture prestataire indisponibles" message={result.error} />;
   return (
     <>
-      <PageHeader title="Demandes de facture" description="Du numéro pris au portail jusqu'au paiement : demande de Soheib, facture établie et envoyée par Kenza, original reçu, à payer." />
+      <PageHeader title="Demande facture prestataire" description="Du numéro pris au portail jusqu'au paiement : demande de Soheib, facture établie et envoyée par Kenza, original reçu, à payer." />
       <FpApp data={result.data} canEdit={can(user, "FFOUR", "EDIT")} />
     </>
   );
