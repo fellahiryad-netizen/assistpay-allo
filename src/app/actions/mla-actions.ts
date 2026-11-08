@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { runAction } from "@/app/actions/action-helpers";
 import { prepareDraft, saveDraft } from "@/features/billing/services/billing-service";
+import { logAction } from "@/features/journal/services/journal-service";
 import { saveMlaDraft, saveMlaParams } from "@/features/mla/services/mla-store";
 import { fail, ok } from "@/types";
 import { revalidatePath } from "next/cache";
@@ -30,6 +31,12 @@ export async function mlaEstablishAction(input: z.input<typeof schema>): Promise
     if (!draft.data.num.trim()) return fail("Aucun numéro de facture n'a pu être proposé : ouvrez la facture dans l'éditeur pour le saisir.", "VALIDATION");
     const issued = await saveDraft(actor, { draft: draft.data });
     if (!issued.success) return issued;
+    const retraits = value.rows.slice(2).filter((row) => !row.info && row.des).map((row) => row.des);
+    await logAction(
+      actor,
+      "Facture MLA établie",
+      `${draft.data.num} – ${value.perTxt} – ${value.rows[0]?.qte ?? "?"} véhicules – ${retraits.length} retrait(s) sinistré(s)${retraits.length ? ` (${retraits.join(", ")})` : ""} – ${issued.data.ttc} DA TTC`,
+    );
     return ok({ id: issued.data.id, num: draft.data.num, ttc: issued.data.ttc });
   });
   if (result.success) {

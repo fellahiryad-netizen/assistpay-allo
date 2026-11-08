@@ -71,3 +71,64 @@ export async function saveMlaParams(actor: AuthUser, params: MlaParams): Promise
     return fail("Les primes n'ont pas pu être enregistrées.", "DATABASE");
   }
 }
+
+/** Création de facture MLA conservée pour la traçabilité. */
+export interface MlaHistoryEntry {
+  id: string;
+  num: string;
+  /** Mois facturé (« Octobre 2026 »). */
+  mois: string;
+  creePar: string;
+  creeLe: string;
+  ht: number;
+  ttc: number;
+  /** Véhicules retirés sinistrés facturés. */
+  retraits: number;
+  vehicules: string;
+  rectifiee: number;
+  /** Dernier modificateur (rectification) ; vide si jamais modifiée. */
+  modifiePar: string;
+  statut: string;
+}
+
+function str(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/** Historique des factures MLA établies (depuis l'onglet ou l'éditeur), plus récentes d'abord. */
+export async function listMlaHistory(actor: AuthUser): Promise<ActionResult<MlaHistoryEntry[]>> {
+  const guard = requireAccess(actor, "FACT");
+  if (!guard.success) return guard;
+  try {
+    const docs = await db.issuedInvoice.findMany({ where: { payload: { path: ["preset"], equals: "m_mla" } }, orderBy: { createdAt: "desc" }, take: 60 });
+    const legacyIds = docs.map((doc) => doc.invoiceLegacyId).filter((id): id is string => Boolean(id));
+    const invoices = await db.invoice.findMany({ where: { legacyId: { in: legacyIds } }, select: { legacyId: true, status: true } });
+    const status = new Map(invoices.map((invoice) => [invoice.legacyId, invoice.status]));
+    return ok(
+      docs.map((doc) => {
+        const payload = (doc.payload ?? {}) as Record<string, unknown>;
+        const rows = Array.isArray(payload.rows) ? (payload.rows as Array<Record<string, string>>) : [];
+        const cree = (payload.cree ?? {}) as Record<string, unknown>;
+        const maj = (payload.maj ?? {}) as Record<string, unknown>;
+        const rectifiee = Number(payload.rectifiee ?? 0) || 0;
+        return {
+          id: doc.id,
+          num: doc.num,
+          mois: str(payload.perTxt),
+          creePar: str(cree.nom),
+          creeLe: str(cree.le) || doc.createdAt.toISOString(),
+          ht: Number(doc.ht),
+          ttc: Number(doc.ttc),
+          retraits: rows.slice(2).filter((row) => !row.info && row.des).length,
+          vehicules: str(rows[0]?.qte),
+          rectifiee,
+          modifiePar: rectifiee > 0 ? str(maj.nom) : "",
+          statut: (doc.invoiceLegacyId ? status.get(doc.invoiceLegacyId) : "") ?? "",
+        };
+      }),
+    );
+  } catch (error) {
+    console.error("[mla] historique illisible :", error);
+    return fail("L'historique des factures MLA n'a pas pu être lu.", "DATABASE");
+  }
+}
