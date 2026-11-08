@@ -2,19 +2,20 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, useTransition } from "react";
-import { mlaEstablishAction, mlaPrepareAction } from "@/app/actions/mla-actions";
+import { mlaEstablishAction, mlaPrepareAction, mlaSaveParamsAction } from "@/app/actions/mla-actions";
 import { Notice } from "@/components/common/notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { computeMla, MLA_PRIME_ANNUELLE, MLA_PRIME_RETRAIT_MOIS, mlaInvoiceRows, monthLabel, parseActivities, parseFleet, type ActivityFile, type FleetFile } from "@/features/mla/services/mla-engine";
+import { computeMla, mlaInvoiceRows, monthLabel, parseActivities, parseFleet, type ActivityFile, type FleetFile, type MlaParams } from "@/features/mla/services/mla-engine";
 import { readWorkbook } from "@/lib/spreadsheet";
 import { formatDA, formatDate } from "@/utils/format";
 
 /** Onglet « Facture MLA » : flotte du mois + activité → mensualité et retraits sinistrés → facture au modèle MLA. */
-export function MlaCalc({ canEdit }: Readonly<{ canEdit: boolean }>): React.JSX.Element {
+export function MlaCalc({ canEdit, isAdmin, params }: Readonly<{ canEdit: boolean; isAdmin: boolean; params: MlaParams }>): React.JSX.Element {
   const router = useRouter();
   const fleetInput = useRef<HTMLInputElement>(null);
   const actInput = useRef<HTMLInputElement>(null);
@@ -50,7 +51,7 @@ export function MlaCalc({ canEdit }: Readonly<{ canEdit: boolean }>): React.JSX.
     }
   }
 
-  const result = useMemo(() => (fleet && sheet ? computeMla(fleet, sheet, activity) : null), [fleet, sheet, activity]);
+  const result = useMemo(() => (fleet && sheet ? computeMla(fleet, sheet, activity, params) : null), [fleet, sheet, activity, params]);
   const retained = result ? result.retraits.filter((line) => line.sinistre && !off.has(line.key)) : [];
   const ht = result ? result.mensualite + retained.length * result.prixRetrait : 0;
 
@@ -88,8 +89,40 @@ export function MlaCalc({ canEdit }: Readonly<{ canEdit: boolean }>): React.JSX.
     });
   }
 
+  function saveParams(event: React.FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    startTransition(async () => {
+      const saved = await mlaSaveParamsAction({ primeAnnuelle: Number(String(form.get("annuelle")).replace(",", ".")), primeRetraitMois: Number(String(form.get("retrait")).replace(",", ".")) });
+      setMessage(saved.success ? { tone: "info", text: "Primes enregistrées : elles s'appliquent aux prochaines factures." } : { tone: "error", text: saved.error });
+      if (saved.success) router.refresh();
+    });
+  }
+
   return (
     <div className="flex flex-col gap-4">
+      {isAdmin ? (
+        <Card className="p-4">
+          <form onSubmit={saveParams} className="flex flex-wrap items-end gap-3">
+            <div>
+              <label htmlFor="mla-annuelle" className="text-sm font-medium">
+                Prime annuelle par véhicule (DA HT)
+              </label>
+              <Input id="mla-annuelle" name="annuelle" inputMode="decimal" defaultValue={String(params.primeAnnuelle)} className="w-44" required />
+            </div>
+            <div>
+              <label htmlFor="mla-retrait" className="text-sm font-medium">
+                Retrait sinistré, par mois (DA HT)
+              </label>
+              <Input id="mla-retrait" name="retrait" inputMode="decimal" defaultValue={String(params.primeRetraitMois)} className="w-44" required />
+            </div>
+            <Button type="submit" variant="outline" disabled={pending}>
+              Enregistrer les primes
+            </Button>
+            <p className="basis-full text-xs text-muted-foreground">Réservé aux administrateurs. S'applique aux prochaines factures ; les factures déjà établies ne changent pas.</p>
+          </form>
+        </Card>
+      ) : null}
       <Card className="flex flex-col gap-3 p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
@@ -135,7 +168,7 @@ export function MlaCalc({ canEdit }: Readonly<{ canEdit: boolean }>): React.JSX.
             <div>
               <p className="text-xs text-muted-foreground">Véhicules ({monthLabel(result.year, result.month)})</p>
               <p className="text-lg font-semibold tabular-nums">{result.vehicules.toLocaleString("fr-FR")}</p>
-              <p className="text-xs text-muted-foreground">× {formatDA(MLA_PRIME_ANNUELLE)} par an = {formatDA(result.annuel)}</p>
+              <p className="text-xs text-muted-foreground">× {formatDA(result.params.primeAnnuelle)} par an = {formatDA(result.annuel)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Mensualité {String(result.month).padStart(2, "0")}/12</p>
@@ -147,7 +180,7 @@ export function MlaCalc({ canEdit }: Readonly<{ canEdit: boolean }>): React.JSX.
                 {result.retraits.length} / {result.retraits.filter((line) => line.sinistre).length}
               </p>
               <p className="text-xs text-muted-foreground">
-                {formatDA(MLA_PRIME_RETRAIT_MOIS)} × {result.moisRetrait} mois = {formatDA(result.prixRetrait)} par véhicule
+                {formatDA(result.params.primeRetraitMois)} × {result.moisRetrait} mois = {formatDA(result.prixRetrait)} par véhicule
               </p>
             </div>
             <div>

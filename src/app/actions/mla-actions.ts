@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { runAction } from "@/app/actions/action-helpers";
 import { prepareDraft, saveDraft } from "@/features/billing/services/billing-service";
-import { saveMlaDraft } from "@/features/mla/services/mla-store";
+import { saveMlaDraft, saveMlaParams } from "@/features/mla/services/mla-store";
 import { fail, ok } from "@/types";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/types";
@@ -36,5 +36,14 @@ export async function mlaEstablishAction(input: z.input<typeof schema>): Promise
     revalidatePath("/facturation");
     revalidatePath("/factures");
   }
+  return result;
+}
+
+const paramsSchema = z.object({ primeAnnuelle: z.coerce.number().positive().max(10_000_000), primeRetraitMois: z.coerce.number().positive().max(10_000_000) });
+
+/** Modifie les primes MLA (administrateurs). */
+export async function mlaSaveParamsAction(input: z.input<typeof paramsSchema>): Promise<ActionResult<{ primeAnnuelle: number; primeRetraitMois: number }>> {
+  const result = await runAction(paramsSchema, input, saveMlaParams);
+  if (result.success) revalidatePath("/mla");
   return result;
 }

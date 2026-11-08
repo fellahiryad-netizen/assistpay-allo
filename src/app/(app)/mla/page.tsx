@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
 import { can } from "@/features/access/services/access-rules";
+import { getMlaParams } from "@/features/mla/services/mla-store";
 import { MlaCalc } from "@/features/mla/components/mla-calc";
 
 export const metadata: Metadata = { title: "Facture MLA" };
@@ -15,9 +16,9 @@ export default async function MlaPage(): Promise<React.JSX.Element> {
     <>
       <PageHeader
         title="Facture MLA"
-        description="Déposez la flotte du mois et les activités : la mensualité (12 000 DA par véhicule et par an) et les véhicules retirés sinistrés (1 000 DA par mois jusqu'en décembre) sont calculés, puis la facture s'ouvre au modèle MLA."
+        description="Déposez la flotte du mois et les activités : la mensualité (prime annuelle par véhicule) et les véhicules retirés sinistrés (prime mensuelle jusqu'en décembre) sont calculés, puis la facture s'ouvre au modèle MLA."
       />
-      <MlaCalc canEdit={can(user, "FACT", "EDIT")} />
+      <MlaCalc canEdit={can(user, "FACT", "EDIT")} isAdmin={user.isAdmin} params={await getMlaParams()} />
     </>
   );
 }

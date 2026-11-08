@@ -3,10 +3,16 @@ import type { SheetCell, SheetData } from "@/lib/spreadsheet";
 /* Facturation MLA (Maghreb Leasing Algérie) : flotte mensuelle, retraits et véhicules sinistrés.
    Fonctions pures, utilisées dans le navigateur (les fichiers dépassent la limite d'envoi du serveur). */
 
-/** Prime annuelle par véhicule (DA HT). */
-export const MLA_PRIME_ANNUELLE = 12000;
-/** Prime mensuelle encaissée sur un véhicule retiré mais sinistré (DA HT). */
-export const MLA_PRIME_RETRAIT_MOIS = 1000;
+/** Primes de facturation MLA (modifiables par l'administrateur, valeurs par défaut ci-dessous). */
+export interface MlaParams {
+  /** Prime annuelle par véhicule (DA HT). */
+  primeAnnuelle: number;
+  /** Prime mensuelle encaissée sur un véhicule retiré mais sinistré (DA HT). */
+  primeRetraitMois: number;
+}
+
+/** Valeurs par défaut : 12 000 DA par véhicule et par an, 1 000 DA par mois pour un retrait sinistré. */
+export const MLA_PARAMS_DEFAUT: MlaParams = { primeAnnuelle: 12000, primeRetraitMois: 1000 };
 
 /** Immatriculation comparable : sans espaces, tirets ni casse (« 025418 118 16 » = « 025418-118-16 »). */
 export function normImmat(value: SheetCell | undefined): string {
@@ -148,12 +154,14 @@ export interface MlaResult {
   /** Nombre de mois facturés pour un véhicule retiré sinistré (du mois facturé à décembre). */
   moisRetrait: number;
   prixRetrait: number;
+  /** Primes appliquées à ce calcul. */
+  params: MlaParams;
   /** Retraits du mois, sinistrés d'abord. */
   retraits: RetraitLine[];
 }
 
 /** Calcule la facture du mois : mensualité de la flotte et retraits du même mois croisés avec l'activité. */
-export function computeMla(fleet: FleetFile, monthSheet: string, activity: ActivityFile | null): MlaResult | null {
+export function computeMla(fleet: FleetFile, monthSheet: string, activity: ActivityFile | null, params: MlaParams = MLA_PARAMS_DEFAUT): MlaResult | null {
   const month = fleet.months.find((entry) => entry.sheet === monthSheet);
   if (!month) return null;
   const moisRetrait = 13 - month.month;
@@ -164,8 +172,8 @@ export function computeMla(fleet: FleetFile, monthSheet: string, activity: Activ
       return { ...retrait, dossiers, sinistre: dossiers.length > 0 };
     })
     .sort((a, b) => Number(b.sinistre) - Number(a.sinistre) || a.immat.localeCompare(b.immat));
-  const annuel = month.count * MLA_PRIME_ANNUELLE;
-  return { year: month.year, month: month.month, vehicules: month.count, annuel, mensualite: annuel / 12, moisRetrait, prixRetrait: moisRetrait * MLA_PRIME_RETRAIT_MOIS, retraits: lines };
+  const annuel = month.count * params.primeAnnuelle;
+  return { year: month.year, month: month.month, vehicules: month.count, annuel, mensualite: annuel / 12, moisRetrait, prixRetrait: moisRetrait * params.primeRetraitMois, params, retraits: lines };
 }
 
 const MONTHS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
@@ -183,7 +191,7 @@ export type MlaInvoiceRow = Record<string, string>;
 export function mlaInvoiceRows(result: MlaResult, retained: string[]): MlaInvoiceRow[] {
   const keep = new Set(retained);
   const rows: MlaInvoiceRow[] = [
-    { des: "Total véhicule", qte: String(result.vehicules), pu: String(MLA_PRIME_ANNUELLE), per: `Annuel ${result.year}`, ht: String(result.annuel), info: "1" },
+    { des: "Total véhicule", qte: String(result.vehicules), pu: String(result.params.primeAnnuelle), per: `Annuel ${result.year}`, ht: String(result.annuel), info: "1" },
     { des: `Mensualité ${String(result.month).padStart(2, "0")}/12`, qte: "-", pu: "-", per: monthLabel(result.year, result.month), ht: String(result.mensualite) },
   ];
   const chosen = result.retraits.filter((line) => line.sinistre && keep.has(line.key));
