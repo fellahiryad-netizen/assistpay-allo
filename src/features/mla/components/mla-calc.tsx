@@ -79,7 +79,8 @@ export function MlaCalc({ canEdit, isAdmin, paramsByYear }: Readonly<{ canEdit: 
     if (fleetFile) body.set("fleet", fleetFile);
     if (actFile) body.set("activity", actFile);
     const stored = await mlaStoreFilesAction(body);
-    return stored.success ? null : stored.error;
+    // Une panne de base (table pas encore créée, par exemple) ne bloque pas la facture ; une erreur de fichier (taille, format) la bloque.
+    return stored.success || stored.code === "DATABASE" ? null : stored.error;
   }
 
   function establishNow(): void {
