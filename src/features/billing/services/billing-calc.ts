@@ -39,6 +39,17 @@ export function computeBilling(draft: Pick<BillingDraft, "preset" | "rows" | "bd
     const ht = r2(base.reduce((sum, row) => sum + num(row[model.ht ?? "ht"]), 0));
     const tva = r2(ht * 0.19);
     totals = { lines: [["TOTAL HT", ht], ["TVA 19 %", tva], ["TOTAL TTC", r2(ht + tva), true]], ht, tva, ttc: r2(ht + tva) };
+    if (preset.m === "mens") {
+      // Récapitulatif du modèle MLA : mensualité, total retraits (si présents), puis total HT, TVA, TTC.
+      const headingAt = rows.findIndex((row, index) => index > 0 && Boolean(row.info) && /retir/i.test(String(row.des)));
+      const billed = rows.map((row, index) => ({ row, index })).filter(({ row }) => !row.info);
+      const monthly = billed.filter(({ index }) => headingAt < 0 || index < headingAt);
+      const withdrawn = billed.filter(({ index }) => headingAt >= 0 && index > headingAt);
+      const sum = (list: typeof billed): number => r2(list.reduce((total, { row }) => total + num(row.ht), 0));
+      const recap: BillingTotals["lines"] = [[String(monthly[0]?.row.des ?? "Mensualité").trim(), sum(monthly)]];
+      if (withdrawn.length) recap.push(["Total retrait véhicule", sum(withdrawn)]);
+      totals = { ...totals, lines: [...recap, ...totals.lines] };
+    }
   }
   if (preset.m === "bdgpair" && draft.bdgType !== "pair") {
     const debOnly = draft.bdgType === "deb";
