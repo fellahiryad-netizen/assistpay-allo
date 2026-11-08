@@ -83,6 +83,21 @@ export function MlaCalc({ canEdit, isAdmin, paramsByYear }: Readonly<{ canEdit: 
     return stored.success || stored.code === "DATABASE" ? null : stored.error;
   }
 
+  /** Conserve les fichiers du mois choisi sans établir de facture (facture déjà faite, par exemple). */
+  function keepOnly(): void {
+    if (!monthSel || (!fleetFile && !actFile)) return;
+    startTransition(async () => {
+      const body = new FormData();
+      body.set("month", monthSel);
+      if (fleetFile) body.set("fleet", fleetFile);
+      if (actFile) body.set("activity", actFile);
+      const stored = await mlaStoreFilesAction(body);
+      if (!stored.success) return setMessage({ tone: "error", text: stored.error });
+      setMessage({ tone: "info", text: stored.data.saved ? "Fichiers conservés dans la fiche MLA pour ce mois." : "Ces fichiers sont déjà conservés pour ce mois." });
+      router.refresh();
+    });
+  }
+
   function establishNow(): void {
     if (!result) return;
     const per = `${result.year}-${String(result.month).padStart(2, "0")}`;
@@ -189,6 +204,13 @@ export function MlaCalc({ canEdit, isAdmin, paramsByYear }: Readonly<{ canEdit: 
         </div>
       </Card>
 
+      {canEdit && monthSel && (fleetFile || actFile) ? (
+        <div>
+          <Button type="button" variant="outline" disabled={pending} onClick={keepOnly}>
+            Conserver les fichiers de ce mois sans établir de facture
+          </Button>
+        </div>
+      ) : null}
       {fleet && monthSel && !sheet && !message ? <Notice tone="error">La flotte « {fleetName} » n'a pas d'onglet pour ce mois.</Notice> : null}
       {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
       {result && !activity ? <Notice tone="info">Ajoutez le fichier des activités pour repérer les véhicules retirés qui ont eu des dossiers (sinistrés).</Notice> : null}
