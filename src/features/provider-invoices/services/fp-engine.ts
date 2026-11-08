@@ -140,3 +140,16 @@ export function relanceText(req: FpRequest): { subject: string; body: string } {
     ].join("\n"),
   };
 }
+
+/** Auteur de la demande (première entrée de l'historique). */
+export function demandePar(r: FpRequest): { par: string; le: string } | null {
+  const first = r.hist.find((event) => event.st === "CREE");
+  return first ? { par: first.par, le: first.le } : null;
+}
+
+/** Personne qui a traité la demande : celle qui a établi et envoyé la facture (dernier passage à « Envoyée »). */
+export function traitePar(r: FpRequest): { par: string; le: string } | null {
+  if (r.st === "A_ETABLIR") return null;
+  const sent = [...r.hist].reverse().find((event) => event.st === "ENVOYEE") ?? [...r.hist].reverse().find((event) => event.st !== "CREE" && event.st !== "MODIF");
+  return sent ? { par: sent.par, le: sent.le } : null;
+}

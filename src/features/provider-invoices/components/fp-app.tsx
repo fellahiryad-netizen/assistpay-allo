@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { ageDays, enRetard, FP_PRODUITS, FP_RETARD_JOURS, FP_STATUTS, FP_SUIVANT, fullName, relanceText, type FpProduit, type FpRequest, type FpStatut } from "@/features/provider-invoices/services/fp-engine";
+import { ageDays, demandePar, enRetard, FP_PRODUITS, FP_RETARD_JOURS, FP_STATUTS, FP_SUIVANT, fullName, relanceText, traitePar, type FpProduit, type FpRequest, type FpStatut } from "@/features/provider-invoices/services/fp-engine";
 import type { FpOverview } from "@/features/provider-invoices/services/fp-store";
 import { cn } from "@/utils/cn";
 import { formatDA, formatDate } from "@/utils/format";
@@ -165,7 +165,7 @@ export function FpApp({ data, canEdit }: Readonly<{ data: FpOverview; canEdit: b
               {toIssue.map((r) => (
                 <div key={r.id} className="flex flex-wrap items-center gap-2 border-t pt-2 text-sm">
                   <b className="w-40 font-mono">{r.num}</b>
-                  <span className="min-w-0 flex-1 truncate">{fullName(r)} <span className="text-xs text-muted-foreground">· demandée le {formatDate(r.date)}</span></span>
+                  <span className="min-w-0 flex-1 truncate">{fullName(r)} <span className="text-xs text-muted-foreground">· demandée le {formatDate(r.date)}{demandePar(r) ? ` par ${demandePar(r)?.par}` : ""}</span></span>
                   {canEdit ? (
                     <>
                       <Input className="w-36 text-right" inputMode="decimal" placeholder="Montant (DA)" value={amounts[r.id] ?? ""} onChange={(e) => setAmounts((c) => ({ ...c, [r.id]: e.target.value }))} />
@@ -194,9 +194,9 @@ export function FpApp({ data, canEdit }: Readonly<{ data: FpOverview; canEdit: b
                   <tr>
                     <th className="px-2 py-2 text-left">N° facture</th>
                     <th className="px-2 py-2 text-left">Prestataire</th>
-                    <th className="px-2 py-2 text-left">Demande</th>
+                    <th className="px-2 py-2 text-left">Demandée par</th>
                     <th className="px-2 py-2 text-right">Montant</th>
-                    <th className="px-2 py-2 text-left">Étape</th>
+                    <th className="px-2 py-2 text-left">Étape / traitée par</th>
                     <th className="px-2 py-2 text-left">Observation</th>
                     <th className="px-2 py-2 text-left">Actions</th>
                   </tr>
@@ -211,10 +211,11 @@ export function FpApp({ data, canEdit }: Readonly<{ data: FpOverview; canEdit: b
                       <tr key={r.id} className={cn("border-t align-top", late1 && "bg-destructive/5")}>
                         <td className="px-2 py-1.5 font-mono font-medium">{r.num}</td>
                         <td className="px-2 py-1.5">{fullName(r)}{mail ? <span className="block text-xs text-muted-foreground">{mail}</span> : null}</td>
-                        <td className="px-2 py-1.5">{formatDate(r.date)}</td>
+                        <td className="px-2 py-1.5">{demandePar(r)?.par ?? "—"}<span className="block text-xs text-muted-foreground">{formatDate(r.date)}</span></td>
                         <td className="px-2 py-1.5 text-right tabular-nums">{r.mt ? formatDA(r.mt) : "—"}</td>
                         <td className="px-2 py-1.5">
                           <Badge variant={TONE[r.st]}>{FP_STATUTS[r.st]}</Badge>
+                          <span className="block text-xs text-muted-foreground">{traitePar(r) ? `traitée par ${traitePar(r)?.par} le ${formatDate((traitePar(r)?.le ?? "").slice(0, 10))}` : "pas encore traitée"}</span>
                           {r.st === "ENVOYEE" ? <span className={cn("block text-xs", late1 ? "font-medium text-destructive" : "text-muted-foreground")}>envoyée il y a {ageDays(r.envoyeLe ?? r.date, data.today)} j</span> : null}
                         </td>
                         <td className="px-2 py-1.5"><Input className="h-8 w-44 text-xs" defaultValue={r.obs} disabled={!canEdit} onBlur={(e) => { if (e.target.value !== r.obs) void fpNoteAction({ id: r.id, obs: e.target.value }); }} aria-label={`Observation ${r.num}`} /></td>
