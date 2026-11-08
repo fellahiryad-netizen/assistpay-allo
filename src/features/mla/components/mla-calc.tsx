@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, useTransition } from "react";
-import { mlaPrepareAction } from "@/app/actions/mla-actions";
+import { mlaEstablishAction, mlaPrepareAction } from "@/app/actions/mla-actions";
 import { Notice } from "@/components/common/notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -63,7 +63,17 @@ export function MlaCalc({ canEdit }: Readonly<{ canEdit: boolean }>): React.JSX.
     });
   }
 
-  function establish(): void {
+  function establishNow(): void {
+    if (!result) return;
+    const per = `${result.year}-${String(result.month).padStart(2, "0")}`;
+    startTransition(async () => {
+      const done = await mlaEstablishAction({ rows: mlaInvoiceRows(result, retained.map((line) => line.key)), per, perTxt: monthLabel(result.year, result.month), notes: "" });
+      if (!done.success) return setMessage({ tone: "error", text: done.error });
+      router.push(`/facturation/${done.data.id}`);
+    });
+  }
+
+  function openEditor(): void {
     if (!result) return;
     const per = `${result.year}-${String(result.month).padStart(2, "0")}`;
     startTransition(async () => {
@@ -152,9 +162,14 @@ export function MlaCalc({ canEdit }: Readonly<{ canEdit: boolean }>): React.JSX.
               <p className="text-sm font-medium">
                 Véhicules retirés en {monthLabel(result.year, result.month)} : {retained.length} sinistré(s) retenu(s) pour la facture
               </p>
-              <Button type="button" disabled={!canEdit || pending || !activity} onClick={establish}>
-                {pending ? "Préparation…" : "Établir la facture MLA"}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" disabled={!canEdit || pending || !activity} onClick={openEditor}>
+                  Ouvrir dans l'éditeur
+                </Button>
+                <Button type="button" disabled={!canEdit || pending || !activity} onClick={establishNow}>
+                  {pending ? "Établissement…" : "Établir la facture MLA"}
+                </Button>
+              </div>
             </div>
             {result.retraits.length ? (
               <Table>

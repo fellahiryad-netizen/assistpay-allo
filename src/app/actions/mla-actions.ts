@@ -2,7 +2,10 @@
 
 import { z } from "zod";
 import { runAction } from "@/app/actions/action-helpers";
+import { prepareDraft, saveDraft } from "@/features/billing/services/billing-service";
 import { saveMlaDraft } from "@/features/mla/services/mla-store";
+import { fail, ok } from "@/types";
+import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/types";
 
 const schema = z.object({
@@ -15,4 +18,23 @@ const schema = z.object({
 /** Transmet le calcul MLA à l'éditeur de facture ; renvoie l'identifiant du brouillon. */
 export async function mlaPrepareAction(input: z.input<typeof schema>): Promise<ActionResult<{ token: string }>> {
   return runAction(schema, input, saveMlaDraft);
+}
+
+/** Établit directement la facture MLA : calcul → brouillon → enregistrement ; renvoie la facture émise prête à imprimer. */
+export async function mlaEstablishAction(input: z.input<typeof schema>): Promise<ActionResult<{ id: string; num: string; ttc: number }>> {
+  const result = await runAction(schema, input, async (actor, value): Promise<ActionResult<{ id: string; num: string; ttc: number }>> => {
+    const saved = await saveMlaDraft(actor, value);
+    if (!saved.success) return saved;
+    const draft = await prepareDraft(actor, { preset: "m_mla", mla: saved.data.token });
+    if (!draft.success) return draft;
+    if (!draft.data.num.trim()) return fail("Aucun numéro de facture n'a pu être proposé : ouvrez la facture dans l'éditeur pour le saisir.", "VALIDATION");
+    const issued = await saveDraft(actor, { draft: draft.data });
+    if (!issued.success) return issued;
+    return ok({ id: issued.data.id, num: draft.data.num, ttc: issued.data.ttc });
+  });
+  if (result.success) {
+    revalidatePath("/facturation");
+    revalidatePath("/factures");
+  }
+  return result;
 }
