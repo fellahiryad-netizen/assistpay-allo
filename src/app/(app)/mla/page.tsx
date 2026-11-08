@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
 import { can } from "@/features/access/services/access-rules";
 import { MlaHistory } from "@/features/mla/components/mla-history";
-import { getMlaParams, listMlaHistory } from "@/features/mla/services/mla-store";
+import { getMlaParamsByYear, listMlaHistory } from "@/features/mla/services/mla-store";
 import { MlaCalc } from "@/features/mla/components/mla-calc";
 
 export const metadata: Metadata = { title: "Facture MLA" };
@@ -20,7 +20,7 @@ export default async function MlaPage(): Promise<React.JSX.Element> {
         title="Facture MLA"
         description="Déposez la flotte du mois et les activités : la mensualité (prime annuelle par véhicule) et les véhicules retirés sinistrés (prime mensuelle jusqu'en décembre) sont calculés, puis la facture s'ouvre au modèle MLA."
       />
-      <MlaCalc canEdit={can(user, "FACT", "EDIT")} isAdmin={user.isAdmin} params={await getMlaParams()} />
+      <MlaCalc canEdit={can(user, "FACT", "EDIT")} isAdmin={user.isAdmin} paramsByYear={await getMlaParamsByYear()} />
       <div className="mt-4">
         <MlaHistory entries={history.success ? history.data : []} />
       </div>

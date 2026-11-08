@@ -201,3 +201,17 @@ export function mlaInvoiceRows(result: MlaResult, retained: string[]): MlaInvoic
   }
   return rows;
 }
+
+/** Primes par année (clé = année). */
+export type MlaParamsByYear = Record<string, MlaParams>;
+
+/**
+ * Primes applicables à une année : celles fixées pour cette année, sinon celles de l'année précédente la plus proche,
+ * sinon les valeurs 2026 par défaut. Les années passées ne bougent donc jamais quand on change l'année suivante.
+ */
+export function paramsForYear(byYear: MlaParamsByYear, year: number): MlaParams {
+  const exact = byYear[String(year)];
+  if (exact) return exact;
+  const earlier = Object.keys(byYear).map(Number).filter((entry) => entry < year).sort((a, b) => b - a)[0];
+  return (earlier !== undefined ? byYear[String(earlier)] : undefined) ?? MLA_PARAMS_DEFAUT;
+}

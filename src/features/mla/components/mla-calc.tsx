@@ -10,12 +10,12 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { computeMla, mlaInvoiceRows, monthLabel, parseActivities, parseFleet, type ActivityFile, type FleetFile, type MlaParams } from "@/features/mla/services/mla-engine";
+import { computeMla, mlaInvoiceRows, monthLabel, paramsForYear, parseActivities, parseFleet, type ActivityFile, type FleetFile, type MlaParamsByYear } from "@/features/mla/services/mla-engine";
 import { readWorkbook } from "@/lib/spreadsheet";
 import { formatDA, formatDate } from "@/utils/format";
 
 /** Onglet « Facture MLA » : flotte du mois + activité → mensualité et retraits sinistrés → facture au modèle MLA. */
-export function MlaCalc({ canEdit, isAdmin, params }: Readonly<{ canEdit: boolean; isAdmin: boolean; params: MlaParams }>): React.JSX.Element {
+export function MlaCalc({ canEdit, isAdmin, paramsByYear }: Readonly<{ canEdit: boolean; isAdmin: boolean; paramsByYear: MlaParamsByYear }>): React.JSX.Element {
   const router = useRouter();
   const fleetInput = useRef<HTMLInputElement>(null);
   const actInput = useRef<HTMLInputElement>(null);
@@ -24,6 +24,7 @@ export function MlaCalc({ canEdit, isAdmin, params }: Readonly<{ canEdit: boolea
   const [activity, setActivity] = useState<ActivityFile | null>(null);
   const [actName, setActName] = useState("");
   const [sheet, setSheet] = useState("");
+  const [paramYear, setParamYear] = useState(2026);
   const [off, setOff] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<{ tone: "error" | "info"; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
@@ -51,7 +52,8 @@ export function MlaCalc({ canEdit, isAdmin, params }: Readonly<{ canEdit: boolea
     }
   }
 
-  const result = useMemo(() => (fleet && sheet ? computeMla(fleet, sheet, activity, params) : null), [fleet, sheet, activity, params]);
+  const result = useMemo(() => (fleet && sheet ? computeMla(fleet, sheet, activity, paramsForYear(paramsByYear, fleet.months.find((entry) => entry.sheet === sheet)?.year ?? 2026)) : null), [fleet, sheet, activity, paramsByYear]);
+  const formParams = paramsForYear(paramsByYear, paramYear);
   const retained = result ? result.retraits.filter((line) => line.sinistre && !off.has(line.key)) : [];
   const ht = result ? result.mensualite + retained.length * result.prixRetrait : 0;
 
@@ -93,8 +95,8 @@ export function MlaCalc({ canEdit, isAdmin, params }: Readonly<{ canEdit: boolea
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     startTransition(async () => {
-      const saved = await mlaSaveParamsAction({ primeAnnuelle: Number(String(form.get("annuelle")).replace(",", ".")), primeRetraitMois: Number(String(form.get("retrait")).replace(",", ".")) });
-      setMessage(saved.success ? { tone: "info", text: "Primes enregistrées : elles s'appliquent aux prochaines factures." } : { tone: "error", text: saved.error });
+      const saved = await mlaSaveParamsAction({ year: paramYear, primeAnnuelle: Number(String(form.get("annuelle")).replace(",", ".")), primeRetraitMois: Number(String(form.get("retrait")).replace(",", ".")) });
+      setMessage(saved.success ? { tone: "info", text: `Primes ${paramYear} enregistrées : elles s'appliquent aux factures de ${paramYear}.` } : { tone: "error", text: saved.error });
       if (saved.success) router.refresh();
     });
   }
@@ -105,21 +107,27 @@ export function MlaCalc({ canEdit, isAdmin, params }: Readonly<{ canEdit: boolea
         <Card className="p-4">
           <form onSubmit={saveParams} className="flex flex-wrap items-end gap-3">
             <div>
+              <label htmlFor="mla-year" className="text-sm font-medium">
+                Année
+              </label>
+              <Input id="mla-year" type="number" min={2020} max={2100} value={paramYear} onChange={(event) => setParamYear(Number(event.target.value) || 2026)} className="w-24" required />
+            </div>
+            <div>
               <label htmlFor="mla-annuelle" className="text-sm font-medium">
                 Prime annuelle par véhicule (DA HT)
               </label>
-              <Input id="mla-annuelle" name="annuelle" inputMode="decimal" defaultValue={String(params.primeAnnuelle)} className="w-44" required />
+              <Input key={`a${paramYear}${formParams.primeAnnuelle}`} id="mla-annuelle" name="annuelle" inputMode="decimal" defaultValue={String(formParams.primeAnnuelle)} className="w-44" required />
             </div>
             <div>
               <label htmlFor="mla-retrait" className="text-sm font-medium">
                 Retrait sinistré, par mois (DA HT)
               </label>
-              <Input id="mla-retrait" name="retrait" inputMode="decimal" defaultValue={String(params.primeRetraitMois)} className="w-44" required />
+              <Input key={`r${paramYear}${formParams.primeRetraitMois}`} id="mla-retrait" name="retrait" inputMode="decimal" defaultValue={String(formParams.primeRetraitMois)} className="w-44" required />
             </div>
             <Button type="submit" variant="outline" disabled={pending}>
               Enregistrer les primes
             </Button>
-            <p className="basis-full text-xs text-muted-foreground">Réservé aux administrateurs. S'applique aux prochaines factures ; les factures déjà établies ne changent pas.</p>
+            <p className="basis-full text-xs text-muted-foreground">Réservé aux administrateurs. Les primes sont figées par année : 2026 reste à 12 000 / 1 000 DA tant que tu ne les modifies pas. Changer une année ne touche ni les autres années ni les factures déjà établies.</p>
           </form>
         </Card>
       ) : null}

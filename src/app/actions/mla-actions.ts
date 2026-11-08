@@ -46,10 +46,10 @@ export async function mlaEstablishAction(input: z.input<typeof schema>): Promise
   return result;
 }
 
-const paramsSchema = z.object({ primeAnnuelle: z.coerce.number().positive().max(10_000_000), primeRetraitMois: z.coerce.number().positive().max(10_000_000) });
+const paramsSchema = z.object({ year: z.coerce.number().int().min(2020).max(2100), primeAnnuelle: z.coerce.number().positive().max(10_000_000), primeRetraitMois: z.coerce.number().positive().max(10_000_000) });
 
 /** Modifie les primes MLA (administrateurs). */
-export async function mlaSaveParamsAction(input: z.input<typeof paramsSchema>): Promise<ActionResult<{ primeAnnuelle: number; primeRetraitMois: number }>> {
+export async function mlaSaveParamsAction(input: z.input<typeof paramsSchema>): Promise<ActionResult<{ year: number; primeAnnuelle: number; primeRetraitMois: number }>> {
   const result = await runAction(paramsSchema, input, saveMlaParams);
   if (result.success) revalidatePath("/mla");
   return result;

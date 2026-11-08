@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { requireAccess, requireAdmin } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { logAction } from "@/features/journal/services/journal-service";
-import { MLA_PARAMS_DEFAUT, type MlaParams } from "@/features/mla/services/mla-engine";
+import { MLA_PARAMS_DEFAUT, paramsForYear, type MlaParams, type MlaParamsByYear } from "@/features/mla/services/mla-engine";
 import { db } from "@/lib/db";
 import { fail, ok, type ActionResult } from "@/types";
 
@@ -40,32 +40,42 @@ export async function readMlaDraft(token: string): Promise<MlaDraftStored | null
   return value && Array.isArray(value.rows) ? value : null;
 }
 
-const PARAMS_KEY = "mla:params";
+const PARAMS_PREFIX = "mla:params:";
 
-/** Primes MLA en vigueur (celles de l'administrateur, sinon les valeurs par défaut). */
-export async function getMlaParams(): Promise<MlaParams> {
-  try {
-    const row = await db.setting.findUnique({ where: { key: PARAMS_KEY } });
-    const value = row?.value as Partial<MlaParams> | undefined;
-    const annuelle = Number(value?.primeAnnuelle);
-    const retrait = Number(value?.primeRetraitMois);
-    return { primeAnnuelle: annuelle > 0 ? annuelle : MLA_PARAMS_DEFAUT.primeAnnuelle, primeRetraitMois: retrait > 0 ? retrait : MLA_PARAMS_DEFAUT.primeRetraitMois };
-  } catch (error) {
-    console.error("[mla] paramètres illisibles :", error);
-    return MLA_PARAMS_DEFAUT;
-  }
+function cleanParams(value: Partial<MlaParams> | undefined): MlaParams | null {
+  const annuelle = Number(value?.primeAnnuelle);
+  const retrait = Number(value?.primeRetraitMois);
+  return annuelle > 0 && retrait > 0 ? { primeAnnuelle: annuelle, primeRetraitMois: retrait } : null;
 }
 
-/** Enregistre les primes MLA (administrateurs). Elles s'appliquent aux prochaines factures ; les factures établies ne changent pas. */
-export async function saveMlaParams(actor: AuthUser, params: MlaParams): Promise<ActionResult<MlaParams>> {
+/** Primes MLA figées par année. 2026 : 12 000 DA par véhicule, 1 000 DA par mois de retrait sinistré, tant que l'administrateur ne les modifie pas. */
+export async function getMlaParamsByYear(): Promise<MlaParamsByYear> {
+  const result: MlaParamsByYear = { "2026": MLA_PARAMS_DEFAUT };
+  try {
+    const rows = await db.setting.findMany({ where: { key: { startsWith: PARAMS_PREFIX } } });
+    for (const row of rows) {
+      const year = row.key.slice(PARAMS_PREFIX.length);
+      const clean = cleanParams(row.value as Partial<MlaParams> | undefined);
+      if (/^\d{4}$/.test(year) && clean) result[year] = clean;
+    }
+  } catch (error) {
+    console.error("[mla] paramètres illisibles :", error);
+  }
+  return result;
+}
+
+/** Enregistre les primes MLA d'une année (administrateurs). Les autres années et les factures déjà établies ne changent pas. */
+export async function saveMlaParams(actor: AuthUser, input: MlaParams & { year: number }): Promise<ActionResult<MlaParams & { year: number }>> {
   const guard = requireAdmin(actor);
   if (!guard.success) return guard;
-  if (!(params.primeAnnuelle > 0) || !(params.primeRetraitMois > 0)) return fail("Les primes doivent être supérieures à zéro.", "VALIDATION");
+  if (!(input.primeAnnuelle > 0) || !(input.primeRetraitMois > 0)) return fail("Les primes doivent être supérieures à zéro.", "VALIDATION");
   try {
-    const before = await getMlaParams();
-    await db.setting.upsert({ where: { key: PARAMS_KEY }, create: { key: PARAMS_KEY, value: params as unknown as object }, update: { value: params as unknown as object } });
-    await logAction(actor, "Primes MLA modifiées", `par véhicule/an ${before.primeAnnuelle} → ${params.primeAnnuelle} DA ; retrait sinistré/mois ${before.primeRetraitMois} → ${params.primeRetraitMois} DA`, true);
-    return ok(params);
+    const before = paramsForYear(await getMlaParamsByYear(), input.year);
+    const params: MlaParams = { primeAnnuelle: input.primeAnnuelle, primeRetraitMois: input.primeRetraitMois };
+    const key = `${PARAMS_PREFIX}${input.year}`;
+    await db.setting.upsert({ where: { key }, create: { key, value: params as unknown as object }, update: { value: params as unknown as object } });
+    await logAction(actor, "Primes MLA modifiées", `année ${input.year} : par véhicule/an ${before.primeAnnuelle} → ${params.primeAnnuelle} DA ; retrait sinistré/mois ${before.primeRetraitMois} → ${params.primeRetraitMois} DA`, true);
+    return ok(input);
   } catch (error) {
     console.error("[mla] enregistrement des primes impossible :", error);
     return fail("Les primes n'ont pas pu être enregistrées.", "DATABASE");
