@@ -46,6 +46,8 @@ export const prepareBillingSchema = z.object({
   per: z.string().regex(/^\d{4}-\d{2}$/).optional(),
   perTxt: z.string().max(120).optional(),
   lignes: z.string().max(800).optional(),
+  /** Brouillon MLA préparé par l'onglet « Facture MLA » (identifiant). */
+  mla: z.string().regex(/^[A-Za-z0-9-]{8,40}$/).optional(),
 });
 export type PrepareBillingInput = z.infer<typeof prepareBillingSchema>;
 

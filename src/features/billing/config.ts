@@ -333,6 +333,18 @@ export const PRESETS: readonly BillingPreset[] = [
     ],
     lib: "Honoraire {P}",
   },
+  {
+    id: "m_mla",
+    c: "MLA",
+    lbl: "Honoraire mensuel MLA (flotte + retraits sinistrés) – depuis l'onglet « Facture MLA »",
+    m: "mens",
+    objet: "Assistance Routière",
+    rows: [
+      { des: "Total véhicule", qte: "", pu: "12000", per: "Annuel 2026", ht: "", info: "1" },
+      { des: "Mensualité MM/12", qte: "-", pu: "-", per: "", ht: "" },
+    ],
+    lib: "Honoraire {P}",
+  },
   { id: "m_transf", c: "MLA", lbl: "Refacturation transfert de véhicules", m: "transf", objet: "Assistance Routière", bc: true, row: { marque: "", veh: "", immat: "", lieu: "", dest: "", ht: "" }, lib: "Refacturation transfert {P}", nature: "Production Refacturation" },
   { id: "m_presta", c: "MLA", lbl: "Prestation détaillée (grutage…)", m: "presta", objet: "Assistance Routière", details: true, row: { des: "Prestation de grutage — " }, lib: "Frais de grutage {P}", nature: "Production Refacturation" },
   { id: "c_regul", c: "CAAT", lbl: "Régularisation trimestrielle / mensuelle (avance 90 %)", m: "caat", objet: "Assistance Routière", succ: true, perTitle: "", row: { succ: "", tot: "", av: "", reg: "" }, lib: "Régul {P} succursale {S}" },

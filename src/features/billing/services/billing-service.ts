@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { readMlaDraft, type MlaDraftStored } from "@/features/mla/services/mla-store";
 import { getControlSettings } from "@/features/settings/services/settings-service";
 import type { Prisma } from "@/generated/prisma/client";
 import { can, requireAccess } from "@/features/access/services/access-rules";
@@ -184,6 +185,16 @@ async function prepareDraftBase(actor: AuthUser, input: PrepareBillingInput): Pr
     rows[1].des = `Mensualité ${previousMonth.slice(5)}/12`;
     rows[1].per = periodLabel(previousMonth);
   }
+  let mlaStored: MlaDraftStored | null = null;
+  if (preset.id === "m_mla" && input.mla) {
+    const stored = await readMlaDraft(input.mla);
+    if (stored) {
+      mlaStored = stored;
+      rows = stored.rows;
+      fromPrev = "";
+      notes = stored.notes;
+    }
+  }
   let caarProd = "";
   let regulPer = "";
   let regulPerTxt = "";
@@ -221,8 +232,8 @@ async function prepareDraftBase(actor: AuthUser, input: PrepareBillingInput): Pr
     ...numbers,
     date: today,
     objet: preset.objet ?? "",
-    per: regulPer || previousMonth,
-    perTxt: regulPerTxt || periodLabel(previousMonth),
+    per: regulPer || mlaStored?.per || previousMonth,
+    perTxt: regulPerTxt || mlaStored?.perTxt || periodLabel(previousMonth),
     succ,
     bc: "",
     origine: "",
