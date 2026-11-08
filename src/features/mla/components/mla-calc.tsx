@@ -2,13 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, useTransition } from "react";
-import { mlaEstablishAction, mlaPrepareAction, mlaSaveParamsAction } from "@/app/actions/mla-actions";
+import { mlaEstablishAction, mlaPrepareAction, mlaSaveParamsAction, mlaStoreFilesAction } from "@/app/actions/mla-actions";
 import { Notice } from "@/components/common/notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { computeMla, mlaInvoiceRows, monthLabel, paramsForYear, parseActivities, parseFleet, type ActivityFile, type FleetFile, type MlaParamsByYear } from "@/features/mla/services/mla-engine";
 import { readWorkbook } from "@/lib/spreadsheet";
@@ -23,7 +22,9 @@ export function MlaCalc({ canEdit, isAdmin, paramsByYear }: Readonly<{ canEdit: 
   const [fleetName, setFleetName] = useState("");
   const [activity, setActivity] = useState<ActivityFile | null>(null);
   const [actName, setActName] = useState("");
-  const [sheet, setSheet] = useState("");
+  const [monthSel, setMonthSel] = useState("");
+  const [fleetFile, setFleetFile] = useState<File | null>(null);
+  const [actFile, setActFile] = useState<File | null>(null);
   const [paramYear, setParamYear] = useState(2026);
   const [off, setOff] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<{ tone: "error" | "info"; text: string } | null>(null);
@@ -39,20 +40,25 @@ export function MlaCalc({ canEdit, isAdmin, paramsByYear }: Readonly<{ canEdit: 
         if (!parsed.months.length) throw new Error("aucun onglet « MM AAAA » trouvé");
         setFleet(parsed);
         setFleetName(file.name);
-        setSheet(parsed.months[parsed.months.length - 1]?.sheet ?? "");
+        setFleetFile(file);
         setOff(new Set());
+        if (monthSel && !parsed.months.some((entry) => `${entry.year}-${String(entry.month).padStart(2, "0")}` === monthSel)) {
+          setMessage({ tone: "error", text: `Le classeur « ${file.name} » n'a pas d'onglet pour ce mois (onglets trouvés : ${parsed.months.map((entry) => entry.sheet).join(", ")}).` });
+        }
       } else {
         const parsed = parseActivities(sheets);
         if (!parsed.dossiers) throw new Error("colonne « Immatriculation » ou dossiers introuvables");
         setActivity(parsed);
         setActName(file.name);
+        setActFile(file);
       }
     } catch (error) {
       setMessage({ tone: "error", text: `« ${file.name} » : ${error instanceof Error ? error.message : "fichier illisible"}` });
     }
   }
 
-  const result = useMemo(() => (fleet && sheet ? computeMla(fleet, sheet, activity, paramsForYear(paramsByYear, fleet.months.find((entry) => entry.sheet === sheet)?.year ?? 2026)) : null), [fleet, sheet, activity, paramsByYear]);
+  const sheet = fleet && monthSel ? (fleet.months.find((entry) => `${entry.year}-${String(entry.month).padStart(2, "0")}` === monthSel)?.sheet ?? "") : "";
+  const result = useMemo(() => (fleet && sheet ? computeMla(fleet, sheet, activity, paramsForYear(paramsByYear, Number(monthSel.slice(0, 4)) || 2026)) : null), [fleet, sheet, activity, paramsByYear]);
   const formParams = paramsForYear(paramsByYear, paramYear);
   const retained = result ? result.retraits.filter((line) => line.sinistre && !off.has(line.key)) : [];
   const ht = result ? result.mensualite + retained.length * result.prixRetrait : 0;
@@ -66,10 +72,22 @@ export function MlaCalc({ canEdit, isAdmin, paramsByYear }: Readonly<{ canEdit: 
     });
   }
 
+  /** Garde la flotte et les activités du mois dans la fiche MLA avant d'établir la facture. */
+  async function keepFiles(per: string): Promise<string | null> {
+    const body = new FormData();
+    body.set("month", per);
+    if (fleetFile) body.set("fleet", fleetFile);
+    if (actFile) body.set("activity", actFile);
+    const stored = await mlaStoreFilesAction(body);
+    return stored.success ? null : stored.error;
+  }
+
   function establishNow(): void {
     if (!result) return;
     const per = `${result.year}-${String(result.month).padStart(2, "0")}`;
     startTransition(async () => {
+      const keepError = await keepFiles(per);
+      if (keepError) return setMessage({ tone: "error", text: keepError });
       const done = await mlaEstablishAction({ rows: mlaInvoiceRows(result, retained.map((line) => line.key)), per, perTxt: monthLabel(result.year, result.month), notes: "" });
       if (!done.success) return setMessage({ tone: "error", text: done.error });
       router.push(`/facturation/${done.data.id}`);
@@ -80,6 +98,8 @@ export function MlaCalc({ canEdit, isAdmin, paramsByYear }: Readonly<{ canEdit: 
     if (!result) return;
     const per = `${result.year}-${String(result.month).padStart(2, "0")}`;
     startTransition(async () => {
+      const keepError = await keepFiles(per);
+      if (keepError) return setMessage({ tone: "error", text: keepError });
       const saved = await mlaPrepareAction({
         rows: mlaInvoiceRows(result, retained.map((line) => line.key)),
         per,
@@ -132,41 +152,43 @@ export function MlaCalc({ canEdit, isAdmin, paramsByYear }: Readonly<{ canEdit: 
         </Card>
       ) : null}
       <Card className="flex flex-col gap-3 p-4">
+        <div className="max-w-xs">
+          <label htmlFor="mla-month" className="text-sm font-medium">
+            1. Mois à traiter
+          </label>
+          <Input
+            id="mla-month"
+            type="month"
+            value={monthSel}
+            onChange={(event) => {
+              setMonthSel(event.target.value);
+              setOff(new Set());
+              setMessage(null);
+            }}
+          />
+          <p className="mt-1 text-xs text-muted-foreground">Choisissez d'abord le mois : l'onglet de la flotte et les retraits de ce mois sont utilisés, et les fichiers sont conservés sous ce mois.</p>
+        </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
-            <p className="text-sm font-medium">1. Flotte MLA (classeur avec les onglets par mois et « Retrait »)</p>
+            <p className="text-sm font-medium">2. Flotte MLA (classeur avec les onglets par mois et « Retrait »)</p>
             <input ref={fleetInput} type="file" accept=".xlsx,.xlsm,.xls" className="hidden" onChange={(event) => void readFile(event.target.files?.[0], "fleet")} />
-            <Button type="button" variant="outline" className="mt-1" onClick={() => fleetInput.current?.click()}>
+            <Button type="button" variant="outline" className="mt-1" disabled={!monthSel} onClick={() => fleetInput.current?.click()}>
               Choisir la flotte
             </Button>
             <p className="mt-1 text-xs text-muted-foreground">{fleet ? `${fleetName} · ${fleet.months.length} mois, ${fleet.retraits.length} véhicules retirés` : "Aucun fichier."}</p>
           </div>
           <div>
-            <p className="text-sm font-medium">2. Activités MLA (export des dossiers)</p>
+            <p className="text-sm font-medium">3. Activités MLA (export des dossiers)</p>
             <input ref={actInput} type="file" accept=".xlsx,.xlsm,.xls" className="hidden" onChange={(event) => void readFile(event.target.files?.[0], "activity")} />
-            <Button type="button" variant="outline" className="mt-1" onClick={() => actInput.current?.click()}>
+            <Button type="button" variant="outline" className="mt-1" disabled={!monthSel} onClick={() => actInput.current?.click()}>
               Choisir les activités
             </Button>
             <p className="mt-1 text-xs text-muted-foreground">{activity ? `${actName} · ${activity.dossiers} dossiers, ${activity.vehicules} véhicules` : "Aucun fichier."}</p>
           </div>
         </div>
-        {fleet ? (
-          <div className="max-w-xs">
-            <label htmlFor="mla-sheet" className="text-sm font-medium">
-              3. Mois à facturer (onglet de la flotte)
-            </label>
-            <NativeSelect id="mla-sheet" value={sheet} onChange={(event) => { setSheet(event.target.value); setOff(new Set()); }}>
-              {fleet.months.map((month) => (
-                <option key={month.sheet} value={month.sheet}>
-                  {monthLabel(month.year, month.month)} ({month.count} véhicules)
-                </option>
-              ))}
-            </NativeSelect>
-            <p className="mt-1 text-xs text-muted-foreground">Les retraits sont filtrés sur ce même mois.</p>
-          </div>
-        ) : null}
       </Card>
 
+      {fleet && monthSel && !sheet && !message ? <Notice tone="error">La flotte « {fleetName} » n'a pas d'onglet pour ce mois.</Notice> : null}
       {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
       {result && !activity ? <Notice tone="info">Ajoutez le fichier des activités pour repérer les véhicules retirés qui ont eu des dossiers (sinistrés).</Notice> : null}
 

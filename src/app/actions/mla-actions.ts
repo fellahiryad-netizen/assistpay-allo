@@ -4,7 +4,8 @@ import { z } from "zod";
 import { runAction } from "@/app/actions/action-helpers";
 import { prepareDraft, saveDraft } from "@/features/billing/services/billing-service";
 import { logAction } from "@/features/journal/services/journal-service";
-import { saveMlaDraft, saveMlaParams } from "@/features/mla/services/mla-store";
+import { getCurrentUser } from "@/lib/auth";
+import { saveMlaDraft, saveMlaFiles, saveMlaParams } from "@/features/mla/services/mla-store";
 import { fail, ok } from "@/types";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/types";
@@ -53,4 +54,26 @@ export async function mlaSaveParamsAction(input: z.input<typeof paramsSchema>): 
   const result = await runAction(paramsSchema, input, saveMlaParams);
   if (result.success) revalidatePath("/mla");
   return result;
+}
+
+/** Conserve dans la fiche MLA les fichiers de production du mois traité (flotte, activités). Champs : month (AAAA-MM), fleet, activity. */
+export async function mlaStoreFilesAction(formData: FormData): Promise<ActionResult<{ saved: number }>> {
+  try {
+    const actor = await getCurrentUser();
+    if (!actor) return fail("Votre session a expiré, reconnectez-vous.", "UNAUTHENTICATED");
+    const month = String(formData.get("month") ?? "");
+    const files: Array<{ kind: "flotte" | "activite"; name: string; data: Uint8Array }> = [];
+    for (const [field, kind] of [["fleet", "flotte"], ["activity", "activite"]] as const) {
+      const entry = formData.get(field);
+      if (!(entry instanceof File) || entry.size === 0) continue;
+      if (!/\.(xlsx|xlsm|xls)$/i.test(entry.name)) return fail(`« ${entry.name} » n'est pas un fichier Excel.`, "VALIDATION");
+      files.push({ kind, name: entry.name.slice(0, 160), data: new Uint8Array(await entry.arrayBuffer()) });
+    }
+    const result = await saveMlaFiles(actor, { month, files });
+    if (result.success) revalidatePath("/mla");
+    return result;
+  } catch (error) {
+    console.error("[action] fichiers MLA :", error);
+    return fail("Les fichiers n'ont pas pu être conservés.");
+  }
 }

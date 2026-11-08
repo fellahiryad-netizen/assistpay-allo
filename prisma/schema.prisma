@@ -335,3 +335,19 @@ model Setting {
   value     Json
   updatedAt DateTime @updatedAt
 }
+
+/// Fichiers de production MLA (flotte ou activités) gardés par mois ; jamais supprimés par l'application.
+model MlaFile {
+  id         String   @id @default(cuid())
+  /// "flotte" ou "activite".
+  kind       String
+  /// Mois traité (AAAA-MM).
+  month      String
+  name       String
+  size       Int
+  data       Bytes
+  uploadedBy String   @default("")
+  createdAt  DateTime @default(now())
+
+  @@index([month])
+}
