@@ -207,8 +207,28 @@
   }
   /* Papier à en-tête : marges réservées au logo (haut) et aux coordonnées (bas), la feuille ayant déjà 8 mm de marge. */
   .fx-page.fx-papier {
-    padding-top: 38mm;
-    padding-bottom: 26mm;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  /* Quand la facture passe sur 2 pages, chaque page garde la place du logo et des coordonnées du papier : la marge est portée par la feuille, pas par la première page. */
+  @page papier {
+    size: A4;
+    margin: 46mm 8mm 34mm;
+  }
+  .fx-page.fx-papier {
+    page: papier;
+  }
+  /* Une ligne du tableau ne se coupe pas entre deux pages, l'en-tête se répète, et le bloc des totaux reste d'un seul tenant. */
+  .fx-page .fx-t tr {
+    break-inside: avoid;
+  }
+  .fx-page .fx-t thead {
+    display: table-header-group;
+  }
+  .fx-page .fx-tot,
+  .fx-page .fx-words,
+  .fx-page .fx-foot {
+    break-inside: avoid;
   }
   /* Le pied de page de la charte descend en bas de la feuille. */
   .fx-page.fx-charte {
