@@ -64,7 +64,7 @@ function Page({ draft, presetId, number, rows, totals, ttc, entete }: Readonly<P
     </div>
   );
   const details = Object.entries(draft.details).filter(([, value]) => value.trim());
-  return (
+  const sheet = (
     <div className={`fx-page${entete ? ` fx-${entete}` : ""}`}>
       <div className="fx-top">
         {entete === "papier" ? <div /> : <img className="fx-logo" src="/logo-allo.png" alt="Allo Assistance" />}
@@ -196,6 +196,32 @@ function Page({ draft, presetId, number, rows, totals, ttc, entete }: Readonly<P
         </div>
       )}
     </div>
+  );
+  if (entete !== "papier") return sheet;
+  // Papier à en-tête : marge de feuille nulle (le navigateur n'imprime alors ni date, ni titre, ni adresse de page) ; la place du logo et des coordonnées
+  // est réservée sur chaque page par un en-tête et un pied de tableau, répétés à chaque page.
+  return (
+    <table className="fx-wrap">
+      <thead>
+        <tr>
+          <td>
+            <div className="fx-sp-top" />
+          </td>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{sheet}</td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>
+            <div className="fx-sp-bot" />
+          </td>
+        </tr>
+      </tfoot>
+    </table>
   );
 }
 

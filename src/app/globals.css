@@ -213,10 +213,26 @@
   /* Quand la facture passe sur 2 pages, chaque page garde la place du logo et des coordonnées du papier : la marge est portée par la feuille, pas par la première page. */
   @page papier {
     size: A4;
-    margin: 46mm 8mm 34mm;
+    margin: 0;
   }
-  .fx-page.fx-papier {
+  .fx-wrap {
     page: papier;
+    width: 210mm;
+    border-collapse: collapse;
+    margin: 0 auto;
+    page-break-after: always;
+  }
+  .fx-wrap td {
+    padding: 0;
+  }
+  .fx-sp-top {
+    height: 46mm;
+  }
+  .fx-sp-bot {
+    height: 34mm;
+  }
+  .fx-wrap .fx-page {
+    page-break-after: auto;
   }
   /* Une ligne du tableau ne se coupe pas entre deux pages, l'en-tête se répète, et le bloc des totaux reste d'un seul tenant. */
   .fx-page .fx-t tr {
