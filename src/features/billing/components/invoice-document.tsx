@@ -10,6 +10,8 @@ const integer = (value: number): string => new Intl.NumberFormat("fr-FR").format
 function cell(col: BillingColumn, row: ComputedRow): string {
   const value = row[col.k];
   if (value === undefined || value === "") return "";
+  // Un libellé (ligne d'intitulé du tableau, ex. « Quantité ») s'imprime tel quel au lieu d'être converti en 0.
+  if (col.t && typeof value === "string" && /[A-Za-zÀ-ÿ]/.test(value)) return value;
   if (col.t === "money") return value === "-" ? "-" : money(num(value));
   if (col.t === "num") return value === "-" || Number.isNaN(num(value)) ? String(value) : integer(num(value));
   return String(value);
