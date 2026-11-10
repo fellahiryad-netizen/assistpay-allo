@@ -7,7 +7,8 @@ import { remaining, toPayable } from "@/features/invoices/services/invoice-balan
 import { CAAT_SUCCURSALES } from "@/features/invoices/services/caat-advances";
 import { fail, ok, type ActionResult } from "@/types";
 import { round2 } from "@/utils/amounts";
-import { MONTHS_FR, todayIso } from "@/utils/dates";
+import { decimalToNumber } from "@/features/invoices/services/invoice-mapper";
+import { MONTHS_FR, toIsoDate, todayIso } from "@/utils/dates";
 import { upperPlain } from "@/utils/text";
 
 /** Clients suivis par succursale. */
@@ -23,6 +24,8 @@ export interface AdvanceInvoice {
   status: "EN_ATTENTE" | "REGLE";
   dateFacture: string | null;
   dateOperation: string | null;
+  /** Paiements du relevé bancaire reliés à cette facture (visibles avec l'accès au relevé). */
+  liens: Array<{ date: string; montant: number; libelle: string }>;
 }
 
 /** Case du tableau : une succursale pour un mois. */
@@ -101,6 +104,9 @@ export async function advanceTable(actor: AuthUser, client: AdvanceClient, year:
   if (!guard.success) return guard;
   try {
     const rows = await db.invoice.findMany({ where: { sens: "CREDIT", categorie: client, status: { not: "ANNULE" }, payroll: false } });
+    const bankLines = can(actor, "RELEVE") ? await db.bankStatementLine.findMany({ where: { sens: "CREDIT", NOT: { invoiceRefs: { isEmpty: true } } }, select: { date: true, montant: true, libelle: true, invoiceRefs: true } }) : [];
+    const linksOf = (legacyId: string): AdvanceInvoice["liens"] =>
+      bankLines.filter((line) => line.invoiceRefs.some((ref) => ref.split(":")[0] === legacyId)).map((line) => ({ date: toIsoDate(line.date) ?? "", montant: decimalToNumber(line.montant), libelle: line.libelle }));
     const defs: Array<[string, string]> = client === "CAAT" ? CAAT_SUCCURSALES.map((name) => [upperPlain(name), name]) : [...CAAR_ROWS];
     const table = new Map<string, { label: string; months: AdvanceCell[]; other: AdvanceCell }>(defs.map(([key, label]) => [key, { label, months: Array.from({ length: 12 }, emptyCell), other: emptyCell() }]));
     const yearsSeen = new Set<number>([year, Number(todayIso().slice(0, 4))]);
@@ -127,6 +133,7 @@ export async function advanceTable(actor: AuthUser, client: AdvanceClient, year:
         status: payable.status === "REGLE" ? "REGLE" : "EN_ATTENTE",
         dateFacture: payable.dateFacture,
         dateOperation: payable.dateOperation,
+        liens: linksOf(row.legacyId),
       };
       const monthly = Boolean(key) && period !== null && !NOT_MONTHLY.test(upperPlain(row.libelle));
       if (monthly && period) add(bucket.months[Number(period.slice(5, 7)) - 1] ?? bucket.other, entry);

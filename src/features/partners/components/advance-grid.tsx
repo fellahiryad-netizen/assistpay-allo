@@ -132,6 +132,8 @@ export function AdvanceGrid({ table }: Readonly<{ table: AdvanceTable }>): React
                 <th className="text-right">Encaissé</th>
                 <th className="text-right">Reste</th>
                 <th>Date règlement</th>
+                <th>Relié à (relevé bancaire)</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -147,6 +149,24 @@ export function AdvanceGrid({ table }: Readonly<{ table: AdvanceTable }>): React
                   <td className="text-right tabular-nums">{formatDA(inv.paid)}</td>
                   <td className="text-right tabular-nums">{formatDA(Math.max(0, inv.montant - inv.paid))}</td>
                   <td>{inv.dateOperation ?? (inv.status === "REGLE" ? "" : "en attente")}</td>
+                  <td className="text-xs">
+                    {inv.liens.length
+                      ? inv.liens.map((lien, i) => (
+                          <span key={i} className="block">
+                            {lien.date.split("-").reverse().join("/")} · {formatDA(lien.montant)}
+                            {Math.abs(lien.montant - inv.montant) > 0.5 ? <b className="ml-1 text-destructive">(différent du montant de la facture)</b> : null}
+                          </span>
+                        ))
+                      : "aucun paiement relié"}
+                  </td>
+                  <td className="whitespace-nowrap text-right">
+                    <Link href={`/factures/${inv.id}`} className="text-primary underline">
+                      Voir
+                    </Link>
+                    <Link href={`/factures/${inv.id}/modifier`} className="ml-3 text-primary underline">
+                      Modifier
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>
