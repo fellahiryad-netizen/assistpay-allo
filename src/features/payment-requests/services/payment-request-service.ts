@@ -256,7 +256,7 @@ export async function createFromInvoices(actor: AuthUser, input: DpCreateInput):
 /**
  * Crée automatiquement la demande de paiement d'une facture fournisseur qui vient d'être enregistrée.
  * Aucun droit « Demandes de paiement » n'est exigé (c'est la saisie de la facture qui la déclenche) ;
- * sans effet pour une facture client, un salaire, une facture annulée ou déjà liée à une demande.
+ * sans effet pour une facture partenaire, un salaire, une facture annulée ou déjà liée à une demande.
  * Un échec ne bloque jamais l'enregistrement de la facture.
  */
 export async function autoRequestForInvoice(actor: AuthUser, invoiceId: string): Promise<string | null> {

@@ -32,7 +32,7 @@ function lastMonths(todayIsoDate: string, count: number): string[] {
 }
 
 /**
- * Indicateurs du tableau de bord : créances clients et dettes fournisseurs en attente,
+ * Indicateurs du tableau de bord : créances partenaires et dettes fournisseurs en attente,
  * flux du mois, ancienneté des créances et flux des 12 derniers mois.
  * Seuls les sens visibles par l'utilisateur sont calculés ; la paie exige l'accès RH.
  */

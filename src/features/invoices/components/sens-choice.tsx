@@ -12,7 +12,7 @@ export interface SensChoiceProps {
 }
 
 const HINTS: Readonly<Record<SensKey, string>> = {
-  CREDIT: "Facture client (encaissement)",
+  CREDIT: "Facture partenaire (encaissement)",
   DEBIT: "Facture fournisseur (décaissement)",
 };
 

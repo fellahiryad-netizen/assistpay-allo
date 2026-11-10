@@ -72,7 +72,7 @@ export const ISSUER = {
   ville: "Chéraga",
 } as const;
 
-/** Fiche client. */
+/** Fiche partenaire. */
 export interface ClientCard {
   nom: string;
   adresse: string;
@@ -86,7 +86,7 @@ export interface ClientCard {
   tiers: string;
 }
 
-/** Clients facturés. */
+/** Partenaires facturés. */
 export const CLIENTS: Readonly<Record<string, ClientCard>> = {
   GAM: { nom: "Générale Assurance Méditerranéenne", adresse: "Centre d'affaires El Qods, 8ème étage 16014 Chéraga", tel: "+213 (0) 982 40 40 44", rc: "0017052 B01", nif: "000116001705272", nis: "000116180516557", prefix: "GAM 26-", cat: "GAM", tiers: "GAM ASSURANCE" },
   TRUST: { nom: "TRUST ALGERIA assurance et réassurance", adresse: "70 Chemin Larbi Allik, Hydra, Alger", tel: "0982 40 05 96", rc: "16/00-0003242 A 98", nif: "16994866031", nis: "099716099873505", prefix: "Trust 26-", cat: "TRUST", tiers: "TRUST ASSURANCE" },
@@ -105,7 +105,7 @@ export const CLIENT_LABELS: Readonly<Record<string, string>> = {
   CAAT: "CAAT",
   CAAR: "CAAR",
   TDA: "TDA",
-  AUTRE: "Autre client",
+  AUTRE: "Autre partenaire",
 };
 
 function simpleTotals(ht: number): BillingTotals {
@@ -163,6 +163,32 @@ export const MODELS: Readonly<Record<string, BillingModel>> = {
         ht: cpl,
         tva,
         ttc: r2(cpl + tva),
+      };
+    },
+  },
+  caarreg: {
+    lbl: "Régularisation CAAR (avance 90 % réglée TTC, écart HT + TVA)",
+    cols: [
+      { k: "succ", l: "Mois", w: "20%" },
+      { k: "tot", l: "Montant total HT (47 %)", t: "money" },
+      { k: "av", l: "Avance 90 % HT (TTC ÷ 1,19)", t: "money" },
+      { k: "reg", l: "Montant régule HT", t: "money" },
+      { k: "ecart", l: "Écart HT", t: "money", calc: (r) => r2(num(r.reg) - num(r.av)) },
+      { k: "tva", l: "TVA 19 % sur l'écart", t: "money", calc: (r) => r2(r2(num(r.reg) - num(r.av)) * 0.19) },
+      { k: "part", l: "Part assisteur TTC", t: "money", calc: (r) => r2(r2(num(r.reg) - num(r.av)) * 1.19) },
+    ],
+    totals: (rows) => {
+      const s = (k: string): number => r2(rows.reduce((sum, row) => sum + num(row[k]), 0));
+      const tot = s("tot");
+      const av = s("av");
+      const reg = s("reg");
+      const ecart = r2(reg - av);
+      const tva = r2(ecart * 0.19);
+      return {
+        lines: [["Montant total HT", tot], ["Avance 90 % HT", av], ["Montant régule HT", reg], ["Écart HT", ecart], ["TVA 19 % sur l'écart", tva], ["Total TTC", r2(ecart + tva), true]],
+        ht: ecart,
+        tva,
+        ttc: r2(ecart + tva),
       };
     },
   },
@@ -362,6 +388,7 @@ export const PRESETS: readonly BillingPreset[] = [
     row: { ag: "", nb: "", mt: "", pu: "800" },
   },
   { id: "r_succ", c: "CAAR", lbl: "Honoraire mensuel succursale (47 % / 90 %)", m: "caar", objet: "Assistance Routière", succ: true, row: { ag: "", prime: "" }, lib: "Facturation mois de {P}" },
+  { id: "r_regul", c: "CAAR", lbl: "Régularisation 10 % succursale (avance 90 % réglée TTC)", m: "caarreg", objet: "Assistance Routière", succ: true, perTitle: "", row: { succ: "", tot: "", av: "", reg: "" }, notes: "L'avance 90 % ayant été réglée TTC, la TVA 19 % ne porte que sur l'écart.", lib: "Régul 10 % {P} succursale {S}" },
   { id: "r_dir", c: "CAAR", lbl: "Direction – régularisation des polices passives", m: "caardir", objet: "Assistance Routière", perTitle: "", row: { ag: "", prime: "" }, lib: "Régularisation polices passives {P} – Direction CAAR" },
   {
     id: "r_passif",

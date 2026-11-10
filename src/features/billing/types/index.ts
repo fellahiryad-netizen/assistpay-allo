@@ -1,6 +1,6 @@
 import type { BillingRow, BillingTotals, ComputedRow } from "@/features/billing/config";
 
-/** Coordonnées du client imprimées sur la facture. */
+/** Coordonnées du partenaire imprimées sur la facture. */
 export interface BillingClientInfo {
   nom: string;
   adresse: string;

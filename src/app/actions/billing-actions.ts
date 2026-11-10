@@ -12,7 +12,7 @@ export async function prepareBillingAction(input: PrepareBillingInput): Promise<
   return runAction(prepareBillingSchema, input, prepareDraft);
 }
 
-/** Enregistrement d'une facture (ajoutée aux factures clients). */
+/** Enregistrement d'une facture (ajoutée aux factures partenaires). */
 export async function saveBillingAction(input: SaveBillingInput): Promise<ActionResult<{ id: string; ttc: number }>> {
   const result = await runAction(saveBillingSchema, input, saveDraft);
   if (result.success) {

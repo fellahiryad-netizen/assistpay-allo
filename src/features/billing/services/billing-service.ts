@@ -198,13 +198,13 @@ async function prepareDraftBase(actor: AuthUser, input: PrepareBillingInput): Pr
   let caarProd = "";
   let regulPer = "";
   let regulPerTxt = "";
-  if (preset.id === "c_regul" && input.lignes && input.succ) {
+  if ((preset.id === "c_regul" || preset.id === "r_regul") && input.lignes && input.succ) {
     const parsedRows = input.lignes.split(";").flatMap((part) => {
       const [label, tot, av, reg] = part.split(":");
       if (!label || [tot, av, reg].some((value) => value === undefined || Number.isNaN(Number(value)))) return [];
       return [{ succ: label.slice(0, 20), tot: moneyFr(Number(tot)), av: moneyFr(Number(av)), reg: moneyFr(Number(reg)) }];
     });
-    const branch = BRANCHES.CAAT?.find((entry) => entry === input.succ);
+    const branch = BRANCHES[preset.id === "r_regul" ? "CAAR" : "CAAT"]?.find((entry) => entry === input.succ);
     if (branch && parsedRows.length) {
       rows = parsedRows;
       succ = branch;
@@ -304,7 +304,7 @@ function bdgClient(draft: BillingDraft): { cat: string; tiers: string; label: st
 }
 
 /**
- * Enregistre une facture : elle s'ajoute aux factures clients (Crédit) en attente de paiement.
+ * Enregistre une facture : elle s'ajoute aux factures partenaires (Crédit) en attente de paiement.
  * Facture BDG : une seule ligne au suivi avec la répartition débours / frais de gestion (2 n° de facture).
  * Une facture déjà émise peut être rectifiée par un utilisateur autorisé, avec un motif (version conservée).
  */
@@ -319,7 +319,7 @@ export async function saveDraft(actor: AuthUser, input: SaveBillingInput): Promi
   if (isBdg && draft.bdgType !== "deb" && !draft.num2.trim()) return fail("Indiquez le n° de la facture de frais de gestion.", "VALIDATION");
   if (preset.succ && !draft.succ) return fail("Choisissez la succursale : elle figure sur la facture imprimée.", "VALIDATION");
   if (!(totals.ttc > 0)) return fail("Le total de la facture est nul : vérifiez les montants.", "VALIDATION");
-  if (!draft.cli.nom || !draft.cli.nif) return fail("Coordonnées du client incomplètes (raison sociale et NIF obligatoires).", "VALIDATION");
+  if (!draft.cli.nom || !draft.cli.nif) return fail("Coordonnées du partenaire incomplètes (raison sociale et NIF obligatoires).", "VALIDATION");
   const existingDoc = input.issuedId ? await db.issuedInvoice.findUnique({ where: { id: input.issuedId } }) : null;
   if (input.issuedId && !existingDoc) return fail("Facture introuvable.", "NOT_FOUND");
   if (existingDoc && !can(actor, "A_RECT", "EDIT")) return fail("Le droit « Rectifier une facture établie » ne vous est pas accordé.", "FORBIDDEN");

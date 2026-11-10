@@ -20,7 +20,7 @@ export default async function BillingPage(): Promise<React.JSX.Element> {
     <>
       <PageHeader
         title="Établir une facture"
-        description="Modèles de votre fichier de facturation (GAM, TRUST, MLA, CAAT, CAAR, TDA…). Chaque facture enregistrée s'ajoute aux factures clients en attente."
+        description="Modèles de votre fichier de facturation (GAM, TRUST, MLA, CAAT, CAAR, TDA…). Chaque facture enregistrée s'ajoute aux factures partenaires en attente."
         actions={
           can(user, "FACT", "EDIT") ? (
             <Link href="/facturation/nouvelle" className={buttonVariants()}>

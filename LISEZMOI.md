@@ -7,9 +7,10 @@ Cette nouvelle version d'AssistPay repose sur Next.js, PostgreSQL et Prisma. Ell
 | Tableau de bord | Créances, dettes, encaissements du mois, alertes |
 | Pilotage et clôture | Liste de clôture du mois, balance âgée et délais réels de paiement, prévision de trésorerie à 90 jours, rentabilité par activité, paramètres de contrôle, sauvegarde complète (Excel ou JSON) |
 | Contrôle qualité | Factures sans date ou sans n°, lignes sans catégorie, dates impossibles, BDG non répartis, paiements partiels, écarts, doublons, double emploi |
-| Factures clients / fournisseurs | Liste, filtres, ajout, modification, règlement (y compris partiel et BDG débours / frais) |
+| Factures partenaires / fournisseurs | Liste, filtres, ajout, modification, règlement (y compris partiel et BDG débours / frais) |
 | Partenaires | Solde dû, délais médians, prévision, fiche par succursale, lettre de relance (PDF), relevé de compte (Excel) |
 | Établir une facture | Tous les modèles du fichier de facturation (GAM, TRUST, MLA, CAAT, CAAR 47 % / 90 %, BDG 800 DA HT par dossier…), aperçu en direct, impression PDF, rectification par un administrateur avec motif |
+| CAAT Régul 10 % / CAAR Régul 10 % | Régularisation du solde après l'avance 90 % : comparaison avec la production, écarts par police et par agence, annulations et sinistres, export Excel, mail et facture préremplie. CAAR : avance réglée TTC, travail en HT, TVA sur l'écart seulement, formule Tunisie à 0 |
 | CAAR production | Contrôle du fichier de chaque succursale (anomalies, barème, doublons, total déclaré), TCD par agence, message à la succursale, facture en un clic |
 | BDG débours et frais | Suivi des encaissements des débours et des frais de gestion, règlement séparé |
 | Demandes de paiement | Import du fichier DP, création depuis les factures, fiche A4 imprimable, lien avec les factures |

@@ -13,7 +13,7 @@ export function IssuedList({ items }: Readonly<{ items: IssuedInvoiceDTO[] }>): 
           <TableRow>
             <TableHead>N°</TableHead>
             <TableHead>Date</TableHead>
-            <TableHead>Client</TableHead>
+            <TableHead>Partenaire</TableHead>
             <TableHead className="hidden lg:table-cell">Modèle / période</TableHead>
             <TableHead className="text-right">TTC</TableHead>
             <TableHead>Suivi</TableHead>

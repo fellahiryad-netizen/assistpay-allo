@@ -53,7 +53,7 @@ function toSearch(query: InvoiceQuery, page: number): string {
   return search ? `/factures?${search}` : "/factures";
 }
 
-const TITLES = { CREDIT: "Factures clients", DEBIT: "Factures fournisseurs" } as const;
+const TITLES = { CREDIT: "Factures partenaires", DEBIT: "Factures fournisseurs" } as const;
 
 /** Liste filtrable et paginée des factures. */
 export default async function InvoicesPage({ searchParams }: Readonly<{ searchParams: SearchParams }>): Promise<React.JSX.Element> {

@@ -8,7 +8,7 @@ EURL ALLO ASSISTANCE (Chéraga, Alger) gère un réseau de prestataires d'assist
 
 AssistPay remplace le classeur Excel « SUIVI_BANCAIRE_ALLO_ASSISTANCE » (un onglet par année, de 2023 à 2026). Il sert à :
 
-- suivre les **factures clients** (crédit : honoraires facturés aux compagnies) et les **factures fournisseurs** (débit : prestataires, charges) ;
+- suivre les **factures partenaires** (crédit : honoraires facturés aux compagnies) et les **factures fournisseurs** (débit : prestataires, charges) ;
 - savoir ce qui reste à encaisser, ce qui reste à payer, et depuis combien de temps ;
 - établir les factures émises (GAM, TRUST BDG avec 800 DA HT de frais de gestion par dossier, CAAR à partir des fichiers de production des succursales…) ;
 - produire les demandes de paiement et les fichiers de virements envoyés à la banque ;
@@ -20,7 +20,7 @@ Monnaie : dinar algérien (DA), deux décimales. Fuseau horaire : Africa/Algiers
 
 | Terme | Sens |
 | --- | --- |
-| Sens **Crédit** | Facture client : de l'argent qui rentre. Onglet « Factures clients ». |
+| Sens **Crédit** | Facture partenaire : de l'argent qui rentre. Onglet « Factures partenaires ». |
 | Sens **Débit** | Facture fournisseur ou charge : de l'argent qui sort. Onglet « Factures fournisseurs ». |
 | État | En attente, Réglé, Annulé. |
 | Date d'opération | Date de règlement quand la facture est réglée (dans l'ancienne version : champ `date`). |
@@ -44,7 +44,7 @@ Chaque personne a un **profil** qui fixe ses accès par défaut. L'administrateu
 | RH | RH seulement |
 | Partenaire | Rien |
 
-Onglets du tableau des accès : DASH (tableau de bord), PILOT (pilotage et clôture), QC (contrôle qualité), FCLI (factures clients), FFOUR (factures fournisseurs), PART (partenaires), FACT (établir une facture), CAAR, BDG, DP (demandes de paiement), VIR (virements et RIB), RELEVE (relevé bancaire), RH.
+Onglets du tableau des accès : DASH (tableau de bord), PILOT (pilotage et clôture), QC (contrôle qualité), FCLI (factures partenaires), FFOUR (factures fournisseurs), PART (partenaires), FACT (établir une facture), CAAR, BDG, DP (demandes de paiement), VIR (virements et RIB), RELEVE (relevé bancaire), RH.
 
 Règle absolue : **le contrôle se fait dans les services**, à chaque appel. Masquer un bouton ne suffit jamais.
 
@@ -55,7 +55,7 @@ Le schéma complet est dans `prisma/schema.prisma`. Chaque table reprise de l'an
 | Table | Contenu | Ancienne collection |
 | --- | --- | --- |
 | User, UserModuleAccess | Comptes, profils, exceptions d'accès | utilisateurs (+ config/comptes.json pour les mots de passe) |
-| Invoice | Factures clients et fournisseurs | factures + archives (lot1 à lot3) |
+| Invoice | Factures partenaires et fournisseurs | factures + archives (lot1 à lot3) |
 | BankStatementLine | Lignes du relevé bancaire et leur statut de rapprochement | releve |
 | PaymentRequest | Demandes de paiement | dp + dparchives |
 | IssuedInvoice | Factures émises (détail dans `payload`) | facturation |
@@ -107,6 +107,8 @@ Les règles complètes sont dans `docs/ai_system_rules.md`. En résumé, telles 
 | Virements et RIB | `features/transfers/services/rib.ts`, `transfer-check.ts`, `transfer-service.ts`, `rib-service.ts` | Compte donneur AGB, plafond 1 000 000 DA par virement, seuil mensuel paramétrable, clé RIB mod 97, format banque (ligne D puis lignes C) |
 | Facturation | `features/billing/config.ts`, `billing-calc.ts`, `billing-service.ts` | Modèles, numérotation continue, BDG en paire débours / frais, rectification avec versions |
 | CAAR | `features/caar/services/caar-engine.ts`, `caar-service.ts` | Colonnes reconnues automatiquement, barème (durées 1/3/6/12 mois, prorata, avenant 200 DA, flotte), part ALLO 47 %, avance 90 %, TVA 19 % |
+| CAAT Régul 10 % | `features/regul/services/regul-engine.ts`, `regul-store.ts`, `regul-export.ts` | Avance 90 % HT ; régule = 10 % HT + TVA 19 % sur 100 % de la régule ; facture préremplie via le modèle `c_regul` |
+| CAAR Régul 10 % | `features/caar-regul/services/caar-regul-engine.ts`, `caar-regul-store.ts`, `caar-regul-export.ts`, `features/caar-regul/lib/caar-conso-reader.ts` | Avance 90 % réglée **TTC** ; travail en HT ; TVA 19 % sur l'écart seulement ; formule Tunisie à 0 ; facture préremplie via le modèle `r_regul` (voir § 6 bis) |
 | BDG | `features/bdg/services/bdg-service.ts` | Facture soldée quand débours et frais sont réglés |
 | Partenaires | `features/partners/services/partner-service.ts` | Regroupement des catégories par partenaire, délai médian, relances |
 | Pilotage | `features/pilot/services/pilot-service.ts`, `backup-service.ts` | Délai réel pondéré sur 13 mois, balance âgée, trésorerie 90 jours, marges par activité |
@@ -114,17 +116,48 @@ Les règles complètes sont dans `docs/ai_system_rules.md`. En résumé, telles 
 | RH | `features/hr/services/hr-service.ts` | Mois de rattachement, groupes (salaires, CNAS, G50, autres), report mensuel dans le suivi |
 | Paramètres | `features/settings/services/settings-service.ts` | Réglage `controle` |
 
+## 6 bis. Régularisation 10 % : CAAT et CAAR ne se calculent pas de la même façon
+
+Les deux compagnies versent une avance de 90 % sur la production du mois, puis la succursale renvoie son fichier de production « définitif » et ALLO facture le solde. La différence tient à la TVA de l'avance.
+
+| | CAAT (`/regul`) | CAAR (`/caar-regul`) |
+| --- | --- | --- |
+| Avance 90 % | Réglée HT | Réglée **TTC** : avance HT = montant TTC de la facture d'avance ÷ 1,19 |
+| Montant régule | Part assisteur du fichier de la succursale | Allo 47 % de la prime HT du fichier de la succursale (non arrondi ligne par ligne) |
+| Écart / complément | Régule − avance HT | Régule − avance HT (peut être négatif : rien à facturer) |
+| TVA 19 % | Sur **100 %** de la régule | Sur **l'écart seulement** (la TVA de l'avance a déjà été payée) |
+| À facturer TTC | Complément + TVA sur la régule | Écart + TVA sur l'écart |
+| Présentation | HT | HT : la CAAR n'accepte pas une régule présentée en TTC |
+| Période | Mois, trimestre ou semestre | 2026 : de mai (début du partenariat) à décembre, mois par mois ; à partir de 2027 : trimestre par trimestre |
+
+Règles propres à la CAAR :
+
+- **Cinq succursales** : Alger Chéraga, Alger Bouzaréah, Constantine, Annaba, Oran (`CAAR_SUCCURSALES`).
+- **Formule « Assistance TUNISIE »** : toujours à 0 DA. Si une ligne porte un montant (dans le fichier de la succursale ou dans l'avance), elle est ramenée à 0 et signalée (alerte à l'écran et onglet « ALERTE Tunisie » de l'export).
+- **Polices dont la date d'effet précède le mois** : elles restent comptées (la prime est encaissée).
+- **Quittances non encaissées** (colonne ÉTAT différente de « ENCAISSÉ ») : non comptées, listées.
+- **Liste « polices exclues » placée sous le total** du fichier (cas d'Oran) : reprise, dédoublonnée et classée « Police réintégrée ».
+- **Mois d'un onglet** : lu dans le nom de l'onglet, sinon dans le nom du fichier, sinon dans la majorité des dates d'effet ; un onglet sans mois est ignoré si un autre onglet du fichier en a un.
+- **Comparaison police par police** (agrégée par mois et numéro de police de base) : nouvelle police, police réintégrée, montant modifié (dont « double 47 % »), police retirée, n° de police corrigé (même assuré, même montant).
+- **Comparaison par agence** : les codes du consolidé sont alignés sur ceux de la succursale par suffixe unique (ex. 702 → 74702).
+- **Annulations** : primes négatives ; un changement de formule sur la même immatriculation n'est pas une annulation ; croisement avec la base activité sur la clé « police | immatriculation » pour repérer les annulées ayant eu un sinistre.
+
+Données (table `Setting`) : `caarregul:index` (mois, factures d'avance de RECAP FACTURES, formules), `caarregul:base:SUCC:AAAA-MM` (lignes du consolidé), `caarregul:sinistres` (clés de la base activité), `caarregul:saisie:SUCC-AAAA-MM` (avance corrigée à la main), `caarregul:res:SUCC-AAAA-MM` (résultat enregistré pour le suivi).
+
+L'export Excel (sans onglet Méthodologie) contient : Feuil1 (Montant Total, Somme Avance, Montant Régule, ECARTS HT, TVA, Part Assisteur TTC, avec formules), Écart, Détail par agence, Polices Annulées, Changement Garantie, ALERTE Annulée+Sinistre, ALERTE Tunisie, Polices réintégrées, Polices non comptées et le détail du fichier. L'écran génère aussi le mail d'accompagnement. Le bouton « Créer la facture » ouvre la Facturation sur le modèle `r_regul` (une ligne par mois) ; à l'enregistrement, la facture rejoint les **factures partenaires en attente**.
+
 ## 7. Feuille de route de la reconstruction
 
 | Étape | Contenu | État |
 | --- | --- | --- |
-| 1 | Fondations, base complète, import des données, connexion, rôles et tableau des accès, journal, tableau de bord, factures clients et fournisseurs | **Livrée** |
+| 1 | Fondations, base complète, import des données, connexion, rôles et tableau des accès, journal, tableau de bord, factures partenaires et fournisseurs | **Livrée** |
 | 2 | Relevé bancaire : import Excel, rapprochement automatique avec les factures et les fichiers de virements, doubles emplois à valider | **Livrée** |
 | 3 | Demandes de paiement : import du fichier DP, numérotation, lien avec les factures, fiche imprimable | **Livrée** |
 | 4 | Virements et RIB : état des virements par produit (AR / BDG), découpage au-delà de 1 000 000 DA, RIB manquants ou modifiés, contrôle de fichier, export au format banque | **Livrée** |
 | 5 | Ventes : partenaires et relances, facturation (GAM, TRUST BDG 800 DA HT par dossier, CAAR 47 % / 90 %), contrôle des productions CAAR, suivi BDG, impression PDF | **Livrée** |
 | 6 | Pilotage, clôture, paramètres, sauvegarde et contrôle qualité | **Livrée** |
 | 7 | RH (salaires, remboursements), accès RH, report mensuel dans le suivi | **Livrée** |
+| 8 | Régularisations 10 % : CAAT Régul 10 % et CAAR Régul 10 % (consolidé ALLO & CAAR, base activité, suivi 2026 par mois puis par trimestre, export, mail, facture préremplie) | **Livrée** |
 
 Pistes pour la suite : passer SheetJS à la version 0.20.3 (voir LISEZMOI, § 7) ; écran d'édition du barème CAAR (aujourd'hui lu dans le réglage `caar`, repris de l'ancienne version) ; harmonisation automatique des catégories (outil « Qualité des données » de l'ancienne version, non repris).
 

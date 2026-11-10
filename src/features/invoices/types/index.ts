@@ -1,4 +1,4 @@
-/** Sens comptable : crédit = facture client (encaissement), débit = facture fournisseur (décaissement). */
+/** Sens comptable : crédit = facture partenaire (encaissement), débit = facture fournisseur (décaissement). */
 export const SENS_KEYS = ["CREDIT", "DEBIT"] as const;
 export type SensKey = (typeof SENS_KEYS)[number];
 

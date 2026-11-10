@@ -41,7 +41,7 @@ export interface AlertGroup {
   items: AlertItem[];
 }
 
-/** Alertes automatiques : factures clients et fournisseurs en attente depuis plus de 30 jours. */
+/** Alertes automatiques : factures partenaires et fournisseurs en attente depuis plus de 30 jours. */
 export interface AlertData {
   asOf: string;
   clients: AlertGroup[];
