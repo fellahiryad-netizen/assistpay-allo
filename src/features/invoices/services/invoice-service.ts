@@ -28,7 +28,7 @@ const PAGE_SIZE = 50;
 const NO_ACCESS = "Vous n'avez accès à aucune facture.";
 
 /** Filtre de visibilité commun : sens autorisés et lignes de paie seulement avec l'accès RH. */
-function visibilityWhere(actor: AuthUser): Prisma.InvoiceWhereInput | null {
+export function visibilityWhere(actor: AuthUser): Prisma.InvoiceWhereInput | null {
   const sens = visibleSens(actor);
   if (sens.length === 0) return null;
   return {

@@ -78,6 +78,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: "/demandes", label: "Demandes de paiement", icon: "request", module: "DP" },
       { href: "/virements", label: "Virements et RIB", icon: "transfer", module: "VIR" },
       { href: "/releve", label: "Relevé bancaire", icon: "bank", module: "RELEVE" },
+      { href: "/recherche-montant", label: "Recherche par montant", icon: "bank", module: "all" },
       { href: "/releve/rapprochement", label: "Double emploi", icon: "double", module: "FFOUR" },
     ],
   },
