@@ -7,7 +7,22 @@ import { fail, type ActionResult } from "@/types";
 /** Premier message d'erreur lisible d'une validation Zod. */
 export function firstIssue(error: z.ZodError): string {
   const issue = error.issues[0];
-  return issue ? issue.message : "Données invalides.";
+  if (!issue) return "Données invalides.";
+  // Les messages personnalisés (en français) sont gardés ; les messages par défaut de Zod, en anglais, sont traduits.
+  if (!/^(String|Number|Array|Set|Date|BigInt|Invalid|Expected|Required|Too|Unrecognized)\b/.test(issue.message)) return issue.message;
+  const where = issue.path.length ? ` (${issue.path.join(" › ")})` : "";
+  switch (issue.code) {
+    case "too_big":
+      return `Valeur trop longue ou trop grande${where}.`;
+    case "too_small":
+      return `Valeur manquante ou trop courte${where}.`;
+    case "invalid_type":
+      return issue.received === "undefined" ? `Valeur obligatoire manquante${where}.` : `Valeur d'un type inattendu${where}.`;
+    case "invalid_enum_value":
+      return `Valeur non reconnue${where}.`;
+    default:
+      return `Données invalides${where}.`;
+  }
 }
 
 /**
