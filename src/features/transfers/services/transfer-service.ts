@@ -548,3 +548,68 @@ export async function generateSheet(actor: AuthUser, input: SheetInput): Promise
     return fail("L'état des virements n'a pas pu être généré.", "DATABASE");
   }
 }
+
+/** Résultat de la reprise d'une correction de montant dans l'état des virements. */
+export interface TransferSyncResult {
+  /** Référence de l'état corrigé ; vide si aucun état lié n'a été trouvé. */
+  ref: string;
+  /** Vrai si l'état était validé : il repasse « en attente » et doit être revalidé puis renvoyé à la banque. */
+  wasValidated: boolean;
+  /** Vrai si la ligne n'a pas pu être identifiée sans doute (à corriger à la main). */
+  manual: boolean;
+}
+
+/**
+ * Reprend dans l'état des virements le nouveau montant d'une demande de paiement corrigée : la ligne du bénéficiaire est modifiée,
+ * le total (ligne débitrice et crédit) recalculé, le contrôle refait. Un état validé repasse « en attente » pour être revalidé.
+ */
+export async function syncTransferAmount(
+  actor: AuthUser,
+  change: { ref: string; beneficiaire: string; before: number; after: number; sent: string },
+): Promise<TransferSyncResult> {
+  const none: TransferSyncResult = { ref: "", wasValidated: false, manual: false };
+  try {
+    const batches = await db.transferBatch.findMany({ where: { status: { not: "rejete" } } });
+    const names = change.sent ? change.sent.split(",").map((part) => part.trim()).filter(Boolean) : [];
+    const pool = names.length ? batches.filter((batch) => names.includes(batch.ref) || names.includes(batch.fichier)) : batches;
+    const matches: Array<{ batch: TransferBatch; lines: TransferLine[]; index: number }> = [];
+    for (const batch of pool) {
+      const lines = readTransferLines(batch.lines);
+      lines.forEach((line, index) => {
+        if (line.sens === "C" && nameSimilarity(`${line.nom} ${line.prenom}`, change.beneficiaire) >= 0.99 && Math.abs(line.montant - change.before) < 0.01) matches.push({ batch, lines, index });
+      });
+    }
+    if (matches.length === 0) return change.sent ? { ref: change.sent, wasValidated: false, manual: true } : none;
+    const first = matches[0];
+    if (!first || (matches.length > 1 && !change.sent)) return { ref: matches.map((match) => match.batch.ref).join(", "), wasValidated: false, manual: true };
+    const { batch, lines, index } = first;
+    const delta = round2(change.after - change.before);
+    const target = lines[index];
+    if (!target) return { ref: batch.ref, wasValidated: false, manual: true };
+    target.montant = round2(change.after);
+    const total = round2(lines.filter((line) => line.sens === "C").reduce((sum, line) => sum + line.montant, 0));
+    const oldTotal = round2(total - delta);
+    for (const line of lines) if (line.sens === "D" && Math.abs(line.montant - oldTotal) < 0.01) line.montant = total;
+    const debit = round2(lines.filter((line) => line.sens === "D").reduce((sum, line) => sum + line.montant, 0));
+    const knowledge = await loadKnowledge();
+    const analysis = analyseTransfer(lines, knowledge, { type: batch.type === "A" || batch.type === "B" ? batch.type : "auto", mois: batch.mois, fileName: batch.fichier, selfId: batch.id });
+    const wasValidated = batch.status === "valide";
+    const history = Array.isArray(obj(batch.extra).corrections) ? (obj(batch.extra).corrections as unknown[]) : [];
+    await db.transferBatch.update({
+      where: { id: batch.id },
+      data: {
+        lines: lines.map(storeTransferLine) as Prisma.InputJsonValue,
+        credit: total,
+        debit: debit || total,
+        verdict: analysis.verdict,
+        status: wasValidated ? "attente" : batch.status,
+        extra: { ...obj(batch.extra), corrections: [...history, { le: new Date().toISOString(), par: actor.name, beneficiaire: change.beneficiaire, avant: change.before, apres: change.after }] } as Prisma.InputJsonObject,
+      },
+    });
+    await logAction(actor, "État des virements corrigé", `${batch.ref} – ${change.beneficiaire} : ${formatDA(change.before)} → ${formatDA(change.after)}${wasValidated ? " – repasse en attente de validation" : ""}`);
+    return { ref: batch.ref, wasValidated, manual: false };
+  } catch (error) {
+    console.error("[virements] reprise du montant corrigé impossible :", error);
+    return { ref: change.sent, wasValidated: false, manual: true };
+  }
+}

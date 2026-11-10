@@ -1,6 +1,8 @@
 import { branchLabel } from "@/features/invoices/services/branch";
 import { recordPayrollInHr } from "@/features/hr/services/hr-service";
 import { fpInvoiceDeleted, fpSyncAmount } from "@/features/provider-invoices/services/fp-store";
+import { notifyAdmins } from "@/features/system/services/admin-notices";
+import { syncTransferAmount } from "@/features/transfers/services/transfer-service";
 import { autoRequestForInvoice, detachDeletedInvoice, syncRequestsAmount } from "@/features/payment-requests/services/payment-request-service";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
@@ -263,8 +265,21 @@ export async function updateInvoice(actor: AuthUser, id: string, input: InvoiceI
     await logAction(actor, "Modification facture", describe(dto));
     // Le montant corrigé est reporté sur la demande de paiement et sur la demande de facture prestataire.
     if (row.sens === "DEBIT" && !row.montant.equals(current.montant)) {
-      await syncRequestsAmount(actor, row);
+      const changes = await syncRequestsAmount(actor, row);
       await fpSyncAmount(actor, row.legacyId, dto.montant);
+      // La correction se répercute sur l'état des virements lié ; les administrateurs en sont alertés.
+      for (const change of changes) {
+        const transfer = await syncTransferAmount(actor, change);
+        if (!transfer.ref && !change.sent) continue;
+        const lignes = [
+          `Facture ${current.numero || "sans numéro"} – ${current.tiers} : ${formatDA(decimalToNumber(current.montant))} → ${formatDA(dto.montant)} (modifiée par ${actor.name}).`,
+          `Demande de paiement ${change.ref} corrigée : ${formatDA(change.before)} → ${formatDA(change.after)}.`,
+          transfer.manual
+            ? `État de virement ${transfer.ref || change.sent} : la ligne n'a pas pu être corrigée automatiquement, à vérifier à la main.`
+            : `État de virement ${transfer.ref} corrigé automatiquement${transfer.wasValidated ? " : il était validé, il repasse en attente et doit être revalidé puis renvoyé à la banque" : ""}.`,
+        ];
+        await notifyAdmins({ titre: "Facture fournisseur corrigée après virement", lignes, par: actor.name });
+      }
     }
     return ok(dto);
   } catch (error) {

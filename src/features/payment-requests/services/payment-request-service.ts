@@ -272,28 +272,47 @@ export async function autoRequestForInvoice(actor: AuthUser, invoiceId: string):
   }
 }
 
+/** Demande de paiement dont le montant vient d'être corrigé (reprise par l'état des virements et l'alerte aux administrateurs). */
+export interface RequestAmountChange {
+  id: string;
+  ref: string;
+  beneficiaire: string;
+  before: number;
+  after: number;
+  /** Nom du fichier d'état des virements déjà généré pour cette demande, le cas échéant. */
+  sent: string;
+}
+
+function sentRefOf(extra: unknown): string {
+  const value = extra && typeof extra === "object" ? (extra as Record<string, unknown>).virEnvoi : null;
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  const ref = (value as Record<string, unknown>).ref;
+  return typeof ref === "string" ? ref : "";
+}
+
 /**
  * Après un changement de montant sur une facture fournisseur : recalcule le montant des demandes de paiement
  * qui la contiennent (total des restes à payer de leurs factures). Un échec ne bloque pas la modification.
  */
-export async function syncRequestsAmount(actor: AuthUser, invoice: { legacyId: string }): Promise<number> {
+export async function syncRequestsAmount(actor: AuthUser, invoice: { legacyId: string }): Promise<RequestAmountChange[]> {
+  const changes: RequestAmountChange[] = [];
   try {
     const requests = await db.paymentRequest.findMany({ where: { invoiceIds: { has: invoice.legacyId } } });
-    let changed = 0;
     for (const request of requests) {
       const rows = await db.invoice.findMany({ where: { legacyId: { in: request.invoiceIds } } });
       if (rows.length === 0) continue;
       const total = round2(rows.map(toPayable).reduce((sum, item) => sum + (remaining(item) || item.montant), 0));
-      if (total === decimalToNumber(request.montant)) continue;
+      const before = decimalToNumber(request.montant);
+      if (total === before) continue;
       await db.paymentRequest.update({ where: { id: request.id }, data: { montant: total } });
-      await logAction(actor, "Montant de demande de paiement corrigé", `${request.ref} : ${formatDA(decimalToNumber(request.montant))} → ${formatDA(total)}`);
-      changed += 1;
+      await logAction(actor, "Montant de demande de paiement corrigé", `${request.ref} : ${formatDA(before)} → ${formatDA(total)}`);
+      changes.push({ id: request.id, ref: request.ref, beneficiaire: request.beneficiaire, before, after: total, sent: sentRefOf(request.extra) });
     }
-    return changed;
   } catch (error) {
     console.error("[dp] synchronisation du montant impossible :", error);
-    return 0;
   }
+  return changes;
 }
 
 /**

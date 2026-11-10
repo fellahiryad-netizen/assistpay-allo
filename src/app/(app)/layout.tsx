@@ -8,6 +8,8 @@ import { countAlerts } from "@/features/invoices/services/alert-service";
 import { autoCaatAdvances } from "@/features/invoices/services/caat-advances";
 import { countToIssue } from "@/features/provider-invoices/services/fp-store";
 import { countPendingDeletions } from "@/features/invoices/services/deletion-service";
+import { AdminNotices } from "@/components/common/admin-notices";
+import { listAdminNotices } from "@/features/system/services/admin-notices";
 import { can, PROFILE_LABELS } from "@/features/access/services/access-rules";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +27,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
   const alerts = groups.some((group) => group.items.some((item) => item.href === "/alertes")) ? await countAlerts(user) : 0;
   const pendingDeletions = await countPendingDeletions(user);
   const toIssue = await countToIssue(user);
+  const notices = await listAdminNotices(user);
   const withBadges = groups.map((group) => ({ ...group, items: group.items.map((item) => (item.href === "/alertes" ? { ...item, badge: alerts } : item.href === "/suppressions" ? { ...item, badge: pendingDeletions } : item.href === "/factures-prestataires" ? { ...item, badge: toIssue } : item)) }));
   return (
     <div className="flex min-h-screen">
@@ -33,7 +36,10 @@ export default async function AppLayout({ children }: Readonly<{ children: React
       </Suspense>
       <div className="flex min-w-0 flex-1 flex-col">
         <Header userName={user.name} profileLabel={PROFILE_LABELS[user.profile]} />
-        <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">{children}</main>
+        <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">
+          <AdminNotices notices={notices} />
+          {children}
+        </main>
       </div>
     </div>
   );
