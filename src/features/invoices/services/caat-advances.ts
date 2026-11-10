@@ -6,8 +6,9 @@ import { fail, ok, type ActionResult } from "@/types";
 import { MONTHS_FR, todayIso } from "@/utils/dates";
 import { upperPlain } from "@/utils/text";
 
-/** Les neuf succursales CAAT facturées chaque mois (avance de 90 % HT, honoraire assistance routière). */
-export const CAAT_SUCCURSALES = ["Alger I", "Alger II", "Alger III", "Annaba", "Constantine", "Oran", "Sétif", "Sud", "Tlemcen"] as const;
+import { CAAT_SUCCURSALES } from "@/features/invoices/caat-constants";
+
+export { CAAT_SUCCURSALES };
 
 const AUTO_KEY = "caat-avances-auto";
 
@@ -19,6 +20,59 @@ export function previousPeriod(iso: string = todayIso()): string {
 }
 
 const legacyIdFor = (period: string, succursale: string): string => `avance-${period}-${upperPlain(succursale).replace(/[^A-Z0-9]/g, "")}`;
+
+/** Crée la ligne d'avance (à 0 DA, en attente) d'une succursale pour un mois « AAAA-MM ». */
+async function createAdvance(period: string, succursale: string, index: number, userId: string | null): Promise<string> {
+  const [year, month] = period.split("-").map(Number) as [number, number];
+  const monthName = MONTHS_FR[month - 1] ?? "";
+  const created = await db.invoice.create({
+    data: {
+      legacyId: legacyIdFor(period, succursale),
+      sens: "CREDIT",
+      status: "EN_ATTENTE",
+      categorie: "CAAT",
+      tiers: `CAAT ${succursale}`,
+      libelle: `Honoraire Assistance Routière ${monthName} ${year} / CAAT-Succursale-${succursale}`,
+      montant: 0,
+      annee: year,
+      mode: "VIREMENT",
+      nature: "Production Assistance",
+      classe: 7,
+      succursale: `Succursale ${succursale}`,
+      periode: period,
+      origine: "avance mensuelle",
+      ordre: (year * 100 + month) * 100 + index,
+      extra: { avance: true },
+      createdById: userId,
+      updatedById: userId,
+    },
+  });
+  return created.id;
+}
+
+/**
+ * Retrouve la ligne d'avance CAAT d'une succursale pour un mois, ou la crée si elle n'existe pas encore (règlement d'un ancien mois, par exemple).
+ * Renvoie l'identifiant de la facture et son état.
+ */
+export async function ensureCaatAdvance(actor: AuthUser, period: string, succursale: string): Promise<ActionResult<{ id: string; paid: boolean; created: boolean }>> {
+  const guard = requireAccess(actor, "FCLI", "EDIT");
+  if (!guard.success) return guard;
+  const index = CAAT_SUCCURSALES.findIndex((name) => name === succursale);
+  if (index < 0) return fail("Succursale CAAT inconnue.", "VALIDATION");
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return fail("Mois invalide.", "VALIDATION");
+  try {
+    const key = upperPlain(succursale).replace(/[^A-Z0-9]/g, "");
+    const rows = await db.invoice.findMany({ where: { sens: "CREDIT", categorie: "CAAT", status: { not: "ANNULE" }, OR: [{ periode: period }, { legacyId: legacyIdFor(period, succursale) }] } });
+    const found = rows.find((row) => row.legacyId === legacyIdFor(period, succursale) || upperPlain(`${row.succursale} ${row.tiers}`).replace(/[^A-Z0-9]/g, "").endsWith(key));
+    if (found) return ok({ id: found.id, paid: found.status === "REGLE", created: false });
+    const id = await createAdvance(period, succursale, index, actor.id);
+    await logAction(actor, "Création avance CAAT", `${succursale} – ${MONTHS_FR[Number(period.slice(5, 7)) - 1] ?? ""} ${period.slice(0, 4)} (depuis une affectation du relevé)`);
+    return ok({ id, paid: false, created: true });
+  } catch (error) {
+    console.error("[avances CAAT] ligne introuvable :", error);
+    return fail("La ligne d'avance CAAT n'a pas pu être trouvée.", "DATABASE");
+  }
+}
 
 /** Crée les lignes d'avance manquantes d'un mois (aucun doublon : une ligne par succursale et par mois). */
 async function createMissing(period: string, userId: string | null): Promise<{ created: number; existing: number }> {
@@ -33,28 +87,7 @@ async function createMissing(period: string, userId: string | null): Promise<{ c
   for (const [index, succursale] of CAAT_SUCCURSALES.entries()) {
     const key = `${period}|${upperPlain(succursale)}`;
     if (taken.has(legacyIdFor(period, succursale)) || taken.has(key)) continue;
-    await db.invoice.create({
-      data: {
-        legacyId: legacyIdFor(period, succursale),
-        sens: "CREDIT",
-        status: "EN_ATTENTE",
-        categorie: "CAAT",
-        tiers: `CAAT ${succursale}`,
-        libelle: `Honoraire Assistance Routière ${monthName} ${year} / CAAT-Succursale-${succursale}`,
-        montant: 0,
-        annee: year,
-        mode: "VIREMENT",
-        nature: "Production Assistance",
-        classe: 7,
-        succursale: `Succursale ${succursale}`,
-        periode: period,
-        origine: "avance mensuelle",
-        ordre: (year * 100 + month) * 100 + index,
-        extra: { avance: true },
-        createdById: userId,
-        updatedById: userId,
-      },
-    });
+    await createAdvance(period, succursale, index, userId);
     created += 1;
   }
   return { created, existing: CAAT_SUCCURSALES.length - created };

@@ -2,12 +2,15 @@
 
 import { useState, useTransition, type FormEvent } from "react";
 import { EyeOff, FilePlus2, Link2, Undo2 } from "lucide-react";
-import { assignCandidatesAction, assignLineAction, createInvoiceFromLineAction, ignoreLineAction, reopenLineAction } from "@/app/actions/statement-actions";
+import { assignCandidatesAction, assignCaatAction, assignLineAction, createInvoiceFromLineAction, ignoreLineAction, reopenLineAction } from "@/app/actions/statement-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { CAAT_SUCCURSALES } from "@/features/invoices/caat-constants";
+import { MONTHS_FR } from "@/utils/dates";
 import type { AssignCandidate, StatementLineDTO } from "@/features/statement/types";
 import { round2 } from "@/utils/amounts";
 import { formatDA, formatDate } from "@/utils/format";
@@ -25,6 +28,8 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [caatBranch, setCaatBranch] = useState<string>(CAAT_SUCCURSALES[0]);
+  const [caatPeriod, setCaatPeriod] = useState("");
   const [pending, startTransition] = useTransition();
   const keyOf = (candidate: AssignCandidate): string => `${candidate.invoiceId}:${candidate.part}`;
 
@@ -41,6 +46,27 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
         const exact = result.data.find((candidate) => candidate.exact);
         setSelected(exact ? new Set([keyOf(exact)]) : new Set());
       }
+    });
+  }
+
+  /** Mois proposés pour un règlement CAAT : les 24 derniers mois jusqu'à celui de la ligne, le mois précédant le paiement étant présélectionné. */
+  const caatPeriods = (() => {
+    const base = new Date(`${String(line.date).slice(0, 10)}T12:00:00Z`);
+    const list: string[] = [];
+    for (let back = -1; back < 24; back += 1) {
+      const d = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() - back, 1));
+      list.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+    }
+    return list;
+  })();
+  const caatLabel = (period: string): string => `${MONTHS_FR[Number(period.slice(5, 7)) - 1] ?? ""} ${period.slice(0, 4)}`;
+
+  function confirmCaat(): void {
+    const period = caatPeriod || caatPeriods[1] || "";
+    startTransition(async () => {
+      const result = await assignCaatAction({ lineId: line.id, succursale: caatBranch, period });
+      if (result.success) setDialog(null);
+      else setError(result.error);
     });
   }
 
@@ -154,6 +180,31 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
             </Button>
           </form>
           <p className="text-xs text-muted-foreground">La recherche porte sur les factures en attente et sur celles déjà réglées.</p>
+          {line.sens === "CREDIT" ? (
+            <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-3">
+              <p className="text-sm font-medium">Règlement CAAT : choisir la succursale et le mois concerné</p>
+              <div className="flex flex-wrap items-end gap-2">
+                <NativeSelect value={caatBranch} onChange={(event) => setCaatBranch(event.target.value)} aria-label="Succursale CAAT">
+                  {CAAT_SUCCURSALES.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </NativeSelect>
+                <NativeSelect value={caatPeriod || caatPeriods[1] || ""} onChange={(event) => setCaatPeriod(event.target.value)} aria-label="Mois concerné">
+                  {caatPeriods.map((value) => (
+                    <option key={value} value={value}>
+                      {caatLabel(value)}
+                    </option>
+                  ))}
+                </NativeSelect>
+                <Button type="button" variant="outline" disabled={pending} onClick={confirmCaat}>
+                  Affecter à cette avance CAAT
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Si la ligne d'avance de ce mois n'existe pas encore, elle est créée, puis réglée avec ce paiement.</p>
+            </div>
+          ) : null}
           {candidates === null ? (
             <p className="py-6 text-center text-sm text-muted-foreground">{error ?? "Recherche des factures en attente…"}</p>
           ) : candidates.length === 0 ? (

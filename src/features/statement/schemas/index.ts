@@ -95,3 +95,11 @@ export type DoubleEntryInput = z.infer<typeof doubleEntrySchema>;
 /** « Ce n'est pas un doublon » pour une paire de virements globaux ou pour un global. */
 export const notDoubleSchema = z.object({ ids: z.array(z.string().min(1).max(64)).min(1).max(2) });
 export type NotDoubleInput = z.infer<typeof notDoubleSchema>;
+
+/** Affectation d'un règlement CAAT à l'avance d'une succursale pour un mois donné. */
+export const assignCaatSchema = z.object({
+  lineId: lineIdSchema,
+  succursale: z.string().min(1).max(40),
+  period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Mois invalide."),
+});
+export type AssignCaatInput = z.infer<typeof assignCaatSchema>;

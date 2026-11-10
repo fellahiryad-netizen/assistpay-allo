@@ -5,6 +5,7 @@ import { z } from "zod";
 import { firstIssue, runAction, runUploadAction } from "@/app/actions/action-helpers";
 import {
   applyProposalsSchema,
+  assignCaatSchema,
   assignLineSchema,
   assignSearchSchema,
   columnMappingSchema,
@@ -15,6 +16,7 @@ import {
   notDoubleSchema,
   transferLinkSchema,
   type ApplyProposalsInput,
+  type AssignCaatInput,
   type AssignLineInput,
   type AssignSearchInput,
   type CreateFromLineInput,
@@ -35,6 +37,7 @@ import {
   applyProposals,
   assignCandidates,
   assignLine,
+  assignToCaatAdvance,
   createInvoiceFromLine,
   ignoreLine,
   previewStatement,
@@ -108,6 +111,13 @@ export async function assignCandidatesAction(input: AssignSearchInput): Promise<
 /** Affectation manuelle d'une ligne. */
 export async function assignLineAction(input: AssignLineInput): Promise<ActionResult<{ invoices: number }>> {
   const result = await runAction(assignLineSchema, input, assignLine);
+  if (result.success) refresh();
+  return result;
+}
+
+/** Affectation d'un règlement CAAT à une succursale et à un mois. */
+export async function assignCaatAction(input: AssignCaatInput): Promise<ActionResult<{ invoices: number }>> {
+  const result = await runAction(assignCaatSchema, input, assignToCaatAdvance);
   if (result.success) refresh();
   return result;
 }

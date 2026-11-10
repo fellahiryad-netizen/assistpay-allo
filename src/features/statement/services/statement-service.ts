@@ -7,8 +7,9 @@ import { isSplit, paymentOptions, remaining, settle, toPayable, type PayableInvo
 import { writeExtra } from "@/features/invoices/services/invoice-extra";
 import { decimalToNumber } from "@/features/invoices/services/invoice-mapper";
 import { isPayrollInvoice, moduleForSens } from "@/features/invoices/services/invoice-rules";
+import { ensureCaatAdvance } from "@/features/invoices/services/caat-advances";
 import { logAction } from "@/features/journal/services/journal-service";
-import type { ApplyProposalsInput, AssignLineInput, AssignSearchInput, CreateFromLineInput, StatementQuery } from "@/features/statement/schemas";
+import type { ApplyProposalsInput, AssignCaatInput, AssignLineInput, AssignSearchInput, CreateFromLineInput, StatementQuery } from "@/features/statement/schemas";
 import { analyseLines, bankBranch, branchCompat, inFamily, paidEntries } from "@/features/statement/services/statement-matching";
 import {
   BANK_FEE_PATTERN,
@@ -586,4 +587,21 @@ export async function createInvoiceFromLine(actor: AuthUser, input: CreateFromLi
     console.error("[releve] création :", error);
     return fail("La facture n'a pas pu être créée.", "DATABASE");
   }
+}
+
+/**
+ * Affecte un règlement CAAT à la succursale et au mois choisis : la ligne d'avance du mois est retrouvée (ou créée si elle n'existe pas encore),
+ * puis la ligne du relevé lui est affectée comme pour toute autre facture.
+ */
+export async function assignToCaatAdvance(actor: AuthUser, input: AssignCaatInput): Promise<ActionResult<{ invoices: number }>> {
+  const guard = guardEdit(actor);
+  if (!guard.success) return guard;
+  const line = await loadLine(input.lineId);
+  if (!line.success) return line;
+  if (line.data.sens !== "CREDIT") return fail("Seul un encaissement peut être affecté à une avance CAAT.", "VALIDATION");
+  const advance = await ensureCaatAdvance(actor, input.period, input.succursale);
+  if (!advance.success) return advance;
+  const result = await assignLine(actor, { lineId: input.lineId, items: [{ invoiceId: advance.data.id, part: "tout", paid: advance.data.paid }] });
+  if (result.success) await logAction(actor, "Relevé : règlement CAAT affecté", `${describeLine(line.data)} → CAAT ${input.succursale} ${input.period}`);
+  return result;
 }
