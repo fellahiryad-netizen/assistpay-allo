@@ -591,6 +591,11 @@ export function analyse(s: CaarSucc, months: readonly number[], lots: readonly P
     regule[y] = r2(C.filter((x) => x.ym === y).reduce((a, x) => a + x.allo, 0));
     total[y] = r2(BI.filter((b) => b.ym === y).reduce((a, b) => a + b.allo, 0));
   }
+  // Sans consolidé, toutes les polices paraîtraient « nouvelles » : la comparaison n'est pas faite.
+  if (!B.length) {
+    ecarts.length = 0;
+    for (const k of Object.keys(agTab)) agTab[Number(k)] = [];
+  }
   return { s, months: ms, lots: used, L, C, nonEnc, liste, tunisie, ecarts, agTab, agMap, annul, garan, regule, total, baseN: B.length };
 }
 
@@ -610,6 +615,16 @@ export interface CaarCalcRow {
   pa: number;
   fact: string;
   ttc: number | null;
+  /** Origine de l'avance : suivi des factures partenaires, RECAP FACTURES du consolidé, ou lignes du consolidé. */
+  src: "suivi" | "consolide" | "lignes" | "aucune";
+  /** Facture d'avance réglée dans le suivi (null si elle ne vient pas du suivi). */
+  regle: boolean | null;
+  dateRegl: string;
+  multi: boolean;
+  /** Différence TTC entre le suivi et RECAP FACTURES (0 si identique ou non comparable). */
+  ecartConso: number;
+  /** Montant Total déduit de l'avance (consolidé non chargé). */
+  totEst: boolean;
   sansFacture: boolean;
   edited: boolean;
   hasFile: boolean;
@@ -631,25 +646,107 @@ export interface CaarCalcTot {
 export const saisieKey = (s: string, v: number): string => `${s}-${ymKey(v)}`;
 
 /** Avance HT d'un mois : saisie à la main, sinon facture d'avance TTC ÷ 1,19, sinon Part Assisteur 90 % du consolidé. */
-export function avanceOf(s: CaarSucc, v: number, idx: CaarRegulIndex | null, saisies: Readonly<Record<string, CaarSaisie>>): { key: string; avance: number; fact: string; ttc: number | null; sansFacture: boolean; edited: boolean } {
+/** Ligne du suivi des factures partenaires utile pour retrouver une facture d'avance. */
+export interface SuiviInvoiceLite {
+  numero: string;
+  tiers: string;
+  categorie: string;
+  succursale: string;
+  libelle: string;
+  periode: string;
+  dateFacture: string;
+  status: string;
+  dateOperation: string;
+  montant: number;
+}
+
+/** Facture d'avance 90 % retrouvée dans le suivi (factures partenaires), avec son règlement. */
+export interface CaarAvanceSuivi {
+  fact: string;
+  ttc: number;
+  regle: boolean;
+  date: string;
+  n: number;
+}
+
+/** Facture(s) d'avance 90 % d'une succursale pour un mois, prises dans le suivi : catégorie CAAR, hors Direction, régularisations et refacturations. */
+export function avanceSuivi(rows: readonly SuiviInvoiceLite[], s: CaarSucc, v: number): CaarAvanceSuivi | null {
+  const y = Math.floor(v / 100);
+  const m = v % 100;
+  const hits = rows.filter((r) => {
+    const who = txt(`${r.categorie} ${r.tiers}`);
+    if (!/\bCAAR\b/.test(who) || /DIRECTION/.test(who)) return false;
+    if (caarSucc(`${r.tiers} ${r.succursale}`) !== s) return false;
+    const lib = txt(r.libelle);
+    if (/REGUL|PASSI|REFACT/.test(lib) || !/FACTUR|HONORAIRE|AVANCE/.test(lib)) return false;
+    let rm = 0;
+    let ry = 0;
+    const pm = /^(20\d\d)-(\d\d)/.exec(r.periode);
+    if (pm) {
+      ry = Number(pm[1]);
+      rm = Number(pm[2]);
+    } else {
+      const mm = /MOIS\s+DE\s+([A-Z]+)\s*(20\d\d)?/.exec(lib);
+      const found = mm?.[1] ? monthInText(mm[1]) : null;
+      if (found) {
+        rm = found.m;
+        ry = mm?.[2] ? Number(mm[2]) : Number(r.dateFacture.slice(0, 4)) || 0;
+      }
+    }
+    return rm === m && ry === y && r.montant > 0;
+  });
+  if (!hits.length) return null;
+  return {
+    fact: hits.map((r) => r.numero || "?").join(" + "),
+    ttc: r2(hits.reduce((acc, r) => acc + r.montant, 0)),
+    regle: hits.every((r) => r.status === "REGLE"),
+    date: hits.map((r) => r.dateOperation).filter(Boolean).sort().pop() ?? "",
+    n: hits.length,
+  };
+}
+
+/** Avance retenue pour un mois. Ordre de priorité : saisie manuelle, facture d'avance du suivi (paiement vérifié), RECAP FACTURES du consolidé, Part Assisteur 90 % des lignes. */
+export function avanceOf(
+  s: CaarSucc,
+  v: number,
+  idx: CaarRegulIndex | null,
+  saisies: Readonly<Record<string, CaarSaisie>>,
+  suivi: Readonly<Record<string, CaarAvanceSuivi>> = {},
+): { key: string; avance: number; fact: string; ttc: number | null; src: "suivi" | "consolide" | "lignes" | "aucune"; regle: boolean | null; dateRegl: string; multi: boolean; ecartConso: number; sansFacture: boolean; edited: boolean } {
   const key = saisieKey(s, v);
   const f = idx?.factures[s]?.[ymKey(v)];
   const mo = idx?.mois[s]?.[ymKey(v)];
-  const base = f ? r2(f.ttc / (1 + CAAR_TAUX.tva)) : (mo?.p90 ?? 0);
+  const su = suivi[ymKey(v)];
+  const ttc = su ? su.ttc : f ? f.ttc : null;
+  const base = ttc !== null ? r2(ttc / (1 + CAAR_TAUX.tva)) : (mo?.p90 ?? 0);
   const sv = saisies[key];
   const edited = sv?.avance !== undefined;
-  return { key, avance: edited && sv?.avance !== undefined ? sv.avance : base, fact: f?.fact ?? "", ttc: f ? f.ttc : null, sansFacture: !f, edited };
+  return {
+    key,
+    avance: edited && sv?.avance !== undefined ? sv.avance : base,
+    fact: su ? su.fact : (f?.fact ?? ""),
+    ttc,
+    src: su ? "suivi" : f ? "consolide" : mo ? "lignes" : "aucune",
+    regle: su ? su.regle : null,
+    dateRegl: su ? su.date : "",
+    multi: su ? su.n > 1 : false,
+    ecartConso: su && f && Math.abs(f.ttc - su.ttc) > 1 ? r2(su.ttc - f.ttc) : 0,
+    sansFacture: !su && !f,
+    edited,
+  };
 }
 
 /** Calcul HT : écart = régule − avance ; TVA 19 % sur l'écart ; part TTC = écart + TVA. */
-export function calc(a: CaarAnalysis, idx: CaarRegulIndex | null, saisies: Readonly<Record<string, CaarSaisie>>): { rows: CaarCalcRow[]; tot: CaarCalcTot } {
+export function calc(a: CaarAnalysis, idx: CaarRegulIndex | null, saisies: Readonly<Record<string, CaarSaisie>>, suivi: Readonly<Record<string, CaarAvanceSuivi>> = {}): { rows: CaarCalcRow[]; tot: CaarCalcTot } {
   const rows = a.months.map((v): CaarCalcRow => {
-    const av = avanceOf(a.s, v, idx, saisies);
+    const av = avanceOf(a.s, v, idx, saisies, suivi);
     const regule = a.regule[v] ?? 0;
-    const total = a.total[v] ?? 0;
+    // Consolidé non chargé : Montant Total déduit de l'avance (avance = 90 % du total).
+    const totEst = !((a.total[v] ?? 0) > 0) && av.avance > 0;
+    const total = totEst ? r2(av.avance / 0.9) : (a.total[v] ?? 0);
     const ecart = r2(regule - av.avance);
     const tva = r2(ecart * CAAR_TAUX.tva);
-    return { ym: v, key: av.key, total, avance: av.avance, regule, complement: r2(total - av.avance), prod: r2(regule - total), ecart, tva, pa: r2(ecart + tva), fact: av.fact, ttc: av.ttc, sansFacture: av.sansFacture, edited: av.edited, hasFile: a.lots.some((f) => f.ym === v) };
+    return { ym: v, key: av.key, total, avance: av.avance, regule, complement: r2(total - av.avance), prod: r2(regule - total), ecart, tva, pa: r2(ecart + tva), fact: av.fact, ttc: av.ttc, src: av.src, regle: av.regle, dateRegl: av.dateRegl, multi: av.multi, ecartConso: av.ecartConso, totEst, sansFacture: av.sansFacture, edited: av.edited, hasFile: a.lots.some((f) => f.ym === v) };
   });
   const sum = (k: keyof CaarCalcTot): number => r2(rows.reduce((acc, r) => acc + r[k], 0));
   const ecart = sum("ecart");
