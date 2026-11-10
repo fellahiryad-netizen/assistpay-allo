@@ -63,8 +63,14 @@ export async function readCaarConso(file: File, progress: (message: string) => v
     const incl = /INCLU/i.test(str(c[11])) ? 1 : 0;
     const com = txt(c[18]);
     const motif = incl ? 0 : /ANTERIEURE/.test(com) ? 1 : /IMPAY|IMAPAY|QUITTANCE/.test(com) ? 2 : 3;
-    const de = typeof c[6] === "number" ? isoDate(c[6]) : str(c[6]);
-    const row: CaarBaseRow = [v, agenceCode(c[3]), str(c[4]), policeBase(c[5]), de, str(c[8]), fi, incl, r2(c[12]), r2(c[13]), r2(c[14]), motif];
+    // Date d'effet tolérante : « 08/07/2026 07/07/2027 » → première date ; date et immatriculation inversées → remises en place ; sinon vide.
+    let de = isoDate(c[6]);
+    let immat = str(c[8]);
+    if (!de && isoDate(c[8]) && !/^\d{1,2}[/.-]\d{1,2}[/.-]\d{4}$/.test(str(c[6]))) {
+      de = isoDate(c[8]);
+      immat = str(c[6]);
+    }
+    const row: CaarBaseRow = [v, agenceCode(c[3]).slice(0, 20), str(c[4]).slice(0, 200), policeBase(c[5]).slice(0, 40), de, immat.slice(0, 60), fi, incl, r2(c[12]), r2(c[13]), r2(c[14]), motif];
     ((data[s] ??= {})[v] ??= []).push(row);
     const o = ((mois[s] ??= {})[ymKey(v)] ??= { n: 0, nIncl: 0, allo: 0, p90: 0 });
     o.n++;
