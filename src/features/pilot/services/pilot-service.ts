@@ -117,7 +117,7 @@ export async function closingChecklist(actor: AuthUser, ym: string): Promise<Act
   return ok(items);
 }
 
-/** Balance âgée des créances clients par partenaire, avec le délai réel de paiement. */
+/** Balance âgée des créances partenaires par partenaire, avec le délai réel de paiement. */
 export async function agingBalance(actor: AuthUser): Promise<ActionResult<{ rows: AgingRow[]; total: AgingRow }>> {
   const guard = requireAccess(actor, "PILOT");
   if (!guard.success) return guard;

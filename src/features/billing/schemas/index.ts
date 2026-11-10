@@ -41,7 +41,7 @@ export const prepareBillingSchema = z.object({
   bdgType: z.enum(["pair", "deb", "fra"]).optional(),
   duplicateOf: z.string().max(64).optional(),
   caarId: z.string().max(64).optional(),
-  /** Régularisation CAAT 10 % : succursale, période et lignes « libellé:total:avance:régule » séparées par « ; ». */
+  /** Régularisation 10 % CAAT ou CAAR : succursale, période et lignes « libellé:total:avance:régule » séparées par « ; ». */
   succ: z.string().max(40).optional(),
   per: z.string().regex(/^\d{4}-\d{2}$/).optional(),
   perTxt: z.string().max(120).optional(),

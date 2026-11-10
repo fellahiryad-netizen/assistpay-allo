@@ -74,9 +74,9 @@ export default async function HistoryPage({ searchParams }: Readonly<{ searchPar
       />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          ["Encaissé (clients réglés)", formatDA(sum((y) => y.credit.reglees)), `${sum((y) => y.credit.n)} ligne(s) crédit`],
+          ["Encaissé (partenaires réglés)", formatDA(sum((y) => y.credit.reglees)), `${sum((y) => y.credit.n)} ligne(s) crédit`],
           ["Décaissé (fournisseurs réglés)", formatDA(sum((y) => y.debit.reglees)), `${sum((y) => y.debit.n)} ligne(s) débit`],
-          ["Créances en attente", formatDA(sum((y) => y.credit.attente)), `${sum((y) => y.credit.nAttente)} facture(s) client`],
+          ["Créances en attente", formatDA(sum((y) => y.credit.attente)), `${sum((y) => y.credit.nAttente)} facture(s) partenaire`],
           ["Dettes en attente", formatDA(sum((y) => y.debit.attente)), `${sum((y) => y.debit.nAttente)} facture(s) fournisseur`],
         ].map(([label, value, hint]) => (
           <Card key={label} className="p-4">
@@ -90,7 +90,7 @@ export default async function HistoryPage({ searchParams }: Readonly<{ searchPar
         <Card>
           <CardHeader>
             <CardTitle>Créances en attente {annee ?? "2023 – 2025"}</CardTitle>
-            <CardDescription>Montant restant à encaisser, par client</CardDescription>
+            <CardDescription>Montant restant à encaisser, par partenaire</CardDescription>
           </CardHeader>
           <CardContent>
             <DonutChart slices={data.pending} centerLabel="À encaisser" />

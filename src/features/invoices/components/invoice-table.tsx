@@ -150,7 +150,7 @@ export function InvoiceTable({ items, canEdit, today, showSens, printable = {}, 
               {showSens ? <TableHead>Sens</TableHead> : null}
               <TableHead>Tiers et libellé</TableHead>
               <TableHead>N° facture</TableHead>
-              <TableHead>Client / catégorie</TableHead>
+              <TableHead>Partenaire / catégorie</TableHead>
               <TableHead className="text-right">Montant (DA)</TableHead>
               <TableHead>Date de règlement</TableHead>
               <TableHead>État</TableHead>

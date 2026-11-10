@@ -38,7 +38,7 @@ function refresh(id?: string): void {
   if (id) revalidatePath(`/factures/${id}`);
 }
 
-/** Ajout d'une facture client ou fournisseur. */
+/** Ajout d'une facture partenaire ou fournisseur. */
 export async function createInvoiceAction(input: unknown): Promise<ActionResult<InvoiceDTO>> {
   const result = await runAction(invoiceInputSchema, input, createInvoice);
   if (result.success) refresh(result.data.id);

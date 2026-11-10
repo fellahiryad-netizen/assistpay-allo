@@ -7,7 +7,7 @@ export const MODULES: readonly ModuleInfo[] = [
   { key: "DASH", label: "Tableau de bord", group: "Pilotage" },
   { key: "PILOT", label: "Pilotage et clôture", group: "Pilotage", hint: "montre aussi la trésorerie et le relevé" },
   { key: "QC", label: "Contrôle qualité", group: "Pilotage" },
-  { key: "FCLI", label: "Factures clients (crédit)", group: "Factures" },
+  { key: "FCLI", label: "Factures partenaires (crédit)", group: "Factures" },
   { key: "FFOUR", label: "Factures fournisseurs (débit)", group: "Factures" },
   { key: "PART", label: "Partenaires", group: "Ventes" },
   { key: "FACT", label: "Établir une facture", group: "Ventes" },

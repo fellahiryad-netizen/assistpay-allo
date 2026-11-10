@@ -20,13 +20,13 @@ export function DashboardView({ data }: Readonly<DashboardViewProps>): React.JSX
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {data.showCredit ? (
-          <KpiCard label="Créances clients en attente" amount={data.receivables.total} detail={`${data.receivables.count} facture(s) à encaisser`} icon={Hourglass} />
+          <KpiCard label="Créances partenaires en attente" amount={data.receivables.total} detail={`${data.receivables.count} facture(s) à encaisser`} icon={Hourglass} />
         ) : null}
         {data.showDebit ? (
           <KpiCard label="Fournisseurs à payer" amount={data.payables.total} detail={`${data.payables.count} facture(s) en attente`} icon={Wallet} />
         ) : null}
         {data.showCredit ? (
-          <KpiCard label="Encaissé ce mois-ci" amount={data.currentMonth.encaisse} detail={`Factures clients réglées · ${data.currentMonth.month}`} icon={ArrowDownLeft} />
+          <KpiCard label="Encaissé ce mois-ci" amount={data.currentMonth.encaisse} detail={`Factures partenaires réglées · ${data.currentMonth.month}`} icon={ArrowDownLeft} />
         ) : null}
         {data.showDebit ? (
           <KpiCard label="Décaissé ce mois-ci" amount={data.currentMonth.decaisse} detail={`Factures fournisseurs réglées · ${data.currentMonth.month}`} icon={ArrowUpRight} />
@@ -37,8 +37,8 @@ export function DashboardView({ data }: Readonly<DashboardViewProps>): React.JSX
         {data.showCredit ? (
           <Card>
             <CardHeader>
-              <CardTitle>Créances par client</CardTitle>
-              <CardDescription>Factures clients en attente, par catégorie</CardDescription>
+              <CardTitle>Créances par partenaire</CardTitle>
+              <CardDescription>Factures partenaires en attente, par catégorie</CardDescription>
             </CardHeader>
             <CardContent>
               <DonutChart slices={data.receivables.byCategory} centerLabel="En attente" />
@@ -49,7 +49,7 @@ export function DashboardView({ data }: Readonly<DashboardViewProps>): React.JSX
                 </div>
               </details>
               <Link href="/factures?sens=CREDIT&status=EN_ATTENTE" className="mt-4 inline-block text-sm font-medium text-primary hover:underline">
-                Voir les factures clients en attente
+                Voir les factures partenaires en attente
               </Link>
             </CardContent>
           </Card>

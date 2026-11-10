@@ -27,7 +27,7 @@ export default async function NewInvoicePage({
   const options = await getInvoiceFilterOptions(user);
   return (
     <>
-      <PageHeader title="Nouvelle facture" description="Facture client (crédit) ou fournisseur (débit)." />
+      <PageHeader title="Nouvelle facture" description="Facture partenaire (crédit) ou fournisseur (débit)." />
       <InvoiceForm
         invoice={null}
         defaultSens={defaultSens}

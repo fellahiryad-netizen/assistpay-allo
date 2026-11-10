@@ -76,7 +76,7 @@ Compter environ deux heures la première fois. Il faut un PC Windows (ou Mac) av
     | Groupe | Onglets |
     | --- | --- |
     | Pilotage | Tableau de bord · Pilotage et clôture (montre aussi la trésorerie et le relevé) · Contrôle qualité |
-    | Factures | Factures clients (crédit) · Factures fournisseurs (débit) |
+    | Factures | Factures partenaires (crédit) · Factures fournisseurs (débit) |
     | Ventes | Partenaires · Établir une facture · CAAR production · BDG débours et frais |
     | Achats et banque | Demandes de paiement · Virements et RIB · Relevé bancaire |
     | Administration | RH (salaires) |

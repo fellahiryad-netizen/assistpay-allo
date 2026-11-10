@@ -32,7 +32,7 @@ export default async function NewBillingPage({
   if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="Facture impossible à préparer" message={result.error} />;
   return (
     <>
-      <PageHeader title={scope === "bdg" ? "Factures BDG CAAT et TRUST" : scope === "gam" ? "Factures BDG GAM" : "Nouvelle facture"} description="Aperçu en direct ; à l'enregistrement, la facture est ajoutée aux factures clients en attente." />
+      <PageHeader title={scope === "bdg" ? "Factures BDG CAAT et TRUST" : scope === "gam" ? "Factures BDG GAM" : "Nouvelle facture"} description="Aperçu en direct ; à l'enregistrement, la facture est ajoutée aux factures partenaires en attente." />
       <BillingEditor initial={result.data} canEdit={can(user, "FACT", "EDIT")} scope={scope} />
     </>
   );

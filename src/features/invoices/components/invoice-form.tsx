@@ -41,7 +41,7 @@ function isMode(value: string): value is PaymentModeKey | "" {
   return value === "" || (PAYMENT_MODE_KEYS as readonly string[]).includes(value);
 }
 
-/** Formulaire d'ajout ou de modification d'une facture client / fournisseur. */
+/** Formulaire d'ajout ou de modification d'une facture partenaire / fournisseur. */
 export function InvoiceForm({ invoice, defaultSens, allowedSens, categories, today, cancelHref }: Readonly<InvoiceFormProps>): React.JSX.Element {
   const { values, errors, pending, setValue, submit } = useInvoiceForm(initialInvoiceValues(invoice, defaultSens, today), invoice?.id ?? null);
 
@@ -70,7 +70,7 @@ export function InvoiceForm({ invoice, defaultSens, allowedSens, categories, tod
           <div className="sm:col-span-2 lg:col-span-3">
             <SensChoice value={values.sens} allowed={allowedSens} onChange={(sens) => setValue("sens", sens)} error={errors.sens} />
           </div>
-          {text("tiers", "Tiers (client ou fournisseur)")}
+          {text("tiers", "Tiers (partenaire ou fournisseur)")}
           {text("numero", "N° de facture")}
           {text("montant", "Montant (DA)", { inputMode: "decimal", placeholder: "0,00" })}
           {text("categorie", "Catégorie", { list: "categories-list" })}

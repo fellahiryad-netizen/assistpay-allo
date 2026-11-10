@@ -213,7 +213,7 @@ async function Margins({ user, year, currentYear }: Readonly<{ user: User; year:
           </Link>
         ))}
       </div>
-      <p className="mb-4 text-sm text-muted-foreground">Production = factures clients de l&apos;année {year} par mois de facture (TTC saisi). Coût = paiements aux prestataires de l&apos;activité par mois de règlement. Marge indicative : ni la paie ni les frais généraux ne sont comptés.</p>
+      <p className="mb-4 text-sm text-muted-foreground">Production = factures partenaires de l&apos;année {year} par mois de facture (TTC saisi). Coût = paiements aux prestataires de l&apos;activité par mois de règlement. Marge indicative : ni la paie ni les frais généraux ne sont comptés.</p>
       {result.data.length === 0 ? <StateMessage kind="empty" title="Aucune donnée" message={`Rien de facturé ni payé en ${year}.`} /> : null}
       <div className="flex flex-col gap-6">
         {result.data.map((activity) => {

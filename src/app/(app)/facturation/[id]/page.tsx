@@ -62,7 +62,7 @@ export default async function IssuedPage({
           </>
         }
       />
-      {raw.enregistre === "1" ? <Notice tone="success" className="mb-4">Facture enregistrée et ajoutée aux factures clients en attente de paiement.</Notice> : null}
+      {raw.enregistre === "1" ? <Notice tone="success" className="mb-4">Facture enregistrée et ajoutée aux factures partenaires en attente de paiement.</Notice> : null}
       {result.data.versions ? <Notice tone="info" className="mb-4">Facture rectifiée {result.data.versions} fois (versions précédentes conservées).</Notice> : null}
       <div className="overflow-x-auto rounded-lg border bg-muted p-4">
         <div className="flex flex-col gap-6">

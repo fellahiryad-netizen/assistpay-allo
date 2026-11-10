@@ -124,7 +124,7 @@ export function BillingEditor({ initial, issuedId, canEdit, scope = "all" }: Rea
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {scope === "all" ? (
               <>
-                <Field id="fx-client" label="Client">
+                <Field id="fx-client" label="Partenaire">
                   <NativeSelect
                     id="fx-client"
                     value={draft.client}
@@ -152,7 +152,7 @@ export function BillingEditor({ initial, issuedId, canEdit, scope = "all" }: Rea
                 </Field>
               </>
             ) : (
-              <Field id="fx-preset" label={scope === "bdg" ? "Client BDG" : "Facture globale"}>
+              <Field id="fx-preset" label={scope === "bdg" ? "Partenaire BDG" : "Facture globale"}>
                 <NativeSelect id="fx-preset" value={draft.preset} disabled={!editable || Boolean(issuedId)} onChange={(event) => reload(event.target.value)}>
                   {(scope === "bdg"
                     ? [
@@ -222,7 +222,7 @@ export function BillingEditor({ initial, issuedId, canEdit, scope = "all" }: Rea
             ) : null}
             {issuedId ? (
               <Field id="fx-motif" label="Motif de la rectification (obligatoire)" className="sm:col-span-2">
-                <Input id="fx-motif" value={motif} onChange={(event) => setMotif(event.target.value)} placeholder="Ex. erreur de montant signalée par le client" />
+                <Input id="fx-motif" value={motif} onChange={(event) => setMotif(event.target.value)} placeholder="Ex. erreur de montant signalée par le partenaire" />
               </Field>
             ) : null}
           </div>
@@ -315,7 +315,7 @@ export function BillingEditor({ initial, issuedId, canEdit, scope = "all" }: Rea
             <textarea id="fx-notes" rows={2} value={draft.notes} disabled={!editable} onChange={(event) => set("notes", event.target.value)} className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm" />
           </Field>
           <details className="rounded-md border p-3">
-            <summary className="cursor-pointer text-sm font-medium">Coordonnées du client (RC, NIF, NIS…) — modifiables</summary>
+            <summary className="cursor-pointer text-sm font-medium">Coordonnées du partenaire (RC, NIF, NIS…) — modifiables</summary>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {(
                 [

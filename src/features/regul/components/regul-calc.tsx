@@ -428,7 +428,7 @@ export function RegulCalc({ index, sinMeta, canEdit, canExport, initialSucc, onS
             {canEdit ? <Button type="button" variant="outline" disabled={pending} onClick={save}>Enregistrer ce résultat dans le suivi</Button> : null}
             {canEdit && invoiceHref() ? (
               <Link href={invoiceHref() ?? "#"} className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-                Établir la facture CAAT (ajoutée aux factures clients en attente)
+                Établir la facture CAAT (ajoutée aux factures partenaires en attente)
               </Link>
             ) : null}
           </div>

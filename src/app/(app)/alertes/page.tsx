@@ -49,7 +49,7 @@ function Group({ group, sens }: Readonly<{ group: AlertGroup; sens: "CREDIT" | "
         <div className="mt-3 flex flex-wrap gap-3 text-sm">
           {sens === "CREDIT" && group.categorie ? (
             <Link href={`/partenaires/${encodeURIComponent(partnerKey(group.categorie))}`} className="font-medium text-primary hover:underline">
-              Relancer ce client (fiche partenaire)
+              Relancer ce partenaire (fiche partenaire)
             </Link>
           ) : null}
           {sens === "DEBIT" ? (
@@ -66,7 +66,7 @@ function Group({ group, sens }: Readonly<{ group: AlertGroup; sens: "CREDIT" | "
   );
 }
 
-/** Alertes automatiques : factures clients et fournisseurs impayées depuis 30, 60 et 90 jours. */
+/** Alertes automatiques : factures partenaires et fournisseurs impayées depuis 30, 60 et 90 jours. */
 export default async function AlertsPage({ searchParams }: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>): Promise<React.JSX.Element> {
   const user = await requireUser();
   const raw = await searchParams;
@@ -89,7 +89,7 @@ export default async function AlertsPage({ searchParams }: Readonly<{ searchPara
       />
       <TabsNav
         tabs={[
-          { href: "/alertes?onglet=clients", label: "Clients à relancer", active: tab === "clients", count: data.counts.clients },
+          { href: "/alertes?onglet=clients", label: "Partenaires à relancer", active: tab === "clients", count: data.counts.clients },
           { href: "/alertes?onglet=fournisseurs", label: "Fournisseurs à payer", active: tab === "fournisseurs", count: data.counts.fournisseurs },
         ]}
       />

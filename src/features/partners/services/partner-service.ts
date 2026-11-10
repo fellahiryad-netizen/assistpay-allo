@@ -28,7 +28,7 @@ export const PARTNER_GROUPS: Readonly<Record<string, readonly string[]>> = {
 
 const MONTH_PREFIXES: ReadonlyArray<[string, number]> = [["JANV", 1], ["FEV", 2], ["MARS", 3], ["AVR", 4], ["MAI", 5], ["JUIN", 6], ["JUIL", 7], ["AOUT", 8], ["SEPT", 9], ["OCT", 10], ["OCOB", 10], ["NOV", 11], ["DEC", 12]];
 
-/** Partenaire d'une facture client. */
+/** Partenaire d'une facture partenaire. */
 export function partnerKey(categorie: string): string {
   for (const [key, categories] of Object.entries(PARTNER_GROUPS)) if (categories.includes(categorie)) return key;
   return categorie || "Sans catégorie";
@@ -314,7 +314,7 @@ export async function previousReceivables(actor: AuthUser): Promise<ActionResult
   return ok({ items, total: round2(items.reduce((s, i) => s + i.total, 0)), count: items.reduce((s, i) => s + i.count, 0) });
 }
 
-/** Excel de l'historique des factures clients 2024 et 2025 avec les créances restantes à suivre jusqu'au règlement. */
+/** Excel de l'historique des factures partenaires 2024 et 2025 avec les créances restantes à suivre jusqu'au règlement. */
 export async function exportPreviousYears(actor: AuthUser): Promise<ActionResult<{ name: string; bytes: Uint8Array }>> {
   const guard = requireAccess(actor, "PART");
   if (!guard.success) return guard;
