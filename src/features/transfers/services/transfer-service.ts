@@ -231,6 +231,16 @@ async function updateReferential(actor: AuthUser, batch: TransferBatch, analysis
   return { added, changes };
 }
 
+/** Libère les demandes de paiement marquées « déjà envoyées » dans un état de virements rejeté : elles redeviennent sélectionnables. */
+async function releaseRequests(name: string): Promise<void> {
+  if (!name) return;
+  const rows = await db.paymentRequest.findMany({ where: { extra: { path: ["virEnvoi", "ref"], equals: name } }, select: { id: true, extra: true } });
+  for (const row of rows) {
+    const { virEnvoi: _removed, ...rest } = obj(row.extra) as Record<string, Prisma.JsonValue>;
+    await db.paymentRequest.update({ where: { id: row.id }, data: { extra: rest as Prisma.InputJsonObject } });
+  }
+}
+
 /** Valide, rejette ou met en attente un envoi. Un envoi bloquant ne peut pas être validé. */
 export async function decideBatch(actor: AuthUser, input: DecideBatchInput): Promise<ActionResult<{ added: number; changes: number }>> {
   const guard = requireAccess(actor, "VIR", "EDIT");
@@ -250,6 +260,7 @@ export async function decideBatch(actor: AuthUser, input: DecideBatchInput): Pro
   }
   let result = { added: 0, changes: 0 };
   if (input.statut === "valide") result = await updateReferential(actor, batch, analysis);
+  if (input.statut === "rejete") await releaseRequests(batch.ref || batch.fichier);
   await db.transferBatch.update({
     where: { id: batch.id },
     data: { status: input.statut, verdict: analysis.verdict, extra: { ...obj(batch.extra), comment: input.comment, maj: actor.name } as Prisma.InputJsonObject },
