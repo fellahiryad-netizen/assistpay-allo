@@ -4,6 +4,8 @@ import { z } from "zod";
 export const bdgQuerySchema = z.object({
   etat: z.enum(["ouvert", "REGLE", "ANNULE", "tous"]).default("ouvert").catch("ouvert"),
   categorie: z.string().trim().max(120).optional().catch(undefined),
+  /** Recherche par montant (total, débours ou frais). */
+  m: z.string().trim().max(40).optional().catch(undefined),
 });
 export type BdgQuery = z.infer<typeof bdgQuerySchema>;
 

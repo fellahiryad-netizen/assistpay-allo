@@ -22,6 +22,9 @@ export function InvoiceFilters({ query, options }: Readonly<InvoiceFiltersProps>
         <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input name="q" defaultValue={query.q ?? ""} placeholder="Tiers, numéro, libellé, montant…" className="pl-9" aria-label="Recherche" />
       </div>
+      <div className="relative">
+        <Input name="m" defaultValue={query.m ?? ""} inputMode="decimal" autoComplete="off" placeholder="Montant (ex. 5 435 384,50)" aria-label="Recherche par montant" />
+      </div>
       <NativeSelect name="sens" defaultValue={query.sens ?? ""} aria-label="Sens">
         {options.sens.length > 1 ? <option value="">Crédit et débit</option> : null}
         {options.sens.map((sens) => (

@@ -20,6 +20,8 @@ export const invoiceQuerySchema = z.object({
   annee: z.coerce.number().int().min(2000).max(2100).optional().catch(undefined),
   categorie: z.string().trim().max(120).optional().catch(undefined),
   q: z.string().trim().max(120).optional().catch(undefined),
+  /** Recherche par montant (facture, débours ou frais). */
+  m: z.string().trim().max(40).optional().catch(undefined),
   succursale: z.string().trim().max(120).optional().catch(undefined),
   page: z.coerce.number().int().min(1).max(10_000).default(1).catch(1),
 });

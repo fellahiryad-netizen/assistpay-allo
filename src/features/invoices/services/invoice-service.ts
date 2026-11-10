@@ -54,6 +54,19 @@ function amountConditions(q: string): Prisma.InvoiceWhereInput[] {
   return cleaned.includes(".") ? [{ montant: { gte: value - 0.005, lte: value + 0.005 } }] : [{ montant: { gte: value, lt: value + 1 } }];
 }
 
+/**
+ * Recherche par montant dans une liste : le total de la facture, mais aussi le débours ou les frais (BDG) et le montant global.
+ * Sans décimales, toutes les décimales sont acceptées ; avec décimales, le montant exact.
+ */
+export function amountFieldConditions(raw: string | undefined): Prisma.InvoiceWhereInput[] {
+  if (!raw) return [];
+  const cleaned = raw.replace(/[\s\u00a0\u202f]/g, "").replace(/da$/i, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return [{ id: "__aucun__" }];
+  const value = Number(cleaned);
+  const range = cleaned.includes(".") ? { gte: value - 0.005, lte: value + 0.005 } : { gte: value, lt: value + 1 };
+  return [{ OR: [{ montant: range }, { debours: range }, { frais: range }, { montantGlobal: range }] }];
+}
+
 /** Identifiants des factures CAAT / CAAR d'une succursale (nom tel que proposé dans le filtre). */
 async function branchInvoiceIds(actor: AuthUser, label: string): Promise<string[] | null> {
   const visibility = visibilityWhere(actor);
@@ -84,6 +97,7 @@ export function buildInvoiceWhere(actor: AuthUser, query: Omit<InvoiceQuery, "pa
       query.annee ? { annee: query.annee } : {},
       query.categorie ? { categorie: query.categorie } : {},
       branchIds ? { id: { in: branchIds } } : {},
+      ...amountFieldConditions(query.m),
       query.q
         ? {
             OR: [

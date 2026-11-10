@@ -3,6 +3,7 @@ import { can, requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import type { BdgQuery, SettlePartInput } from "@/features/bdg/schemas";
 import type { BdgInvoiceDTO, BdgSummary } from "@/features/bdg/types";
+import { amountFieldConditions } from "@/features/invoices/services/invoice-service";
 import { isSplit, paidSum, paymentOptions, remaining, settle, toPayable } from "@/features/invoices/services/invoice-balance";
 import { writeExtra } from "@/features/invoices/services/invoice-extra";
 import { logAction } from "@/features/journal/services/journal-service";
@@ -19,7 +20,7 @@ function dateOf(value: string | boolean | undefined): string | null {
 export async function listBdg(actor: AuthUser, query: BdgQuery): Promise<ActionResult<{ items: BdgInvoiceDTO[]; summary: BdgSummary; categories: string[]; canEdit: boolean }>> {
   const guard = requireAccess(actor, "BDG");
   if (!guard.success) return guard;
-  const rows = await db.invoice.findMany({ where: { sens: "CREDIT", categorie: { contains: "BDG", mode: "insensitive" } }, orderBy: [{ annee: "desc" }, { dateFacture: "desc" }] });
+  const rows = await db.invoice.findMany({ where: { sens: "CREDIT", categorie: { contains: "BDG", mode: "insensitive" }, ...(query.m ? { AND: amountFieldConditions(query.m) } : {}) }, orderBy: [{ annee: "desc" }, { dateFacture: "desc" }] });
   const all = rows.map(toPayable);
   const categories = [...new Set(all.map((invoice) => invoice.categorie || "Sans catégorie"))].sort();
   const base = all.filter((invoice) => !query.categorie || (invoice.categorie || "Sans catégorie") === query.categorie);

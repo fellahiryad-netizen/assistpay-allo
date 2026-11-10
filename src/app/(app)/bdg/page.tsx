@@ -30,13 +30,13 @@ export default async function BdgPage({
   const raw = await searchParams;
   const one = (value: string | string[] | undefined): string | undefined => (Array.isArray(value) ? value[0] : value) || undefined;
   const tab = one(raw.onglet) ?? "suivi";
-  const query = bdgQuerySchema.parse({ etat: one(raw.etat), categorie: one(raw.categorie) });
+  const query = bdgQuerySchema.parse({ etat: one(raw.etat), categorie: one(raw.categorie), m: one(raw.m) });
   const [result, issued] = await Promise.all([listBdg(user, query), tab === "factures" ? listIssued(user, "bdg") : Promise.resolve(null)]);
   if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="Suivi BDG indisponible" message={result.error} />;
   const data = result.data;
   const today = todayIso();
   const href = (patch: Record<string, string>): string => {
-    const params = new URLSearchParams({ onglet: "suivi", etat: query.etat, ...(query.categorie ? { categorie: query.categorie } : {}), ...patch });
+    const params = new URLSearchParams({ onglet: "suivi", etat: query.etat, ...(query.categorie ? { categorie: query.categorie } : {}), ...(query.m ? { m: query.m } : {}), ...patch });
     return `/bdg?${params.toString()}`;
   };
   return (
@@ -105,6 +105,7 @@ export default async function BdgPage({
             <form method="get" className="ml-auto flex gap-2">
               <input type="hidden" name="onglet" value="suivi" />
               <input type="hidden" name="etat" value={query.etat} />
+              <input name="m" defaultValue={query.m ?? ""} inputMode="decimal" autoComplete="off" placeholder="Montant (total, débours ou frais)" aria-label="Recherche par montant" className="h-9 w-56 rounded-md border bg-background px-2 text-sm" />
               <NativeSelect name="categorie" defaultValue={query.categorie ?? ""} aria-label="Catégorie">
                 <option value="">Toutes les catégories</option>
                 {data.categories.map((categorie) => (
