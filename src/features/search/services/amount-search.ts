@@ -56,7 +56,7 @@ export async function searchByAmount(actor: AuthUser, raw: string): Promise<Acti
           detail: `${SENS[row.sens]} · ${row.categorie}${row.succursale ? ` · ${row.succursale}` : ""} · ${row.libelle}`,
           amount: decimalToNumber(row.montant),
           date: toIsoDate(row.dateOperation) ?? toIsoDate(row.dateFacture),
-          state: INVOICE_STATE[row.status],
+          state: INVOICE_STATE[row.status] ?? String(row.status),
           href: `/factures/${row.id}`,
         });
       }
