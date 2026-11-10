@@ -300,6 +300,19 @@ export function CaarRegulCalc({ index, sinMeta, canEdit, canExport, initialSucc,
           <span className="block text-xs text-muted-foreground">Excel (un onglet par mois accepté) ou zip ; la liste « polices exclues » placée sous le total est reprise automatiquement</span>
         </button>
         {lots.length ? (
+          <div className="mt-3 flex flex-col gap-1 text-sm text-muted-foreground">
+            {[...new Set(lots.map((l) => l.name))].map((n) => {
+              const ms = [...new Set(lots.filter((l) => l.name === n && !l.ignore && l.ym).map((l) => l.ym))].sort((a, b) => a - b);
+              return ms.length ? (
+                <div key={n}>
+                  <b className="text-foreground">{n}</b> : {ms.length > 1 ? <span className="mr-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">{ms.length} mois détectés</span> : null}
+                  {ms.map(ymLabel).join(", ")}
+                </div>
+              ) : null;
+            })}
+          </div>
+        ) : null}
+        {lots.length ? (
           <div className="mt-3 flex flex-col gap-2 text-sm">
             {lots.map((l, i) => (
               <div key={l.id} className="flex flex-wrap items-center gap-3">
