@@ -1,10 +1,10 @@
 import { requireAccess, requireAdmin } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
-import { CAAR_SUCCURSALES, ymKey, type CaarBaseRow, type CaarFacture, type CaarMoisBase, type CaarRegulIndex, type CaarRegulSaved, type CaarRegulSin, type CaarSaisie } from "@/features/caar-regul/services/caar-regul-engine";
+import { avanceSuivi, CAAR_SUCCURSALES, ymKey, type CaarAvanceSuivi, type CaarBaseRow, type CaarFacture, type CaarMoisBase, type CaarRegulIndex, type CaarRegulSaved, type CaarRegulSin, type CaarSaisie } from "@/features/caar-regul/services/caar-regul-engine";
 import { logAction } from "@/features/journal/services/journal-service";
 import { db } from "@/lib/db";
 import { fail, ok, type ActionResult } from "@/types";
-import { todayIso } from "@/utils/dates";
+import { toIsoDate, todayIso } from "@/utils/dates";
 
 /* Stockage de la régularisation CAAR dans la table « Setting » (clé → JSON), comme la régularisation CAAT :
    index (formules, totaux mensuels, factures d'avance), production par succursale et par mois, base activité, avances saisies, résultats. */
@@ -54,6 +54,8 @@ export interface CaarRegulWorkData {
   base: CaarBaseRow[];
   sinKeys: string[] | null;
   saisies: Record<string, CaarSaisie>;
+  /** Factures d'avance 90 % trouvées dans le suivi des factures partenaires, par mois (AAAA-MM). */
+  suivi: Record<string, CaarAvanceSuivi>;
 }
 
 /** Production en base d'une succursale pour les mois demandés, base activité et avances saisies. */
@@ -67,9 +69,20 @@ export async function caarRegulWorkData(actor: AuthUser, succ: string, months: r
       read<CaarRegulSin>(KEY_SIN),
       db.setting.findMany({ where: { key: { startsWith: `${KEY_SAISIE}${succ}-` } } }),
     ]);
+    // Factures d'avance déjà émises (et réglées, paiement vérifié) dans le suivi des factures partenaires.
+    const invoices = await db.invoice.findMany({
+      where: { sens: "CREDIT", status: { not: "ANNULE" }, OR: [{ categorie: { contains: "CAAR", mode: "insensitive" } }, { tiers: { contains: "CAAR", mode: "insensitive" } }] },
+      select: { numero: true, tiers: true, categorie: true, succursale: true, libelle: true, periode: true, dateFacture: true, status: true, dateOperation: true, montant: true },
+    });
+    const lite = invoices.map((i) => ({ numero: i.numero, tiers: i.tiers, categorie: i.categorie, succursale: i.succursale, libelle: i.libelle, periode: i.periode, dateFacture: toIsoDate(i.dateFacture) ?? "", status: i.status, dateOperation: toIsoDate(i.dateOperation) ?? "", montant: Number(i.montant) }));
+    const suivi: Record<string, CaarAvanceSuivi> = {};
+    for (const m of months) {
+      const hit = avanceSuivi(lite, succ as (typeof CAAR_SUCCURSALES)[number], m);
+      if (hit) suivi[ymKey(m)] = hit;
+    }
     const saisies: Record<string, CaarSaisie> = {};
     for (const row of rows) saisies[row.key.slice(KEY_SAISIE.length)] = row.value as unknown as CaarSaisie;
-    return ok({ base: parts.flatMap((p) => p ?? []), sinKeys: sin ? sin.keys : null, saisies });
+    return ok({ base: parts.flatMap((p) => p ?? []), sinKeys: sin ? sin.keys : null, saisies, suivi });
   } catch (error) {
     console.error("[caar-regul] données :", error);
     return fail("Les données de la succursale n'ont pas pu être lues.", "DATABASE");

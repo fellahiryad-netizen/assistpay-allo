@@ -132,6 +132,8 @@ Les deux compagnies versent une avance de 90 % sur la production du mois, puis l
 
 Règles propres à la CAAR :
 
+- **Source de l'avance** (dans cet ordre) : saisie manuelle ; sinon la **facture d'avance du suivi des factures partenaires** (catégorie CAAR, succursale lue dans le tiers, mois lu dans la période ou dans « MOIS DE … » du libellé, hors Direction, régularisations et refacturations), avec son état de règlement (paiement vérifié) ; sinon RECAP FACTURES du consolidé ; sinon la Part Assisteur 90 % des lignes du consolidé (`avanceSuivi`, `avanceOf`). Un écart entre le suivi et RECAP FACTURES est signalé ; c'est le suivi qui est retenu.
+- **Sans consolidé**, le calcul reste juste : Montant Total = avance HT ÷ 0,90, et la comparaison police par police est désactivée (sinon toutes les polices paraîtraient « nouvelles »).
 - **Cinq succursales** : Alger Chéraga, Alger Bouzaréah, Constantine, Annaba, Oran (`CAAR_SUCCURSALES`).
 - **Formule « Assistance TUNISIE »** : toujours à 0 DA. Si une ligne porte un montant (dans le fichier de la succursale ou dans l'avance), elle est ramenée à 0 et signalée (alerte à l'écran et onglet « ALERTE Tunisie » de l'export).
 - **Polices dont la date d'effet précède le mois** : elles restent comptées (la prime est encaissée).

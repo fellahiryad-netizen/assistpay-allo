@@ -27,6 +27,7 @@ import {
   ym,
   ymLabel,
   ymShort,
+  type CaarAvanceSuivi,
   type CaarBaseRow,
   type CaarRegulIndex,
   type CaarSaisie,
@@ -35,7 +36,7 @@ import {
   type Trimestre,
 } from "@/features/caar-regul/services/caar-regul-engine";
 import { writeCaarRegulWorkbook } from "@/features/caar-regul/services/caar-regul-export";
-import { downloadBytes, f0, fm, parseAmount } from "@/features/regul/components/regul-format";
+import { dateFr, downloadBytes, f0, fm, parseAmount } from "@/features/regul/components/regul-format";
 import { zipBuffer, zipList } from "@/features/regul/lib/zip-reader";
 import { REGUL_MOIS } from "@/features/regul/services/regul-engine";
 import { readCsvRows, readWorkbook } from "@/lib/spreadsheet";
@@ -71,6 +72,7 @@ export function CaarRegulCalc({ index, sinMeta, canEdit, canExport, initialSucc,
   const [base, setBase] = useState<CaarBaseRow[]>([]);
   const [sinKeys, setSinKeys] = useState<string[] | null>(null);
   const [saisies, setSaisies] = useState<Record<string, CaarSaisie>>({});
+  const [suivi, setSuivi] = useState<Record<string, CaarAvanceSuivi>>({});
   const [loadedFor, setLoadedFor] = useState("");
   const [msg, setMsg] = useState<Msg>(null);
   const [over, setOver] = useState(false);
@@ -89,6 +91,7 @@ export function CaarRegulCalc({ index, sinMeta, canEdit, canExport, initialSucc,
     setBase(res.data.base);
     setSinKeys(res.data.sinKeys);
     setSaisies(res.data.saisies);
+    setSuivi(res.data.suivi);
     setLoadedFor(k);
   }, []);
 
@@ -163,7 +166,7 @@ export function CaarRegulCalc({ index, sinMeta, canEdit, canExport, initialSucc,
   const ready = Boolean(succ) && months.length > 0 && lots.some((l) => !l.ignore && months.includes(l.ym));
   const loaded = loadedFor === loadKey;
   const A = useMemo(() => (ready && loaded && succ ? analyse(succ, months, lots, base, index?.forms ?? [], sinSet) : null), [ready, loaded, succ, months, lots, base, index, sinSet]);
-  const C = useMemo(() => (A ? calc(A, index, saisies) : null), [A, index, saisies]);
+  const C = useMemo(() => (A ? calc(A, index, saisies, suivi) : null), [A, index, saisies, suivi]);
   const mail = useMemo(() => (A && C ? buildCaarMail(A, C, signataire) : null), [A, C, signataire]);
   const [mailSubject, setMailSubject] = useState("");
   const [mailText, setMailText] = useState("");
@@ -188,7 +191,7 @@ export function CaarRegulCalc({ index, sinMeta, canEdit, canExport, initialSucc,
   function exportXlsx(): void {
     if (!A) return;
     try {
-      downloadBytes(exportName(A), writeCaarRegulWorkbook(A, index, saisies, sinMeta && sinKeys ? sinMeta.jusqua : null));
+      downloadBytes(exportName(A), writeCaarRegulWorkbook(A, index, saisies, sinMeta && sinKeys ? sinMeta.jusqua : null, suivi));
     } catch {
       setMsg({ tone: "error", text: "Le fichier n'a pas pu être créé." });
     }
@@ -221,12 +224,17 @@ export function CaarRegulCalc({ index, sinMeta, canEdit, canExport, initialSucc,
   const th = "px-2 py-1.5 text-xs font-semibold";
   const alerts: string[] = [];
   if (A && C) {
-    if (!A.baseN) alerts.push("Aucune ligne de cette succursale dans le consolidé pour ces mois : déposez le consolidé à jour (onglet Bases de données).");
+    if (!A.baseN) alerts.push("Consolidé non chargé : l'écart HT et la facture sont justes (avance prise dans le suivi), mais le détail police par police et par agence n'est pas disponible. Déposez le consolidé dans « Bases de données » pour l'avoir.");
     if (A.liste.length) alerts.push(`${A.liste.length} police(s) reprise(s) de la liste « polices exclues » placée sous le total du fichier : comptées et classées « réintégrées ».`);
     if (A.nonEnc.length) alerts.push(`${A.nonEnc.length} quittance(s) non encaissée(s) laissée(s) de côté (${fm(A.nonEnc.reduce((a, x) => a + x.prime, 0))} DA de prime).`);
     if (A.garan.length) alerts.push(`${A.garan.length} ligne(s) négative(s) correspondant à un changement de formule (pas une vraie annulation).`);
     if (!sinKeys) alerts.push("Base activité non chargée : les annulations ne sont pas croisées avec les sinistres.");
-    for (const r of C.rows) if (r.sansFacture) alerts.push(`${ymLabel(r.ym)} : pas de facture d'avance dans RECAP FACTURES, l'avance est calculée sur la Part Assisteur 90 % du consolidé.`);
+    for (const r of C.rows) {
+      if (r.sansFacture) alerts.push(`${ymLabel(r.ym)} : aucune facture d'avance trouvée dans les factures partenaires ni dans RECAP FACTURES${r.avance > 0 ? ", l'avance est calculée sur la Part Assisteur 90 % du consolidé." : " : saisissez l'avance HT à la main."}`);
+      if (r.src === "suivi" && r.regle === false) alerts.push(`${ymLabel(r.ym)} : la facture d'avance ${r.fact} n'est pas encore marquée réglée dans le suivi.`);
+      if (r.multi) alerts.push(`${ymLabel(r.ym)} : plusieurs factures d'avance trouvées pour ce mois (${r.fact}), additionnées : vérifiez.`);
+      if (r.ecartConso) alerts.push(`${ymLabel(r.ym)} : l'avance du suivi diffère de RECAP FACTURES de ${fm(r.ecartConso)} DA TTC ; c'est le suivi (paiement vérifié) qui est retenu.`);
+    }
   }
   const anomalies = A ? A.months.flatMap((v) => (A.agTab[v] ?? []).filter((o) => o.statut === "ANOMALIE").map((o) => ({ ...o, ym: v }))) : [];
   const sins = A ? A.annul.filter((x) => x.sinistre) : [];
@@ -348,7 +356,9 @@ export function CaarRegulCalc({ index, sinMeta, canEdit, canExport, initialSucc,
                   <tr key={r.ym} className="border-t">
                     <td className="px-2 py-1.5">
                       <b>{ymLabel(r.ym)}</b>
-                      {r.fact ? <span className="block text-xs text-muted-foreground">avance {r.fact} · {fm(r.ttc ?? 0)} TTC</span> : <span className="block text-xs text-destructive">pas de facture d&apos;avance au consolidé</span>}
+                      {r.fact ? <span className="block text-xs text-muted-foreground">avance {r.fact} · {fm(r.ttc ?? 0)} TTC</span> : <span className="block text-xs text-destructive">pas de facture d&apos;avance dans le suivi ni au consolidé</span>}
+                      {r.src === "suivi" ? (r.regle ? <span className="block text-xs text-success">✔ réglée{r.dateRegl ? ` le ${dateFr(r.dateRegl)}` : ""} (suivi des paiements)</span> : <span className="block text-xs text-destructive">⚠ pas encore réglée dans le suivi</span>) : r.src === "consolide" ? <span className="block text-xs text-muted-foreground">source : consolidé (RECAP FACTURES)</span> : null}
+                      {r.totEst ? <span className="block text-xs text-muted-foreground">Montant Total = avance ÷ 0,90 (consolidé non chargé)</span> : null}
                       {r.hasFile ? null : <span className="block text-xs text-destructive">fichier manquant</span>}
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{fm(r.total)}</td>
@@ -368,7 +378,7 @@ export function CaarRegulCalc({ index, sinMeta, canEdit, canExport, initialSucc,
               </tbody>
             </table>
           </Card>
-          <p className="text-xs text-muted-foreground">Somme Avance = montant TTC de la facture d&apos;avance ÷ 1,19 ; vous pouvez la corriger (virement confirmé par la banque). Écart = Montant Régule − Somme Avance, dont complément 10 % {fm(C.tot.complement)} et écart de production {fm(C.tot.prod)}.</p>
+          <p className="text-xs text-muted-foreground">Somme Avance = montant TTC de la facture d&apos;avance ÷ 1,19 (facture prise dans les factures partenaires, paiement vérifié ; à défaut dans RECAP FACTURES du consolidé) ; vous pouvez la corriger (virement confirmé par la banque). Écart = Montant Régule − Somme Avance, dont complément 10 % {fm(C.tot.complement)} et écart de production {fm(C.tot.prod)}.</p>
           <h3 className="font-semibold">Écarts police par police</h3>
           <Card className="overflow-x-auto p-0">
             <table className="w-full min-w-[700px] text-sm">

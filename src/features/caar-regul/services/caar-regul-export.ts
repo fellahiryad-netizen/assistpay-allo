@@ -1,4 +1,4 @@
-import { CAAR_LABELS, calc, periodeText, SITUATIONS, ymLabel, type CaarAnalysis, type CaarRegulIndex, type CaarSaisie, type LineA } from "@/features/caar-regul/services/caar-regul-engine";
+import { CAAR_LABELS, calc, periodeText, SITUATIONS, ymLabel, type CaarAnalysis, type CaarAvanceSuivi, type CaarRegulIndex, type CaarSaisie, type LineA } from "@/features/caar-regul/services/caar-regul-engine";
 import { writeWorkbook, type SheetToWrite } from "@/lib/spreadsheet";
 
 type Row = SheetToWrite["rows"][number];
@@ -13,8 +13,8 @@ const HEAD = ["Mois", "Agence", "Assuré", "Police", "Avenant", "Date d'effet", 
 const line = (x: LineA): Row => [MN(x.ym), x.agence, x.assure, x.police, x.avenant, dateFr(x.de), x.immat, x.formule, x.prime, r2(x.allo)];
 
 /** Classeur de régularisation CAAR (sans onglet Méthodologie) : Feuil1, Écart, Détail par agence, annulations, alertes, polices réintégrées et détail des fichiers. */
-export function writeCaarRegulWorkbook(a: CaarAnalysis, idx: CaarRegulIndex | null, saisies: Readonly<Record<string, CaarSaisie>>, sinJusqua: string | null): Uint8Array {
-  const c = calc(a, idx, saisies);
+export function writeCaarRegulWorkbook(a: CaarAnalysis, idx: CaarRegulIndex | null, saisies: Readonly<Record<string, CaarSaisie>>, sinJusqua: string | null, suivi: Readonly<Record<string, CaarAvanceSuivi>> = {}): Uint8Array {
+  const c = calc(a, idx, saisies, suivi);
   const S = CAAR_LABELS[a.s];
   const per = periodeText(a.months);
   const sheets: SheetToWrite[] = [];
