@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 import type { AuthUser } from "@/features/access/types";
 import { requireAdmin } from "@/features/access/services/access-rules";
 import type { JournalItem, JournalQuery } from "@/features/journal/types";
@@ -6,13 +7,34 @@ import { fail, ok, type ActionResult, type Paginated } from "@/types";
 
 const PAGE_SIZE = 50;
 
+function asRecord(value: Prisma.JsonValue | null | undefined): Record<string, string | number | boolean | null> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, string | number | boolean | null>) : null;
+}
+
+/** Trace d'une modification : objet touché et son état avant / après (valeurs simples). */
+export interface JournalTrace {
+  entity: string;
+  entityId: string;
+  avant: Record<string, string | number | boolean | null>;
+  apres: Record<string, string | number | boolean | null>;
+}
+
 /**
  * Enregistre une action dans le journal. N'interrompt jamais l'opération métier :
  * une erreur d'écriture du journal est seulement tracée dans les logs serveur.
  */
-export async function logAction(actor: AuthUser, action: string, objet: string, admin = false): Promise<void> {
+export async function logAction(actor: AuthUser, action: string, objet: string, admin = false, trace?: JournalTrace): Promise<void> {
   try {
-    await db.journalEntry.create({ data: { userId: actor.id, userName: actor.name, action, objet, admin } });
+    await db.journalEntry.create({
+      data: {
+        userId: actor.id,
+        userName: actor.name,
+        action,
+        objet,
+        admin,
+        ...(trace ? { entity: trace.entity, entityId: trace.entityId, avant: trace.avant as Prisma.InputJsonObject, apres: trace.apres as Prisma.InputJsonObject } : {}),
+      },
+    });
   } catch (error) {
     console.error("[journal] écriture impossible :", error);
   }
@@ -57,6 +79,8 @@ export async function listJournal(actor: AuthUser, query: JournalQuery): Promise
         action: row.action,
         objet: row.objet,
         admin: row.admin,
+        avant: asRecord(row.avant),
+        apres: asRecord(row.apres),
       })),
       total,
       page: query.page,

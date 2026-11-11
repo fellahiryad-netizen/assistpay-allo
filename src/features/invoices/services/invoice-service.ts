@@ -276,6 +276,20 @@ async function guardedUpdate(current: { id: string; updatedAt: Date }, data: Pri
 
 const CONCURRENT_MESSAGE = "Cette facture vient d'être modifiée par une autre personne. Rechargez la page puis recommencez.";
 
+
+/** État d'une facture tel qu'il est gardé dans le journal (avant / après). */
+function snapshot(row: { status: string; montant: { toNumber(): number }; debours: { toNumber(): number } | null; frais: { toNumber(): number } | null; dateOperation: Date | null; tiers: string; numero: string }): Record<string, string | number | boolean | null> {
+  return {
+    état: row.status,
+    montant: row.montant.toNumber(),
+    débours: row.debours ? row.debours.toNumber() : null,
+    frais: row.frais ? row.frais.toNumber() : null,
+    "date de règlement": row.dateOperation ? row.dateOperation.toISOString().slice(0, 10) : null,
+    tiers: row.tiers,
+    numéro: row.numero,
+  };
+}
+
 /** Modifie une facture existante. Changer de sens demande le droit de modification des deux côtés. */
 export async function updateInvoice(actor: AuthUser, id: string, input: InvoiceInput): Promise<ActionResult<InvoiceDTO>> {
   try {
@@ -289,7 +303,7 @@ export async function updateInvoice(actor: AuthUser, id: string, input: InvoiceI
     const row = await guardedUpdate(current, { ...data, classe: current.classe ?? data.classe, updatedById: actor.id });
     if (!row) return fail(CONCURRENT_MESSAGE, "CONFLICT");
     const dto = toInvoiceDTO(row);
-    await logAction(actor, "Modification facture", describe(dto));
+    await logAction(actor, "Modification facture", describe(dto), false, { entity: "Invoice", entityId: row.legacyId, avant: snapshot(current), apres: snapshot(row) });
     // Le montant corrigé est reporté sur la demande de paiement et sur la demande de facture prestataire.
     if (row.sens === "DEBIT" && !row.montant.equals(current.montant)) {
       const changes = await syncRequestsAmount(actor, row);
@@ -332,7 +346,7 @@ export async function markInvoicePaid(actor: AuthUser, input: MarkPaidInput): Pr
     });
     if (!row) return fail(CONCURRENT_MESSAGE, "CONFLICT");
     const dto = toInvoiceDTO(row);
-    await logAction(actor, "Règlement facture", `${describe(dto)} – ${MODE_LABELS[input.mode]} du ${input.date}`);
+    await logAction(actor, "Règlement facture", `${describe(dto)} – ${MODE_LABELS[input.mode]} du ${input.date}`, false, { entity: "Invoice", entityId: row.legacyId, avant: snapshot(current), apres: snapshot(row) });
     return ok(dto);
   } catch (error) {
     console.error("[invoices] règlement impossible :", error);
@@ -349,7 +363,7 @@ export async function setInvoiceStatus(actor: AuthUser, input: SetStatusInput): 
     const row = await guardedUpdate(current, { status: input.status, updatedById: actor.id });
     if (!row) return fail(CONCURRENT_MESSAGE, "CONFLICT");
     const dto = toInvoiceDTO(row);
-    await logAction(actor, `Facture passée « ${STATUS_LABELS[input.status]} »`, describe(dto));
+    await logAction(actor, `Facture passée « ${STATUS_LABELS[input.status]} »`, describe(dto), false, { entity: "Invoice", entityId: row.legacyId, avant: snapshot(current), apres: snapshot(row) });
     return ok(dto);
   } catch (error) {
     console.error("[invoices] changement d'état impossible :", error);

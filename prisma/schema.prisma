@@ -170,6 +170,7 @@ model BankStatementLine {
   invoiceRefs String[]        @default([])
   importedAt  DateTime        @default(now())
   extra       Json            @default("{}")
+  allocations Allocation[]
 
   @@index([date])
   @@index([status])
@@ -324,10 +325,16 @@ model JournalEntry {
   objet    String   @default("")
   /// Journal réservé aux administrateurs (RH, accès…).
   admin    Boolean  @default(false)
+  /// Objet modifié et son état avant / après (facultatifs).
+  entity   String?
+  entityId String?
+  avant    Json?
+  apres    Json?
   user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([at])
   @@index([admin, at])
+  @@index([entity, entityId])
 }
 
 model Setting {
@@ -350,4 +357,19 @@ model MlaFile {
   createdAt  DateTime @default(now())
 
   @@index([month])
+}
+
+/// Affectation d'une ligne du relevé à une facture (tenue à jour par un déclencheur depuis `invoiceRefs`).
+model Allocation {
+  id              String           @id @default(cuid())
+  lineId          String
+  invoiceLegacyId String
+  part            String           @default("tout")
+  /// Montant de la facture (ou de la partie) au moment de l'affectation ; vide si la facture n'existe plus.
+  montant         Decimal?         @db.Decimal(14, 2)
+  createdAt       DateTime         @default(now())
+  line            BankStatementLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@unique([lineId, invoiceLegacyId, part])
+  @@index([invoiceLegacyId])
 }

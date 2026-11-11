@@ -141,6 +141,15 @@ async function bankRules(actor: AuthUser, invoices: PayableInvoice[], toItem: (i
       const invoice = byLegacy.get(legacyId);
       return invoice ? [note(invoice, `reliée à ${list.length} virements : ${list.join(" ; ")}`)] : [];
     });
+    const orphans = await db.allocation.findMany({ where: { montant: null }, include: { line: { select: { date: true, montant: true, libelle: true } } }, orderBy: { createdAt: "desc" }, take: 200 });
+    rules.push({
+      key: "bankorphan",
+      title: "Virement relié à une facture qui n'existe plus",
+      hint: "La ligne du relevé pointe vers une facture supprimée ou introuvable : détachez-la dans le relevé et affectez-la correctement.",
+      count: orphans.length,
+      href: orphans.length ? "/releve?onglet=historique&status=RAPPROCHE" : undefined,
+      items: [],
+    });
     rules.push({ key: "banktwice", title: "Facture reliée à plusieurs virements", hint: "Une même facture (ou avance) apparaît dans plusieurs lignes du relevé : double affectation à vérifier.", count: multi.length, items: multi.slice(0, 200) });
   }
   const zero = invoices.filter((invoice) => invoice.sens === "CREDIT" && invoice.extra.avance && invoice.status === "REGLE" && invoice.montant <= 0);

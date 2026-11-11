@@ -26,7 +26,20 @@ export function JournalTable({ items }: Readonly<JournalTableProps>): React.JSX.
               <TableCell className="whitespace-nowrap tabular-nums">{formatDateTime(item.at)}</TableCell>
               <TableCell className="whitespace-nowrap">{item.userName || "—"}</TableCell>
               <TableCell className="whitespace-nowrap font-medium">{item.action}</TableCell>
-              <TableCell className="min-w-64">{item.objet}</TableCell>
+              <TableCell className="min-w-64">
+                {item.objet}
+                {item.avant && item.apres ? (
+                  <ul className="mt-1 text-xs text-muted-foreground">
+                    {Object.keys(item.apres)
+                      .filter((key) => item.avant?.[key] !== item.apres?.[key])
+                      .map((key) => (
+                        <li key={key}>
+                          {key} : {String(item.avant?.[key] ?? "—")} → {String(item.apres?.[key] ?? "—")}
+                        </li>
+                      ))}
+                  </ul>
+                ) : null}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>

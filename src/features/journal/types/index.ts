@@ -6,6 +6,9 @@ export interface JournalItem {
   action: string;
   objet: string;
   admin: boolean;
+  /** État avant / après la modification (vide pour les anciennes entrées). */
+  avant: Record<string, string | number | boolean | null> | null;
+  apres: Record<string, string | number | boolean | null> | null;
 }
 
 /** Filtres de consultation du journal. */
