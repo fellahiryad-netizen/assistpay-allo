@@ -30,7 +30,7 @@ export async function buildBackup(actor: AuthUser, format: "xlsx" | "json"): Pro
   const guard = requireAccess(actor, "PILOT");
   if (!guard.success) return guard;
   const withPayroll = can(actor, "RH");
-  const [factures, releve, demandesPaiement, facturesEtablies, caarProduction, virements, rib, rh] = await Promise.all([
+  const [factures, releve, demandesPaiement, facturesEtablies, caarProduction, virements, rib, rh, reglages] = await Promise.all([
     db.invoice.findMany({ where: withPayroll ? {} : { payroll: false }, orderBy: { createdAt: "asc" } }),
     db.bankStatementLine.findMany({ orderBy: { date: "asc" } }),
     db.paymentRequest.findMany({ orderBy: { createdAt: "asc" } }),
@@ -39,8 +39,10 @@ export async function buildBackup(actor: AuthUser, format: "xlsx" | "json"): Pro
     db.transferBatch.findMany({ orderBy: { updatedAt: "asc" } }),
     db.providerRib.findMany(),
     withPayroll ? db.hrEntry.findMany({ orderBy: { date: "asc" } }) : Promise.resolve([]),
+    // Réglages (primes MLA par année, brouillons, alertes) ; les compteurs de connexion n'en font pas partie.
+    db.setting.findMany({ where: { NOT: { key: { startsWith: "login:" } } }, orderBy: { key: "asc" } }),
   ]);
-  const data: Record<string, unknown[]> = { factures, releve, demandesPaiement, facturesEtablies, caarProduction, virements, rib, ...(withPayroll ? { rh } : {}) };
+  const data: Record<string, unknown[]> = { factures, releve, demandesPaiement, facturesEtablies, caarProduction, virements, rib, reglages, ...(withPayroll ? { rh } : {}) };
   const stamp = todayIso();
   await logAction(actor, "Sauvegarde complète téléchargée", `${stamp} (${format.toUpperCase()})`);
   if (format === "json") {
