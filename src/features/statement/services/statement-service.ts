@@ -14,6 +14,7 @@ import { analyseLines, bankBranch, branchCompat, inFamily, paidEntries } from "@
 import {
   BANK_FEE_PATTERN,
   PAYROLL_PATTERN,
+  SALARY_WORD,
   detectHeaderRow,
   guessMapping,
   previewRows,
@@ -173,7 +174,15 @@ async function analyseParsed(actor: AuthUser, all: ParsedLine[]): Promise<Action
     });
     const alreadyImported = kept.length - fresh.length;
     const transfers = await loadTransfers();
-    const payrollLines = fresh.filter((line) => PAYROLL_PATTERN.test(upperPlain(line.libelle)) && !transferForLine(line, transfers, []));
+    const withoutBatch = fresh.filter((line) => !transferForLine(line, transfers, []));
+    const salaryWords = withoutBatch.filter((line) => SALARY_WORD.test(upperPlain(line.libelle)) && !PAYROLL_PATTERN.test(upperPlain(line.libelle)));
+    // « VIRT DE SALAIRES » : paie seulement si une écriture RH de même montant existe ; sinon c'est un virement de prestataire.
+    const salaryHr = salaryWords.length
+      ? await db.hrEntry.findMany({ where: { date: { gte: fromIsoDate(shiftIsoDate(salaryWords.map((l) => l.date).sort()[0] ?? "2000-01-01", -10)) ?? undefined } } })
+      : [];
+    const isSalaryEntry = (line: ParsedLine): boolean =>
+      salaryHr.some((entry) => Math.abs(decimalToNumber(entry.montant) - line.montant) <= 0.5 && entry.date !== null && dayGap(toIsoDate(entry.date) ?? line.date, line.date) <= 10);
+    const payrollLines = withoutBatch.filter((line) => PAYROLL_PATTERN.test(upperPlain(line.libelle)) || (salaryWords.includes(line) && isSalaryEntry(line)));
     const business = fresh.filter((line) => !payrollLines.includes(line));
 
     const dates = business.map((line) => line.date).sort();
@@ -352,7 +361,7 @@ function toLineDTO(
     importedAt: row.importedAt.toISOString(),
     twinDate: twins.get(row.id) ?? null,
     transfer: transfer ? { id: transfer.id, ref: transfer.ref, produit: productLabel(transfer.type), nb: transfer.nb, mois: transfer.mois } : null,
-    payroll: PAYROLL_PATTERN.test(upperPlain(row.libelle)),
+    payroll: PAYROLL_PATTERN.test(upperPlain(row.libelle)) || row.invoiceRefs.some((ref) => ref.startsWith("rh:")),
   };
 }
 

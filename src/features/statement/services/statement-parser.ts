@@ -16,8 +16,14 @@ const COLUMN_NAMES: Readonly<Record<keyof Omit<ColumnMapping, "montant"> | "mont
 /** Frais bancaires écartés de l'analyse (commissions, TVA sur commissions, Swift, tenue de compte, agios). */
 export const BANK_FEE_PATTERN = /COMMISSION|COMMIS\b|^TVA\b|\bTVA\b.*(COMMIS|FRAIS)|FRAIS (SWIFT|DE TENUE|TENUE)|TENUE DE COMPTE|PACK WEB|AGIOS|FRAIS BANCAIRES/;
 
-/** Lignes de paie (salaires, CNAS, impôts sur salaires, missions). */
-export const PAYROLL_PATTERN = /SALAIRE|CNAS|CASNOS|\bG ?50\b|\bIRG\b|\bIBS\b|FRAIS DE MISSION|\bMISSION\b|REMBOURSEMENT EMPLOY/;
+/**
+ * Lignes de paie certaines (CNAS, impôts sur salaires, missions…). Le mot « SALAIRE » n'en fait pas partie :
+ * la banque saisit aussi certains virements de prestataires comme « VIRT DE SALAIRES ».
+ */
+export const PAYROLL_PATTERN = /CNAS|CASNOS|\bG ?50\b|\bIRG\b|\bIBS\b|FRAIS DE MISSION|\bMISSION\b|REMBOURSEMENT EMPLOY/;
+
+/** Libellé « salaires » : paie seulement s'il existe une écriture RH correspondante, sinon virement de prestataire. */
+export const SALARY_WORD = /SALAIRE/;
 
 function cellText(cell: SheetCell | undefined): string {
   if (cell === null || cell === undefined) return "";
