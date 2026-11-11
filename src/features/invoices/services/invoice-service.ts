@@ -264,6 +264,18 @@ export async function createInvoice(actor: AuthUser, input: InvoiceInput): Promi
   }
 }
 
+/**
+ * Écriture protégée contre les modifications simultanées : la facture n'est mise à jour que si personne ne l'a modifiée
+ * depuis sa lecture (comparaison de `updatedAt`). Renvoie `null` si quelqu'un est passé entre-temps.
+ */
+async function guardedUpdate(current: { id: string; updatedAt: Date }, data: Prisma.InvoiceUncheckedUpdateManyInput): Promise<Awaited<ReturnType<typeof db.invoice.findUnique>> | null> {
+  const result = await db.invoice.updateMany({ where: { id: current.id, updatedAt: current.updatedAt }, data });
+  if (result.count === 0) return null;
+  return db.invoice.findUnique({ where: { id: current.id } });
+}
+
+const CONCURRENT_MESSAGE = "Cette facture vient d'être modifiée par une autre personne. Rechargez la page puis recommencez.";
+
 /** Modifie une facture existante. Changer de sens demande le droit de modification des deux côtés. */
 export async function updateInvoice(actor: AuthUser, id: string, input: InvoiceInput): Promise<ActionResult<InvoiceDTO>> {
   try {
@@ -274,7 +286,8 @@ export async function updateInvoice(actor: AuthUser, id: string, input: InvoiceI
     if (!guard.success) return guard;
     const data = toWriteData(input);
     if (data.payroll && !can(actor, "RH", "EDIT")) return fail("Les lignes de paie sont réservées à l'accès RH.", "FORBIDDEN");
-    const row = await db.invoice.update({ where: { id }, data: { ...data, classe: current.classe ?? data.classe, updatedById: actor.id } });
+    const row = await guardedUpdate(current, { ...data, classe: current.classe ?? data.classe, updatedById: actor.id });
+    if (!row) return fail(CONCURRENT_MESSAGE, "CONFLICT");
     const dto = toInvoiceDTO(row);
     await logAction(actor, "Modification facture", describe(dto));
     // Le montant corrigé est reporté sur la demande de paiement et sur la demande de facture prestataire.
@@ -309,17 +322,15 @@ export async function markInvoicePaid(actor: AuthUser, input: MarkPaidInput): Pr
     if (!current) return fail("Facture introuvable.", "NOT_FOUND");
     if (!canOnInvoice(actor, current, "EDIT")) return fail("Vous ne pouvez pas régler cette facture.", "FORBIDDEN");
     if (current.status === "ANNULE") return fail("Une facture annulée ne peut pas être réglée.", "CONFLICT");
-    const row = await db.invoice.update({
-      where: { id: input.id },
-      data: {
-        status: "REGLE",
-        dateOperation: fromIsoDate(input.date),
-        mode: input.mode,
-        cheque: input.reference,
-        banque: input.banque || current.banque,
-        updatedById: actor.id,
-      },
+    const row = await guardedUpdate(current, {
+      status: "REGLE",
+      dateOperation: fromIsoDate(input.date),
+      mode: input.mode,
+      cheque: input.reference,
+      banque: input.banque || current.banque,
+      updatedById: actor.id,
     });
+    if (!row) return fail(CONCURRENT_MESSAGE, "CONFLICT");
     const dto = toInvoiceDTO(row);
     await logAction(actor, "Règlement facture", `${describe(dto)} – ${MODE_LABELS[input.mode]} du ${input.date}`);
     return ok(dto);
@@ -335,7 +346,8 @@ export async function setInvoiceStatus(actor: AuthUser, input: SetStatusInput): 
     const current = await db.invoice.findUnique({ where: { id: input.id } });
     if (!current) return fail("Facture introuvable.", "NOT_FOUND");
     if (!canOnInvoice(actor, current, "EDIT")) return fail("Vous ne pouvez pas modifier cette facture.", "FORBIDDEN");
-    const row = await db.invoice.update({ where: { id: input.id }, data: { status: input.status, updatedById: actor.id } });
+    const row = await guardedUpdate(current, { status: input.status, updatedById: actor.id });
+    if (!row) return fail(CONCURRENT_MESSAGE, "CONFLICT");
     const dto = toInvoiceDTO(row);
     await logAction(actor, `Facture passée « ${STATUS_LABELS[input.status]} »`, describe(dto));
     return ok(dto);

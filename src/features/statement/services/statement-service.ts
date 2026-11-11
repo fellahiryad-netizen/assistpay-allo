@@ -290,8 +290,9 @@ async function settleInvoice(
   const options = paymentOptions(invoice, new Set());
   if (!options.some((option) => option.part === part)) return fail(`La facture ${invoice.numero || invoice.tiers} est déjà réglée.`, "CONFLICT");
   const change = settle(invoice, part, payment, amount);
-  await tx.invoice.update({
-    where: { id: invoiceId },
+  // Écriture protégée : si quelqu'un a modifié la facture depuis sa lecture, on s'arrête (la transaction est annulée).
+  const written = await tx.invoice.updateMany({
+    where: { id: invoiceId, updatedAt: row.updatedAt },
     data: {
       status: change.status,
       dateOperation: fromIsoDate(change.dateOperation),
@@ -302,6 +303,7 @@ async function settleInvoice(
       updatedById: actor.id,
     },
   });
+  if (written.count === 0) return fail(`La facture ${invoice.numero || invoice.tiers} vient d'être modifiée par une autre personne. Rechargez puis recommencez.`, "CONFLICT");
   return ok(`${invoice.legacyId}:${part}`);
 }
 
