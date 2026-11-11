@@ -4,6 +4,10 @@ Avant toute modification, lire :
 1. `docs/ai_system_rules.md` : règles d'architecture obligatoires ;
 2. `docs/ASSISTPAY_CONTEXTE.md` : métier, accès, modèle de données, feuille de route.
 
+## Règle absolue : calculs de factures
+
+Ne jamais modifier les règles de calcul des factures (honoraires, parts, avances 90 % et régularisations 10 %, TVA 19 %, primes MLA par année, débours et frais BDG, soldes et règlements, numérotation) sans demande explicite du propriétaire. Fichiers concernés : `src/features/billing/`, `src/features/mla/services/mla-engine.ts`, `src/features/invoices/services/invoice-balance.ts`, `src/features/caar*/`, `src/features/regul/`, `src/utils/amounts.ts`. Les tests de `tests/` figent ces règles : `npm test` doit rester vert, et un test ne se modifie pas pour « faire passer » un calcul changé.
+
 ## Rappels essentiels
 
 - Interface et messages en français. Montants en DA, deux décimales. Fuseau horaire : Africa/Algiers.
