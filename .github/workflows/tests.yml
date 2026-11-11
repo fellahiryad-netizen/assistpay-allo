@@ -1,4 +1,4 @@
-name: Tests
+name: Contrôles
 on:
   push:
     branches: [main]
@@ -13,3 +13,16 @@ jobs:
           node-version: 22
       - run: npm ci --ignore-scripts
       - run: npm test
+  typecheck:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+      SESSION_SECRET: ci-secret-ci-secret-ci-secret-ci-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run typecheck
