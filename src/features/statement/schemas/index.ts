@@ -55,6 +55,15 @@ export type StatementQuery = z.infer<typeof statementQuerySchema>;
 /** Identifiant d'une ligne du relevé. */
 export const lineIdSchema = z.string().min(1).max(64);
 
+/** Motifs d'une ligne ignorée (« hors suivi ») : toujours justifiés pour pouvoir être relus. */
+export const IGNORE_MOTIFS = { frais_bancaires: "Frais bancaires", echange_interne: "Échange interne entre comptes", autre: "Autre (à préciser)" } as const;
+
+/** Ignorer une ligne du relevé : motif obligatoire, précision obligatoire pour « autre ». */
+export const ignoreLineSchema = z
+  .object({ lineId: lineIdSchema, motif: z.enum(["frais_bancaires", "echange_interne", "autre"]), note: z.string().trim().max(200).default("") })
+  .refine((value) => value.motif !== "autre" || value.note.length >= 3, { message: "Précisez le motif (3 caractères au moins).", path: ["note"] });
+export type IgnoreLineInput = z.infer<typeof ignoreLineSchema>;
+
 /** Recherche de factures pour une affectation manuelle (montant, succursale, nom ou n° de facture). */
 export const assignSearchSchema = z.object({ lineId: lineIdSchema, q: z.string().trim().max(120).default("") });
 export type AssignSearchInput = z.infer<typeof assignSearchSchema>;

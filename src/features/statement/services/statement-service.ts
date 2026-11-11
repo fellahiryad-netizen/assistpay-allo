@@ -9,7 +9,7 @@ import { decimalToNumber } from "@/features/invoices/services/invoice-mapper";
 import { isPayrollInvoice, moduleForSens } from "@/features/invoices/services/invoice-rules";
 import { ensureCaatAdvance } from "@/features/invoices/services/caat-advances";
 import { logAction } from "@/features/journal/services/journal-service";
-import type { ApplyProposalsInput, AssignCaatInput, AssignLineInput, AssignSearchInput, CreateFromLineInput, StatementQuery } from "@/features/statement/schemas";
+import { IGNORE_MOTIFS, type ApplyProposalsInput, type AssignCaatInput, type IgnoreLineInput, AssignLineInput, AssignSearchInput, CreateFromLineInput, StatementQuery } from "@/features/statement/schemas";
 import { analyseLines, bankBranch, branchCompat, inFamily, paidEntries } from "@/features/statement/services/statement-matching";
 import {
   BANK_FEE_PATTERN,
@@ -340,6 +340,13 @@ export async function applyProposals(actor: AuthUser, input: ApplyProposalsInput
   }
 }
 
+function motifOf(extra: Prisma.JsonValue): string {
+  if (!extra || typeof extra !== "object" || Array.isArray(extra)) return "";
+  const { motifIgnore, noteIgnore } = extra as Record<string, unknown>;
+  const label = typeof motifIgnore === "string" ? (IGNORE_MOTIFS as Record<string, string>)[motifIgnore] ?? "" : "";
+  return label ? `${label}${typeof noteIgnore === "string" && noteIgnore ? ` : ${noteIgnore}` : ""}` : "";
+}
+
 function toLineDTO(
   row: Prisma.BankStatementLineGetPayload<Record<string, never>>,
   transfers: TransferRef[],
@@ -360,6 +367,7 @@ function toLineDTO(
     invoiceRefs: row.invoiceRefs,
     importedAt: row.importedAt.toISOString(),
     twinDate: twins.get(row.id) ?? null,
+    motif: motifOf(row.extra),
     transfer: transfer ? { id: transfer.id, ref: transfer.ref, produit: productLabel(transfer.type), nb: transfer.nb, mois: transfer.mois } : null,
     payroll: PAYROLL_PATTERN.test(upperPlain(row.libelle)) || row.invoiceRefs.some((ref) => ref.startsWith("rh:")),
   };
@@ -430,13 +438,14 @@ function describeLine(row: { date: Date; montant: Prisma.Decimal; libelle: strin
 }
 
 /** Marque une ligne comme ignorée (hors suivi : frais, virements internes…). */
-export async function ignoreLine(actor: AuthUser, lineId: string): Promise<ActionResult<true>> {
+export async function ignoreLine(actor: AuthUser, input: IgnoreLineInput): Promise<ActionResult<true>> {
   const guard = guardEdit(actor);
   if (!guard.success) return guard;
-  const line = await loadLine(lineId);
+  const line = await loadLine(input.lineId);
   if (!line.success) return line;
-  await db.bankStatementLine.update({ where: { id: lineId }, data: { status: "IGNORE" } });
-  await logAction(actor, "Relevé : ligne ignorée", describeLine(line.data));
+  const extra = { ...(line.data.extra && typeof line.data.extra === "object" && !Array.isArray(line.data.extra) ? (line.data.extra as Record<string, Prisma.JsonValue>) : {}), motifIgnore: input.motif, noteIgnore: input.note, ignoreePar: actor.name, ignoreeLe: new Date().toISOString() };
+  await db.bankStatementLine.update({ where: { id: input.lineId }, data: { status: "IGNORE", extra: extra as Prisma.InputJsonObject } });
+  await logAction(actor, "Relevé : ligne ignorée", `${describeLine(line.data)} — motif : ${IGNORE_MOTIFS[input.motif]}${input.note ? ` (${input.note})` : ""}`);
   return ok(true);
 }
 

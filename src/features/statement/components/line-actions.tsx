@@ -23,7 +23,7 @@ export interface LineActionsProps {
 
 /** Actions sur une ligne : affecter à des factures, ajouter au suivi, ignorer, remettre à traiter. */
 export function LineActions({ line, categories }: Readonly<LineActionsProps>): React.JSX.Element {
-  const [dialog, setDialog] = useState<"assign" | "create" | null>(null);
+  const [dialog, setDialog] = useState<"assign" | "create" | "ignore" | null>(null);
   const [candidates, setCandidates] = useState<AssignCandidate[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
@@ -111,6 +111,17 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
     });
   }
 
+  function submitIgnore(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    startTransition(async () => {
+      const motif = String(form.get("motif") ?? "") as "frais_bancaires" | "echange_interne" | "autre";
+      const result = await ignoreLineAction({ lineId: line.id, motif, note: String(form.get("note") ?? "") });
+      if (result.success) setDialog(null);
+      else setError(result.error);
+    });
+  }
+
   function simple(action: (id: string) => Promise<{ success: boolean; error?: string }>): void {
     setError(null);
     startTransition(async () => {
@@ -171,7 +182,7 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
         <FilePlus2 />
         Ajouter au suivi
       </Button>
-      <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => simple(ignoreLineAction)}>
+      <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => { setError(null); setDialog("ignore"); }}>
         <EyeOff />
         Ignorer
       </Button>
@@ -278,6 +289,42 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
               {candidates?.some((candidate) => selected.has(keyOf(candidate)) && !candidate.paid) ? "Affecter et marquer réglé" : "Relier à ces factures déjà réglées"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialog === "ignore"} onOpenChange={(open) => setDialog(open ? "ignore" : null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ignorer cette ligne</DialogTitle>
+            <DialogDescription>
+              {formatDate(line.date)} · {formatDA(line.montant)} · {line.libelle}. Le motif est conservé pour pouvoir relire les lignes ignorées.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submitIgnore} className="grid grid-cols-1 gap-3">
+            <Field id={`i-motif-${line.id}`} label="Motif">
+              <NativeSelect id={`i-motif-${line.id}`} name="motif" defaultValue="frais_bancaires">
+                <option value="frais_bancaires">Frais bancaires</option>
+                <option value="echange_interne">Échange interne entre comptes</option>
+                <option value="autre">Autre (à préciser)</option>
+              </NativeSelect>
+            </Field>
+            <Field id={`i-note-${line.id}`} label="Précision (obligatoire pour « Autre »)">
+              <Input id={`i-note-${line.id}`} name="note" maxLength={200} />
+            </Field>
+            {error ? (
+              <p role="alert" className="text-sm font-medium text-destructive">
+                {error}
+              </p>
+            ) : null}
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setDialog(null)}>
+                Annuler
+              </Button>
+              <Button type="submit" disabled={pending}>
+                Ignorer la ligne
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

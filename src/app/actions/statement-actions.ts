@@ -11,6 +11,7 @@ import {
   columnMappingSchema,
   createFromLineSchema,
   doubleEntrySchema,
+  ignoreLineSchema,
   lineIdSchema,
   linkExistingSchema,
   notDoubleSchema,
@@ -21,6 +22,7 @@ import {
   type AssignSearchInput,
   type CreateFromLineInput,
   type DoubleEntryInput,
+  type IgnoreLineInput,
   type LinkExistingInput,
   type NotDoubleInput,
   type TransferLinkInput,
@@ -92,8 +94,8 @@ export async function recheckTodoAction(): Promise<ActionResult<StatementAnalysi
 }
 
 /** Ligne ignorée. */
-export async function ignoreLineAction(lineId: string): Promise<ActionResult<true>> {
-  const result = await runAction(lineIdSchema, lineId, ignoreLine);
+export async function ignoreLineAction(input: IgnoreLineInput): Promise<ActionResult<true>> {
+  const result = await runAction(ignoreLineSchema, input, ignoreLine);
   if (result.success) refresh();
   return result;
 }

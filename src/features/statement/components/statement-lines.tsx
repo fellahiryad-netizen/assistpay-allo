@@ -14,6 +14,10 @@ export interface StatementLinesProps {
 
 const MODE: Readonly<Record<string, string>> = { CHEQUE: "Chèque", VIRMT: "Virement", VRSMT: "Versement" };
 
+function ageDays(iso: string): number {
+  return Math.round((Date.now() - Date.parse(`${iso}T00:00:00Z`)) / 86_400_000);
+}
+
 /** Lignes du relevé avec leurs indices (doublon probable, envoi de virements, paie) et leurs actions. */
 export function StatementLines({ lines, canEdit, categories }: Readonly<StatementLinesProps>): React.JSX.Element {
   return (
@@ -31,6 +35,8 @@ export function StatementLines({ lines, canEdit, categories }: Readonly<Statemen
                 </Badge>
               ) : null}
               {line.status !== "A_TRAITER" ? <Badge variant={line.status === "IGNORE" ? "muted" : "success"}>{STATEMENT_STATUS_LABELS[line.status]}</Badge> : null}
+              {line.status === "IGNORE" && line.motif ? <Badge variant="muted">Motif : {line.motif}</Badge> : null}
+              {line.status === "A_TRAITER" && ageDays(line.date) > 30 ? <Badge variant="warning">À traiter depuis {ageDays(line.date)} jours</Badge> : null}
               {line.twinDate ? <Badge variant="destructive">Doublon probable : même montant et libellé le {formatDate(line.twinDate)}</Badge> : null}
               {line.payroll ? <Badge variant="warning">Ligne de paie probable</Badge> : null}
               {line.transfer ? (

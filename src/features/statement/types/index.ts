@@ -101,6 +101,8 @@ export interface StatementLineDTO {
   importedAt: string;
   /** Doublon probable : même montant et libellé à moins de 20 jours. */
   twinDate: string | null;
+  /** Motif d'une ligne ignorée (vide sinon). */
+  motif: string;
   /** Envoi de virements reconnu (débit global). */
   transfer: { id: string; ref: string; produit: string; nb: number; mois: string } | null;
   /** Ligne paie (salaires, CNAS, impôts) probable. */
