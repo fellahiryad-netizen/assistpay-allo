@@ -9,29 +9,46 @@ import { fail, ok, type ActionResult } from "@/types";
 const BAD_CREDENTIALS = "Adresse e-mail ou mot de passe incorrect.";
 
 /* Protection contre les essais de mots de passe en série : 5 échecs en 15 minutes bloquent l'adresse 15 minutes.
-   Compteur en mémoire du serveur : suffisant pour une installation sur un seul serveur. */
+   Le compteur est gardé en base (table Setting) : il tient même quand le site tourne sur plusieurs serveurs. */
 const MAX_FAILURES = 5;
 const WINDOW_MS = 15 * 60 * 1000;
-const failures = new Map<string, { count: number; first: number; lockedUntil: number }>();
 
-function lockedMinutes(email: string): number {
-  const entry = failures.get(email);
+interface FailureEntry {
+  count: number;
+  first: number;
+  lockedUntil: number;
+}
+
+const failureKey = (email: string): string => `login:${email.trim().toLowerCase()}`;
+
+async function readFailures(email: string): Promise<FailureEntry | null> {
+  const row = await db.setting.findUnique({ where: { key: failureKey(email) } });
+  const value = row?.value;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const { count, first, lockedUntil } = value as Record<string, unknown>;
+  return { count: Number(count) || 0, first: Number(first) || 0, lockedUntil: Number(lockedUntil) || 0 };
+}
+
+async function lockedMinutes(email: string): Promise<number> {
+  const entry = await readFailures(email);
   if (!entry) return 0;
   const now = Date.now();
   if (entry.lockedUntil > now) return Math.ceil((entry.lockedUntil - now) / 60000);
-  if (now - entry.first > WINDOW_MS) failures.delete(email);
+  if (now - entry.first > WINDOW_MS) await clearFailures(email);
   return 0;
 }
 
-function recordFailure(email: string): void {
+async function recordFailure(email: string): Promise<void> {
   const now = Date.now();
-  const entry = failures.get(email);
-  if (!entry || now - entry.first > WINDOW_MS) {
-    failures.set(email, { count: 1, first: now, lockedUntil: 0 });
-    return;
-  }
-  entry.count += 1;
-  if (entry.count >= MAX_FAILURES) entry.lockedUntil = now + WINDOW_MS;
+  const entry = await readFailures(email);
+  const next: FailureEntry = !entry || now - entry.first > WINDOW_MS ? { count: 1, first: now, lockedUntil: 0 } : { ...entry, count: entry.count + 1 };
+  if (next.count >= MAX_FAILURES) next.lockedUntil = now + WINDOW_MS;
+  const value = { count: next.count, first: next.first, lockedUntil: next.lockedUntil };
+  await db.setting.upsert({ where: { key: failureKey(email) }, create: { key: failureKey(email), value }, update: { value } });
+}
+
+async function clearFailures(email: string): Promise<void> {
+  await db.setting.deleteMany({ where: { key: failureKey(email) } });
 }
 
 /** Charge l'utilisateur et calcule son accès effectif ; `null` s'il n'existe pas ou est désactivé. */
@@ -55,21 +72,21 @@ export async function loadAuthUser(userId: string): Promise<AuthUser | null> {
 
 /** Vérifie les identifiants ; renvoie l'identifiant de l'utilisateur si la connexion est acceptée. */
 export async function authenticate(input: LoginInput): Promise<ActionResult<{ userId: string }>> {
-  const locked = lockedMinutes(input.email);
+  const locked = await lockedMinutes(input.email).catch(() => 0);
   if (locked) return fail(`Trop d'essais avec cette adresse. Réessayez dans ${locked} minute(s).`, "UNAUTHENTICATED");
   try {
     const user = await db.user.findUnique({ where: { email: input.email } });
     if (!user || !user.active || !user.passwordHash) {
-      recordFailure(input.email);
+      await recordFailure(input.email);
       return fail(BAD_CREDENTIALS, "UNAUTHENTICATED");
     }
     const valid = await verifyPassword(input.password, user.passwordHash);
     if (!valid) {
-      recordFailure(input.email);
-      if (lockedMinutes(input.email)) console.warn(`[auth] adresse bloquée 15 minutes après ${MAX_FAILURES} échecs : ${input.email}`);
+      await recordFailure(input.email);
+      if (await lockedMinutes(input.email)) console.warn(`[auth] adresse bloquée 15 minutes après ${MAX_FAILURES} échecs : ${input.email}`);
       return fail(BAD_CREDENTIALS, "UNAUTHENTICATED");
     }
-    failures.delete(input.email);
+    await clearFailures(input.email);
     await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     const actor = await loadAuthUser(user.id);
     if (actor) await logAction(actor, "Connexion", actor.email);

@@ -146,6 +146,7 @@ export async function resetUserPassword(actor: AuthUser, input: ResetPasswordInp
   if (!guard.success) return guard;
   try {
     const user = await db.user.update({ where: { id: input.userId }, data: { passwordHash: await hashPassword(input.password) } });
+    await db.setting.deleteMany({ where: { key: `login:${user.email.trim().toLowerCase()}` } });
     await logAction(actor, "Mot de passe réinitialisé", displayName(user), true);
     return ok(true);
   } catch (error) {
