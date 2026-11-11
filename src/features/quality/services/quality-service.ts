@@ -4,7 +4,8 @@ import type { AuthUser } from "@/features/access/types";
 import { isSplit, remaining, toPayable, type PayableInvoice } from "@/features/invoices/services/invoice-balance";
 import { countDoubleEntryWork } from "@/features/statement/services/double-entry-service";
 import { ok, type ActionResult } from "@/types";
-import { todayIso } from "@/utils/dates";
+import { round2 } from "@/utils/amounts";
+import { toIsoDate, todayIso } from "@/utils/dates";
 import { alnumKey } from "@/utils/text";
 
 /** Ligne signalée par le contrôle qualité. */
@@ -93,7 +94,58 @@ export async function qualityReport(actor: AuthUser): Promise<ActionResult<{ rul
     const matched = invoices.filter(definition.test).sort((a, b) => (a.dateFacture ?? a.dateOperation ?? "").localeCompare(b.dateFacture ?? b.dateOperation ?? ""));
     return { key: definition.key, title: definition.title, hint: definition.hint, count: matched.length, items: matched.slice(0, 200).map(toItem) };
   });
+  rules.push(...(await bankRules(actor, invoices, toItem)));
   const doubleWork = await countDoubleEntryWork(actor);
   rules.splice(7, 0, { key: "dblglob", title: "Double emploi global / détail (Débit) et virements à rapprocher", hint: "Virement global de prestataires saisi en plus des lignes de chaque prestataire, ou global saisi deux fois.", count: doubleWork, href: "/releve/rapprochement", items: [] });
   return ok({ rules, total: rules.reduce((sum, rule) => sum + rule.count, 0) });
+}
+
+
+/**
+ * Contrôles croisés facture / relevé bancaire (encaissements de 2026) : montant du virement différent des factures reliées,
+ * facture reliée à plusieurs virements, avance CAAT réglée à 0 DA, répartition débours + frais différente du total.
+ */
+async function bankRules(actor: AuthUser, invoices: PayableInvoice[], toItem: (invoice: PayableInvoice) => QualityInvoice): Promise<QualityRule[]> {
+  const byLegacy = new Map(invoices.map((invoice) => [invoice.legacyId, invoice]));
+  const note = (invoice: PayableInvoice, text: string): QualityInvoice => ({ ...toItem(invoice), libelle: `${invoice.libelle} — ${text}` });
+  const rules: QualityRule[] = [];
+  if (can(actor, "RELEVE")) {
+    const lines = await db.bankStatementLine.findMany({ where: { sens: "CREDIT", status: { in: ["RAPPROCHE", "DEJA"] }, date: { gte: new Date("2026-01-01") } }, orderBy: { date: "desc" } });
+    const mismatch = new Map<string, QualityInvoice>();
+    const usage = new Map<string, string[]>();
+    for (const line of lines) {
+      const date = toIsoDate(line.date) ?? "";
+      const amount = Number(line.montant);
+      let expected = 0;
+      let comparable = true;
+      const linked: PayableInvoice[] = [];
+      for (const ref of line.invoiceRefs) {
+        const [legacyId = "", part = "tout"] = ref.split(":");
+        usage.set(legacyId, [...(usage.get(legacyId) ?? []), `${date} ${amount.toFixed(2)} DA`]);
+        const invoice = byLegacy.get(legacyId);
+        if (!invoice) {
+          comparable = false;
+          continue;
+        }
+        linked.push(invoice);
+        if ((invoice.extra.paiements?.length ?? 0) > 0) comparable = false;
+        expected += part === "debours" ? invoice.debours : part === "frais" ? invoice.frais : invoice.montant;
+      }
+      if (!comparable || linked.length === 0) continue;
+      const gap = round2(amount - expected);
+      if (Math.abs(gap) > 0.5) for (const invoice of linked) mismatch.set(`${line.id}|${invoice.id}`, note(invoice, `virement du ${date} : ${amount.toFixed(2)} DA reçu, ${expected.toFixed(2)} DA attendu (écart ${gap.toFixed(2)} DA)`));
+    }
+    const mismatchItems = [...mismatch.values()];
+    rules.push({ key: "bankgap", title: "Virement du relevé différent des factures reliées", hint: "Le montant reçu ne correspond pas à la somme des factures (ou parts débours / frais) affectées : affectation probablement erronée. Détachez-la dans le relevé.", count: mismatchItems.length, items: mismatchItems.slice(0, 200) });
+    const multi = [...usage.entries()].filter(([, list]) => list.length > 1).flatMap(([legacyId, list]) => {
+      const invoice = byLegacy.get(legacyId);
+      return invoice ? [note(invoice, `reliée à ${list.length} virements : ${list.join(" ; ")}`)] : [];
+    });
+    rules.push({ key: "banktwice", title: "Facture reliée à plusieurs virements", hint: "Une même facture (ou avance) apparaît dans plusieurs lignes du relevé : double affectation à vérifier.", count: multi.length, items: multi.slice(0, 200) });
+  }
+  const zero = invoices.filter((invoice) => invoice.sens === "CREDIT" && invoice.extra.avance && invoice.status === "REGLE" && invoice.montant <= 0);
+  rules.push({ key: "advzero", title: "Avance CAAT réglée à 0 DA", hint: "Avance marquée réglée sans montant : le virement n'a pas été correctement affecté.", count: zero.length, items: zero.slice(0, 200).map((invoice) => toItem(invoice)) });
+  const sums = invoices.filter((invoice) => isSplit(invoice) && Math.abs(round2(invoice.debours + invoice.frais - invoice.montant)) > 0.5 && invoice.status !== "ANNULE");
+  rules.push({ key: "splitsum", title: "Débours + frais différents du montant de la facture", hint: "Le total n'égale pas la somme des deux parts : corrigez le débours, les frais ou le total.", count: sums.length, items: sums.slice(0, 200).map((invoice) => note(invoice, `débours ${invoice.debours.toFixed(2)} + frais ${invoice.frais.toFixed(2)} = ${round2(invoice.debours + invoice.frais).toFixed(2)} DA, total saisi ${invoice.montant.toFixed(2)} DA`)) });
+  return rules;
 }
