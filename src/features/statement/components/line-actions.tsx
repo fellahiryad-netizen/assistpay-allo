@@ -2,7 +2,7 @@
 
 import { useState, useTransition, type FormEvent } from "react";
 import { EyeOff, FilePlus2, Link2, Undo2 } from "lucide-react";
-import { assignCandidatesAction, assignCaatAction, assignLineAction, createInvoiceFromLineAction, ignoreLineAction, reopenLineAction } from "@/app/actions/statement-actions";
+import { assignCandidatesAction, assignCaatAction, assignLineAction, createInvoiceFromLineAction, detachLineAction, ignoreLineAction, reopenLineAction } from "@/app/actions/statement-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -28,6 +28,7 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [caatBranch, setCaatBranch] = useState<string>(CAAT_SUCCURSALES[0]);
   const [caatPeriod, setCaatPeriod] = useState("");
   const [pending, startTransition] = useTransition();
@@ -118,6 +119,17 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
     });
   }
 
+  function detach(): void {
+    if (!window.confirm("Détacher ce virement ? Les factures reliées repassent « en attente » et la ligne revient à traiter.")) return;
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const result = await detachLineAction(line.id);
+      if (!result.success) setError(result.error);
+      else setNotice(`${result.data.undone.length} facture(s) remise(s) en attente${result.data.kept.length ? ` · à vérifier : ${result.data.kept.join(" ; ")}` : ""}.`);
+    });
+  }
+
   const selectedTotal = round2((candidates ?? []).filter((candidate) => selected.has(keyOf(candidate))).reduce((sum, candidate) => sum + candidate.amount, 0));
   const gap = round2(line.montant - selectedTotal);
 
@@ -127,6 +139,15 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
         <Undo2 />
         Remettre à traiter
       </Button>
+    ) : line.status === "RAPPROCHE" || line.status === "DEJA" ? (
+      <div className="flex flex-col items-end gap-1">
+        <Button type="button" size="sm" variant="outline" disabled={pending} onClick={detach}>
+          <Undo2 />
+          Détacher l'affectation
+        </Button>
+        {error ? <p className="max-w-56 text-right text-xs text-destructive">{error}</p> : null}
+        {notice ? <p className="max-w-56 text-right text-xs text-muted-foreground">{notice}</p> : null}
+      </div>
     ) : (
       <span />
     );

@@ -39,11 +39,13 @@ import {
   assignLine,
   assignToCaatAdvance,
   createInvoiceFromLine,
+  detachLine,
   ignoreLine,
   previewStatement,
   recheckTodo,
   reopenLine,
 } from "@/features/statement/services/statement-service";
+import type { DetachResult } from "@/features/statement/services/statement-service";
 import type { AssignCandidate, StatementAnalysis, StatementPreview } from "@/features/statement/types";
 import { fail, type ActionResult } from "@/types";
 
@@ -99,6 +101,13 @@ export async function ignoreLineAction(lineId: string): Promise<ActionResult<tru
 /** Ligne remise à traiter. */
 export async function reopenLineAction(lineId: string): Promise<ActionResult<true>> {
   const result = await runAction(lineIdSchema, lineId, reopenLine);
+  if (result.success) refresh();
+  return result;
+}
+
+/** Détache une ligne du relevé : règlements annulés, ligne remise à traiter. */
+export async function detachLineAction(lineId: string): Promise<ActionResult<DetachResult>> {
+  const result = await runAction(lineIdSchema, lineId, detachLine);
   if (result.success) refresh();
   return result;
 }

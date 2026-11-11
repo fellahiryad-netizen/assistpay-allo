@@ -442,6 +442,82 @@ export async function reopenLine(actor: AuthUser, lineId: string): Promise<Actio
   return ok(true);
 }
 
+/** Résultat du détachement d'une ligne du relevé. */
+export interface DetachResult {
+  /** Factures remises en attente (règlement annulé). */
+  undone: string[];
+  /** Factures laissées telles quelles, avec la raison. */
+  kept: string[];
+}
+
+/**
+ * Détache une ligne du relevé : annule le règlement qu'elle avait enregistré sur chaque facture reliée
+ * (facture remise en attente, avance CAAT remise à 0 DA) puis remet la ligne « à traiter ».
+ * Une facture n'est pas touchée si un autre virement y est aussi relié ou si son règlement porte une autre date.
+ */
+export async function detachLine(actor: AuthUser, lineId: string): Promise<ActionResult<DetachResult>> {
+  const guard = guardEdit(actor);
+  if (!guard.success) return guard;
+  const line = await loadLine(lineId);
+  if (!line.success) return line;
+  const row = line.data;
+  if (row.status === "A_TRAITER") return fail("Cette ligne n'est reliée à aucune facture.", "VALIDATION");
+  if (row.status === "AJOUTE") return fail("Cette ligne a créé une facture : supprimez la facture pour la détacher.", "VALIDATION");
+  const date = toIsoDate(row.date) ?? "";
+  const result: DetachResult = { undone: [], kept: [] };
+  try {
+    await db.$transaction(async (tx) => {
+      const others = await tx.bankStatementLine.findMany({ where: { id: { not: row.id }, invoiceRefs: { isEmpty: false } }, select: { invoiceRefs: true } });
+      const sharedWith = new Set(others.flatMap((other) => other.invoiceRefs.map((ref) => ref.split(":")[0] ?? "")));
+      for (const ref of row.invoiceRefs) {
+        const [legacyId = "", part = "tout"] = ref.split(":");
+        if (!legacyId || legacyId.startsWith("rh")) continue;
+        const invoiceRow = await tx.invoice.findUnique({ where: { legacyId } });
+        if (!invoiceRow) continue;
+        const name = invoiceRow.numero || legacyId;
+        if (sharedWith.has(legacyId)) {
+          result.kept.push(`${name} (un autre virement y est aussi relié)`);
+          continue;
+        }
+        const invoice = toPayable(invoiceRow);
+        const extra = { ...invoice.extra };
+        let touched = false;
+        const clearDebours = part === "debours" || (part !== "frais" && isSplit(invoice));
+        const clearFrais = part === "frais" || (part !== "debours" && isSplit(invoice));
+        if (clearDebours && String(extra.regDebours ?? "").slice(0, 10) === date) {
+          delete extra.regDebours;
+          delete extra.payDebours;
+          touched = true;
+        }
+        if (clearFrais && String(extra.regFrais ?? "").slice(0, 10) === date) {
+          delete extra.regFrais;
+          delete extra.payFrais;
+          touched = true;
+        }
+        if (!isSplit(invoice) && (extra.paiements ?? []).some((payment) => payment.date === date)) {
+          extra.paiements = (extra.paiements ?? []).filter((payment) => payment.date !== date);
+          touched = true;
+        }
+        if (!isSplit(invoice) && invoice.status === "REGLE" && invoice.dateOperation === date) touched = true;
+        if (!touched) {
+          result.kept.push(`${name} (règlement d'une autre date : à vérifier)`);
+          continue;
+        }
+        const data: Prisma.InvoiceUpdateInput = { extra: writeExtra(extra), status: "EN_ATTENTE", dateOperation: null, mode: null };
+        if (invoice.extra.avance) data.montant = 0;
+        await tx.invoice.update({ where: { id: invoiceRow.id }, data });
+        result.undone.push(`${name}${invoice.extra.avance ? " (avance remise à 0 DA)" : ""}`);
+      }
+      await tx.bankStatementLine.update({ where: { id: row.id }, data: { status: "A_TRAITER", invoiceRefs: [] } });
+    });
+    await logAction(actor, "Relevé : affectation détachée", `${describeLine(row)} → remis en attente : ${result.undone.join(", ") || "aucune facture"}${result.kept.length ? ` ; laissées : ${result.kept.join(", ")}` : ""}`);
+    return ok(result);
+  } catch (error) {
+    console.error("[releve] détachement :", error);
+    return fail("Le détachement n'a pas pu être enregistré.", "DATABASE");
+  }
+}
+
 /**
  * Factures proposées pour affecter manuellement une ligne : en attente ET déjà réglées (le montant est cherché partout).
  * Sans recherche : montant exact d'abord, puis même succursale. Avec `q` : montant, succursale, nom ou n° de facture.
