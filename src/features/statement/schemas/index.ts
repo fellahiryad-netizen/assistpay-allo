@@ -112,3 +112,15 @@ export const assignCaatSchema = z.object({
   period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Mois invalide."),
 });
 export type AssignCaatInput = z.infer<typeof assignCaatSchema>;
+
+/** Affectation d'un virement global CAAT à plusieurs mois d'avance d'une même succursale (montant facultatif par mois). */
+export const assignCaatMonthsSchema = z.object({
+  lineId: lineIdSchema,
+  succursale: z.string().min(1).max(40),
+  months: z
+    .array(z.object({ period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Mois invalide."), montant: z.number().min(0).max(1e12).optional() }))
+    .min(1, "Cochez au moins un mois.")
+    .max(12, "12 mois au maximum.")
+    .refine((list) => new Set(list.map((item) => item.period)).size === list.length, "Un mois est coché deux fois."),
+});
+export type AssignCaatMonthsInput = z.infer<typeof assignCaatMonthsSchema>;

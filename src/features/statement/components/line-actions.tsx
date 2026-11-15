@@ -2,7 +2,7 @@
 
 import { useState, useTransition, type FormEvent } from "react";
 import { EyeOff, FilePlus2, Link2, Undo2 } from "lucide-react";
-import { assignCandidatesAction, assignCaatAction, assignLineAction, createInvoiceFromLineAction, detachLineAction, ignoreLineAction, reopenLineAction } from "@/app/actions/statement-actions";
+import { assignCandidatesAction, assignCaatAction, assignCaatMonthsAction, assignLineAction, createInvoiceFromLineAction, detachLineAction, ignoreLineAction, reopenLineAction } from "@/app/actions/statement-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -31,6 +31,7 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
   const [notice, setNotice] = useState<string | null>(null);
   const [caatBranch, setCaatBranch] = useState<string>(CAAT_SUCCURSALES[0]);
   const [caatPeriod, setCaatPeriod] = useState("");
+  const [caatMonths, setCaatMonths] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
   const keyOf = (candidate: AssignCandidate): string => `${candidate.invoiceId}:${candidate.part}`;
 
@@ -68,6 +69,20 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
       const result = await assignCaatAction({ lineId: line.id, succursale: caatBranch, period });
       if (result.success) setDialog(null);
       else setError(result.error);
+    });
+  }
+
+  function confirmCaatMonths(): void {
+    const months = Object.entries(caatMonths).map(([period, amount]) => {
+      const montant = Number(amount.replace(/\s/g, "").replace(",", "."));
+      return amount.trim() && Number.isFinite(montant) ? { period, montant } : { period };
+    });
+    startTransition(async () => {
+      const result = await assignCaatMonthsAction({ lineId: line.id, succursale: caatBranch, months });
+      if (result.success) {
+        setDialog(null);
+        setCaatMonths({});
+      } else setError(result.error);
     });
   }
 
@@ -235,6 +250,45 @@ export function LineActions({ line, categories }: Readonly<LineActionsProps>): R
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">Si la ligne d'avance de ce mois n'existe pas encore, elle est créée, puis réglée avec ce paiement.</p>
+              <details className="rounded-md border bg-card p-2">
+                <summary className="cursor-pointer text-sm font-medium">Virement global : plusieurs mois pour cette succursale</summary>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Cochez les mois réglés par ce virement (la succursale est celle choisie ci-dessus). Le montant d'un mois n'est à saisir que si son avance est à 0 DA ; une seule peut rester vide, elle reçoit le reste.
+                </p>
+                <ul className="mt-2 grid gap-1 sm:grid-cols-2">
+                  {caatPeriods.slice(0, 12).map((value) => (
+                    <li key={value} className="flex items-center gap-2 text-sm">
+                      <label className="flex flex-1 cursor-pointer items-center gap-2">
+                        <Checkbox
+                          checked={value in caatMonths}
+                          onChange={(event) =>
+                            setCaatMonths((current) => {
+                              const next = { ...current };
+                              if (event.target.checked) next[value] = "";
+                              else delete next[value];
+                              return next;
+                            })
+                          }
+                        />
+                        {caatLabel(value)}
+                      </label>
+                      {value in caatMonths ? (
+                        <Input
+                          className="h-8 w-32"
+                          inputMode="decimal"
+                          placeholder="Montant (DA)"
+                          aria-label={`Montant de ${caatLabel(value)}`}
+                          value={caatMonths[value] ?? ""}
+                          onChange={(event) => setCaatMonths((current) => ({ ...current, [value]: event.target.value }))}
+                        />
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+                <Button type="button" variant="outline" size="sm" className="mt-2" disabled={pending || Object.keys(caatMonths).length === 0} onClick={confirmCaatMonths}>
+                  Affecter aux mois cochés
+                </Button>
+              </details>
             </div>
           ) : null}
           {candidates === null ? (

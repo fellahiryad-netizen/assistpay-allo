@@ -9,7 +9,7 @@ import { decimalToNumber } from "@/features/invoices/services/invoice-mapper";
 import { isPayrollInvoice, moduleForSens } from "@/features/invoices/services/invoice-rules";
 import { ensureCaatAdvance } from "@/features/invoices/services/caat-advances";
 import { logAction } from "@/features/journal/services/journal-service";
-import { IGNORE_MOTIFS, type ApplyProposalsInput, type AssignCaatInput, type IgnoreLineInput, AssignLineInput, AssignSearchInput, CreateFromLineInput, StatementQuery } from "@/features/statement/schemas";
+import { IGNORE_MOTIFS, type ApplyProposalsInput, type AssignCaatInput, type AssignCaatMonthsInput, type IgnoreLineInput, AssignLineInput, AssignSearchInput, CreateFromLineInput, StatementQuery } from "@/features/statement/schemas";
 import { analyseLines, bankBranch, branchCompat, inFamily, paidEntries } from "@/features/statement/services/statement-matching";
 import {
   BANK_FEE_PATTERN,
@@ -700,4 +700,43 @@ export async function assignToCaatAdvance(actor: AuthUser, input: AssignCaatInpu
   const result = await assignLine(actor, { lineId: input.lineId, items: [{ invoiceId: advance.data.id, part: "tout", paid: advance.data.paid }] });
   if (result.success) await logAction(actor, "Relevé : règlement CAAT affecté", `${describeLine(line.data)} → CAAT ${input.succursale} ${input.period}`);
   return result;
+}
+
+/**
+ * Affecte un virement global CAAT à plusieurs mois d'avance d'une même succursale.
+ * Les avances manquantes sont créées. Une avance à 0 DA reçoit le montant indiqué pour son mois ; une seule avance à 0 DA peut s'en passer
+ * (elle reçoit alors le reste du virement). Les avances déjà chiffrées sont réglées pour leur montant.
+ */
+export async function assignToCaatMonths(actor: AuthUser, input: AssignCaatMonthsInput): Promise<ActionResult<{ invoices: number }>> {
+  const guard = guardEdit(actor);
+  if (!guard.success) return guard;
+  const line = await loadLine(input.lineId);
+  if (!line.success) return line;
+  if (line.data.sens !== "CREDIT") return fail("Seul un encaissement peut être affecté à une avance CAAT.", "VALIDATION");
+  const prepared: Array<{ id: string; paid: boolean; montant: number; given: number | undefined }> = [];
+  for (const month of input.months) {
+    const advance = await ensureCaatAdvance(actor, month.period, input.succursale);
+    if (!advance.success) return advance;
+    const row = await db.invoice.findUnique({ where: { id: advance.data.id }, select: { montant: true } });
+    prepared.push({ id: advance.data.id, paid: advance.data.paid, montant: decimalToNumber(row?.montant ?? null) ?? 0, given: month.montant });
+  }
+  const empty = prepared.filter((item) => !item.paid && item.montant === 0);
+  if (empty.filter((item) => item.given === undefined).length > 1) return fail("Indiquez le montant de chaque mois dont l'avance est encore à 0 DA (un seul peut rester vide : il reçoit le reste).", "VALIDATION");
+  const touched: string[] = [];
+  try {
+    for (const item of empty) {
+      if (item.given === undefined || item.given <= 0) continue;
+      await db.invoice.update({ where: { id: item.id }, data: { montant: item.given } });
+      touched.push(item.id);
+    }
+    // Les avances chiffrées d'abord : l'avance restée vide reçoit ce qui reste du virement.
+    const ordered = [...prepared].sort((a, b) => Number(empty.includes(a) && a.given === undefined) - Number(empty.includes(b) && b.given === undefined));
+    const result = await assignLine(actor, { lineId: input.lineId, items: ordered.map((item) => ({ invoiceId: item.id, part: "tout" as const, paid: item.paid })) });
+    if (!result.success) throw new Error(result.error);
+    await logAction(actor, "Relevé : règlement CAAT affecté à plusieurs mois", `${describeLine(line.data)} → CAAT ${input.succursale} ${input.months.map((m) => m.period).join(", ")}`);
+    return result;
+  } catch (error) {
+    for (const id of touched) await db.invoice.update({ where: { id }, data: { montant: 0 } }).catch(() => undefined);
+    return fail(error instanceof Error ? error.message : "L'affectation a échoué.", "CONFLICT");
+  }
 }

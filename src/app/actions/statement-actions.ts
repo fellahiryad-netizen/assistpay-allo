@@ -6,6 +6,7 @@ import { firstIssue, runAction, runUploadAction } from "@/app/actions/action-hel
 import {
   applyProposalsSchema,
   assignCaatSchema,
+  assignCaatMonthsSchema,
   assignLineSchema,
   assignSearchSchema,
   columnMappingSchema,
@@ -18,6 +19,7 @@ import {
   transferLinkSchema,
   type ApplyProposalsInput,
   type AssignCaatInput,
+  type AssignCaatMonthsInput,
   type AssignLineInput,
   type AssignSearchInput,
   type CreateFromLineInput,
@@ -40,6 +42,7 @@ import {
   assignCandidates,
   assignLine,
   assignToCaatAdvance,
+  assignToCaatMonths,
   createInvoiceFromLine,
   detachLine,
   ignoreLine,
@@ -129,6 +132,13 @@ export async function assignLineAction(input: AssignLineInput): Promise<ActionRe
 /** Affectation d'un règlement CAAT à une succursale et à un mois. */
 export async function assignCaatAction(input: AssignCaatInput): Promise<ActionResult<{ invoices: number }>> {
   const result = await runAction(assignCaatSchema, input, assignToCaatAdvance);
+  if (result.success) refresh();
+  return result;
+}
+
+/** Affectation d'un virement global CAAT à plusieurs mois d'une succursale. */
+export async function assignCaatMonthsAction(input: AssignCaatMonthsInput): Promise<ActionResult<{ invoices: number }>> {
+  const result = await runAction(assignCaatMonthsSchema, input, assignToCaatMonths);
   if (result.success) refresh();
   return result;
 }
