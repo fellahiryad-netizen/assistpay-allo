@@ -1,10 +1,12 @@
 import { requireAccess, requireAdmin } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { logAction } from "@/features/journal/services/journal-service";
-import { REGUL_PROD, REGUL_SUCCURSALES, type BaseRow, type Fait, type RegulIndex, type RegulSaved, type RegulSin, type Saisie, type TcdMonth } from "@/features/regul/services/regul-engine";
+import { advanceTable } from "@/features/partners/services/advance-table";
+import { REGUL_PROD, REGUL_SUCCURSALES, succId, type BaseRow, type Fait, type RegulIndex, type RegulSaved, type RegulSin, type Saisie, type TcdMonth } from "@/features/regul/services/regul-engine";
 import { db } from "@/lib/db";
 import { fail, ok, type ActionResult } from "@/types";
 import { todayIso } from "@/utils/dates";
+import { upperPlain } from "@/utils/text";
 
 /* Stockage de la régularisation CAAT dans la table « Setting » (clé → JSON) : index, base de production par succursale,
    base sinistres, montants saisis et résultats enregistrés. */
@@ -65,10 +67,31 @@ export async function regulWorkData(actor: AuthUser, succ: string): Promise<Acti
     const [base, sin, rows] = await Promise.all([read<BaseRow[]>(keyBase(succ)), read<RegulSin>(KEY_SIN), db.setting.findMany({ where: { key: { startsWith: `${KEY_SAISIE}${succ.replace(/ /g, "_")}-` } } })]);
     const saisies: Record<string, Saisie> = {};
     for (const row of rows) saisies[row.key.slice(KEY_SAISIE.length)] = row.value as unknown as Saisie;
+    await mergeSuiviAdvances(actor, succ, saisies);
     return ok({ base: base ?? [], sinKeys: sin ? sin.keys : null, saisies });
   } catch (error) {
     console.error("[regul] données :", error);
     return fail("Les données de la succursale n'ont pas pu être lues.", "DATABASE");
+  }
+}
+
+/**
+ * Les avances déjà réglées au suivi (tableau CAAT : mois entièrement encaissé) priment sur celles du consolidé importé.
+ * Un montant saisi à la main dans la régularisation reste prioritaire. Seul le montant de l'avance est repris : aucune règle de calcul n'est modifiée.
+ */
+async function mergeSuiviAdvances(actor: AuthUser, succ: string, saisies: Record<string, Saisie>): Promise<void> {
+  const thisYear = Number(todayIso().slice(0, 4));
+  for (const year of [thisYear - 1, thisYear]) {
+    const table = await advanceTable(actor, "CAAT", year);
+    if (!table.success) continue;
+    const row = table.data.rows.find((item) => upperPlain(item.label) === succ);
+    if (!row) continue;
+    row.months.forEach((cell, index) => {
+      if (cell.state !== "regle" || cell.billed <= 0) return;
+      const key = `${succId(succ)}-${year}-${String(index + 1).padStart(2, "0")}`;
+      if (saisies[key]?.avance != null) return;
+      saisies[key] = { ...(saisies[key] ?? { succ }), succ, avance: cell.billed };
+    });
   }
 }
 
