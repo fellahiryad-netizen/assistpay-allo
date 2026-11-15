@@ -49,6 +49,7 @@ export interface IssuedInvoiceDTO {
   num2: string;
   client: string;
   clientLabel: string;
+  succ: string;
   date: string | null;
   objet: string;
   presetLabel: string;

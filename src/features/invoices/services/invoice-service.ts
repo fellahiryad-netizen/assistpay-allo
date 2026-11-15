@@ -5,7 +5,7 @@ import { notifyAdmins } from "@/features/system/services/admin-notices";
 import { syncTransferAmount } from "@/features/transfers/services/transfer-service";
 import { autoRequestForInvoice, detachDeletedInvoice, syncRequestsAmount } from "@/features/payment-requests/services/payment-request-service";
 import { db } from "@/lib/db";
-import type { Prisma } from "@/generated/prisma/client";
+import type { Invoice, Prisma } from "@/generated/prisma/client";
 import { can, requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import type { InvoiceInput, InvoiceQuery, MarkPaidInput, SetStatusInput } from "@/features/invoices/schemas";
@@ -290,6 +290,22 @@ function snapshot(row: { status: string; montant: { toNumber(): number }; debour
   };
 }
 
+/**
+ * Report la nouvelle date de facture sur la facture établie (celle qui s'imprime) quand la date est changée au suivi.
+ * Ne touche ni aux montants ni aux numéros.
+ */
+async function syncIssuedDate(before: Invoice, after: Invoice): Promise<void> {
+  const same = (before.dateFacture?.getTime() ?? null) === (after.dateFacture?.getTime() ?? null);
+  if (same || !after.dateFacture) return;
+  const doc = await db.issuedInvoice.findFirst({ where: { invoiceLegacyId: after.legacyId } });
+  if (!doc) return;
+  const payload = typeof doc.payload === "object" && doc.payload !== null && !Array.isArray(doc.payload) ? (doc.payload as Record<string, Prisma.InputJsonValue>) : {};
+  await db.issuedInvoice.update({
+    where: { id: doc.id },
+    data: { date: after.dateFacture, payload: { ...payload, date: after.dateFacture.toISOString().slice(0, 10) } },
+  });
+}
+
 /** Modifie une facture existante. Changer de sens demande le droit de modification des deux côtés. */
 export async function updateInvoice(actor: AuthUser, id: string, input: InvoiceInput): Promise<ActionResult<InvoiceDTO>> {
   try {
@@ -302,6 +318,7 @@ export async function updateInvoice(actor: AuthUser, id: string, input: InvoiceI
     if (data.payroll && !can(actor, "RH", "EDIT")) return fail("Les lignes de paie sont réservées à l'accès RH.", "FORBIDDEN");
     const row = await guardedUpdate(current, { ...data, classe: current.classe ?? data.classe, updatedById: actor.id });
     if (!row) return fail(CONCURRENT_MESSAGE, "CONFLICT");
+    await syncIssuedDate(current, row);
     const dto = toInvoiceDTO(row);
     await logAction(actor, "Modification facture", describe(dto), false, { entity: "Invoice", entityId: row.legacyId, avant: snapshot(current), apres: snapshot(row) });
     // Le montant corrigé est reporté sur la demande de paiement et sur la demande de facture prestataire.

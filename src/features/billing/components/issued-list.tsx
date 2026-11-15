@@ -14,6 +14,7 @@ export function IssuedList({ items }: Readonly<{ items: IssuedInvoiceDTO[] }>): 
             <TableHead>N°</TableHead>
             <TableHead>Date</TableHead>
             <TableHead>Partenaire</TableHead>
+            <TableHead>Succursale</TableHead>
             <TableHead className="hidden lg:table-cell">Modèle / période</TableHead>
             <TableHead className="text-right">TTC</TableHead>
             <TableHead>Suivi</TableHead>
@@ -30,6 +31,7 @@ export function IssuedList({ items }: Readonly<{ items: IssuedInvoiceDTO[] }>): 
               </TableCell>
               <TableCell className="whitespace-nowrap tabular-nums">{formatDate(item.date)}</TableCell>
               <TableCell>{item.clientLabel}</TableCell>
+              <TableCell>{item.succ || <span className="text-muted-foreground">—</span>}</TableCell>
               <TableCell className="hidden max-w-96 lg:table-cell">
                 <span className="block truncate">{item.presetLabel}</span>
                 <span className="block text-xs text-muted-foreground">{item.perTxt}</span>

@@ -247,7 +247,7 @@ async function prepareDraftBase(actor: AuthUser, input: PrepareBillingInput): Pr
   });
 }
 
-/** Factures émises (les plus récentes d'abord) avec l'état de la ligne au suivi. */
+/** Factures émises, classées par compagnie puis par succursale (les plus récentes d'abord dans chaque groupe), avec l'état de la ligne au suivi. */
 export async function listIssued(actor: AuthUser, filter: "all" | "bdg" | "gam" = "all"): Promise<ActionResult<IssuedInvoiceDTO[]>> {
   const guard = requireAccess(actor, filter === "all" ? "FACT" : "BDG");
   if (!guard.success) return guard;
@@ -267,6 +267,7 @@ export async function listIssued(actor: AuthUser, filter: "all" | "bdg" | "gam" 
           num2: str(payload.num2),
           client: doc.client,
           clientLabel: CLIENT_LABELS[doc.client] ?? doc.client,
+          succ: str(payload.succ),
           date: toIsoDate(doc.date),
           objet: doc.objet,
           presetLabel: preset.lbl,
@@ -280,6 +281,13 @@ export async function listIssued(actor: AuthUser, filter: "all" | "bdg" | "gam" 
         };
       })
       .filter((doc) => (filter === "bdg" ? doc.presetModel === "bdgpair" : filter === "gam" ? doc.presetModel === "bdggam" : true))
+      .sort(
+        (a, b) =>
+          a.clientLabel.localeCompare(b.clientLabel, "fr") ||
+          a.succ.localeCompare(b.succ, "fr") ||
+          (b.date ?? "").localeCompare(a.date ?? "") ||
+          b.num.localeCompare(a.num, "fr", { numeric: true }),
+      )
       .map(({ presetModel: _model, presetId: _id, ...rest }) => rest),
   );
 }
