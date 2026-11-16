@@ -5,7 +5,7 @@ import type { AuthUser } from "@/features/access/types";
 import { getProduction } from "@/features/caar/services/caar-service";
 import type { ExportedFile } from "@/features/invoices/services/invoice-export";
 import { logAction } from "@/features/journal/services/journal-service";
-import { fail, ok, type ActionResult } from "@/types";
+import { ok, type ActionResult } from "@/types";
 
 const money = (value: number): number => Math.round(value * 100) / 100;
 
