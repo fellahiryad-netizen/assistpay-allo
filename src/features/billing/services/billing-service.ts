@@ -313,6 +313,38 @@ function bdgClient(draft: BillingDraft): { cat: string; tiers: string; label: st
   return draft.client === "TRUST" ? { cat: "Trust BDG", tiers: "TRUST ASSURANCE", label: "Trust BDG" } : { cat: "BDG CAAT", tiers: `CAAT ${draft.succ}`, label: "BDG CAAT" };
 }
 
+const PERIOD_KIND: Readonly<Record<string, RegExp>> = { r_succ: /HONORAIRE|AVANCE|FACTURATION MOIS/i, r_regul: /R[ÉE]GUL/i };
+
+/**
+ * Garde-fou : une facture du même modèle existe déjà pour la même compagnie, la même succursale et la même période.
+ * Renvoie le message à afficher, ou null. Vérifie les factures établies (si leur ligne au suivi existe encore) et, pour les
+ * honoraires et régularisations CAAR, les lignes du suivi saisies sans facture établie.
+ */
+async function findSamePeriodInvoice(draft: BillingDraft, isBdg: boolean): Promise<string | null> {
+  if (isBdg || !draft.per || !draft.succ) return null;
+  const preset = presetById(draft.preset);
+  if (!preset.succ) return null;
+  const sameDocs = await db.issuedInvoice.findMany({
+    where: { client: draft.client, AND: [{ payload: { path: ["preset"], equals: draft.preset } }, { payload: { path: ["per"], equals: draft.per } }, { payload: { path: ["succ"], equals: draft.succ } }] },
+    select: { num: true, ttc: true, invoiceLegacyId: true, payload: true },
+  });
+  const linkedIds = sameDocs.map((doc) => doc.invoiceLegacyId).filter((id): id is string => Boolean(id));
+  const alive = linkedIds.length ? new Set((await db.invoice.findMany({ where: { legacyId: { in: linkedIds } }, select: { legacyId: true } })).map((row) => row.legacyId)) : new Set<string>();
+  const doc = sameDocs.find((item) => str(obj(item.payload).kind) !== "avoir" && (!item.invoiceLegacyId || alive.has(item.invoiceLegacyId)));
+  let found = doc ? { num: doc.num, ttc: decimalToNumber(doc.ttc) ?? 0, status: "" } : null;
+  const kind = PERIOD_KIND[draft.preset];
+  if (!found && kind) {
+    const lines = await db.invoice.findMany({
+      where: { sens: "CREDIT", periode: draft.per, succursale: { contains: draft.succ, mode: "insensitive" }, categorie: CLIENTS[draft.client]?.cat ?? draft.client },
+      select: { numero: true, montant: true, status: true, libelle: true },
+    });
+    const line = lines.find((item) => kind.test(item.libelle));
+    if (line) found = { num: line.numero, ttc: decimalToNumber(line.montant) ?? 0, status: line.status === "REGLE" ? ", réglée" : "" };
+  }
+  if (!found) return null;
+  return `Une facture « ${preset.lbl} » existe déjà pour ${draft.succ}, période ${draft.per} : ${found.num} (${formatDA(found.ttc)}${found.status}). Pour la corriger, utilisez « Rectifier » sur cette facture (ou un avoir si elle est encaissée) ; si elle a été créée par erreur, supprimez-la d'abord.`;
+}
+
 /**
  * Enregistre une facture : elle s'ajoute aux factures partenaires (Crédit) en attente de paiement.
  * Facture BDG : une seule ligne au suivi avec la répartition débours / frais de gestion (2 n° de facture).
@@ -346,6 +378,10 @@ export async function saveDraft(actor: AuthUser, input: SaveBillingInput): Promi
       return [invoice.numero, extra.factureDebours ?? "", extra.factureFrais ?? ""].some((value) => value && keys.includes(invoiceKey(value)));
     });
     if (conflict && !existingDoc) return fail(`Le n° ${conflict.numero} existe déjà dans le suivi.`, "CONFLICT");
+    if (!existingDoc) {
+      const same = await findSamePeriodInvoice(draft, isBdg);
+      if (same) return fail(same, "CONFLICT");
+    }
 
     const currentInvoice = existingDoc?.invoiceLegacyId ? await db.invoice.findUnique({ where: { legacyId: existingDoc.invoiceLegacyId } }) : null;
     let invoiceData: Omit<Prisma.InvoiceUncheckedCreateInput, "legacyId">;

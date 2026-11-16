@@ -388,6 +388,35 @@ export async function setInvoiceStatus(actor: AuthUser, input: SetStatusInput): 
   }
 }
 
+/** Vrai si la facture établie liée à cette ligne du suivi a un avoir actif. */
+async function hasActiveAvoir(invoiceLegacyId: string): Promise<boolean> {
+  const doc = await db.issuedInvoice.findFirst({ where: { invoiceLegacyId }, select: { id: true } });
+  if (!doc) return false;
+  const avoirs = await db.issuedInvoice.findMany({ where: { payload: { path: ["kind"], equals: "avoir" } }, select: { payload: true } });
+  return avoirs.some((row) => {
+    const avoir = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload) ? (row.payload as Record<string, unknown>).avoir : null;
+    const data = avoir && typeof avoir === "object" ? (avoir as Record<string, unknown>) : {};
+    return data.origineId === doc.id && data.statut !== "annule";
+  });
+}
+
+/**
+ * Quand une ligne du suivi est supprimée, la facture établie qui s'y rattache disparaît aussi (sinon son numéro reste
+ * dans « Établir une facture » comme une facture fantôme) et la production CAAR liée redevient « à facturer ».
+ */
+async function dropIssuedDocument(invoiceLegacyId: string): Promise<void> {
+  const docs = await db.issuedInvoice.findMany({ where: { invoiceLegacyId }, select: { id: true } });
+  if (docs.length === 0) return;
+  await db.issuedInvoice.deleteMany({ where: { invoiceLegacyId } });
+  const productions = await db.caarProduction.findMany({ select: { id: true, payload: true } });
+  for (const production of productions) {
+    const payload = production.payload && typeof production.payload === "object" && !Array.isArray(production.payload) ? (production.payload as Record<string, Prisma.InputJsonValue>) : {};
+    if (payload.factureId !== invoiceLegacyId) continue;
+    const { factureId: _a, factureNum: _b, factureTTC: _c, factureDate: _d, ...rest } = payload;
+    await db.caarProduction.update({ where: { id: production.id }, data: { payload: rest, status: "controle" } });
+  }
+}
+
 /**
  * Supprime une facture. Refusé si elle est réglée (la remettre d'abord en attente ou l'annuler) :
  * le journal garde la trace de la suppression.
@@ -399,7 +428,9 @@ export async function deleteInvoice(actor: AuthUser, id: string): Promise<Action
     if (!canOnInvoice(actor, current, "EDIT")) return fail("Vous ne pouvez pas supprimer cette facture.", "FORBIDDEN");
     if (current.status === "REGLE") return fail("Cette facture est réglée : remettez-la d'abord en attente avant de la supprimer.", "CONFLICT");
     const dto = toInvoiceDTO(current);
+    if (current.sens === "CREDIT" && (await hasActiveAvoir(current.legacyId))) return fail("Cette facture a un avoir actif : annulez-le d'abord (onglet Factures d'avoir).", "CONFLICT");
     await db.invoice.delete({ where: { id } });
+    if (current.sens === "CREDIT") await dropIssuedDocument(current.legacyId);
     await logAction(actor, "Suppression facture", describe(dto));
     // La demande de paiement et la demande de facture prestataire liées suivent la suppression.
     if (current.sens === "DEBIT") {
