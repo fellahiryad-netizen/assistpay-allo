@@ -20,6 +20,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
   const groups = filterNav(NAV_GROUPS, (module) => {
     if (module === "all") return true;
     if (module === "admin") return user.isAdmin;
+    if (module === "history") return !user.isAdmin && can(user, "FACT");
     if (module === "invoices") return can(user, "FCLI") || can(user, "FFOUR");
     return can(user, module);
   });

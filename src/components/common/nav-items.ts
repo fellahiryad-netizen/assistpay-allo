@@ -6,7 +6,7 @@ export interface NavItem {
   label: string;
   icon: NavIcon;
   /** Onglet du tableau des accès requis ; `admin` = réservé aux administrateurs. */
-  module: ModuleKey | "admin" | "all" | "invoices";
+  module: ModuleKey | "admin" | "all" | "invoices" | "history";
   /** Pastille de compteur (renseignée à l'affichage, par exemple le nombre d'alertes). */
   badge?: number;
 }
@@ -88,6 +88,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     items: [
       { href: "/rh", label: "RH (salaires)", icon: "hr", module: "RH" },
       { href: "/suppressions", label: "Suppressions à valider", icon: "alert", module: "admin" },
+      { href: "/suppressions", label: "Historique des suppressions", icon: "alert", module: "history" },
       { href: "/acces", label: "Utilisateurs et accès", icon: "users", module: "admin" },
       { href: "/journal", label: "Journal des actions", icon: "journal", module: "all" },
       { href: "/compte", label: "Mon compte", icon: "account", module: "all" },

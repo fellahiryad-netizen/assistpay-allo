@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
-import { can, requireAdmin } from "@/features/access/services/access-rules";
+import { can, requireAccess, requireAdmin } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { deleteIssued } from "@/features/billing/services/billing-service";
 import { deleteInvoice } from "@/features/invoices/services/invoice-service";
@@ -83,6 +83,13 @@ export async function requestDeletion(actor: AuthUser, input: { kind: DeletionKi
 /** Demandes de suppression (administrateur). */
 export async function listDeletions(actor: AuthUser): Promise<ActionResult<DeletionRequest[]>> {
   const guard = requireAdmin(actor);
+  if (!guard.success) return guard;
+  return ok(await load());
+}
+
+/** Historique des demandes de suppression en consultation (utilisateurs ayant accès à la facturation, sans pouvoir décider). */
+export async function listDeletionHistory(actor: AuthUser): Promise<ActionResult<DeletionRequest[]>> {
+  const guard = requireAccess(actor, "FACT");
   if (!guard.success) return guard;
   return ok(await load());
 }
