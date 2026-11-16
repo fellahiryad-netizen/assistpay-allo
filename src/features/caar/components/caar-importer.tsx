@@ -1,5 +1,6 @@
 "use client";
 
+import { GapDetail } from "@/features/caar/components/gap-detail";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { previewCaarAction, saveCaarAction } from "@/app/actions/caar-actions";
@@ -100,6 +101,7 @@ export function CaarImporter({ year, month }: Readonly<{ year: number; month: nu
               Total déclaré dans le fichier (ligne {declared.line}) : {formatDA(declared.prime)}. {Math.abs(gap) < 1 ? "Identique au total recalculé." : `Écart avec le total recalculé : ${formatDA(gap)}.`}
             </Notice>
           ) : null}
+          {preview.gap ? <GapDetail gap={preview.gap} /> : null}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field id="caar-succ" label="Succursale">
               <NativeSelect id="caar-succ" value={succursale} onChange={(event) => setSuccursale(event.target.value)}>

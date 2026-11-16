@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { GapDetail } from "@/features/caar/components/gap-detail";
 import { CopyMessage } from "@/features/caar/components/copy-message";
 import { getProduction } from "@/features/caar/services/caar-service";
 import { formatDA, formatDate } from "@/utils/format";
@@ -110,6 +111,11 @@ export default async function CaarDetailPage({
           </p>
         );
       })}
+      {p.gap ? (
+        <div className="mt-3">
+          <GapDetail gap={p.gap} />
+        </div>
+      ) : null}
       <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
         <section>
           <h2 className="mb-2 text-lg font-semibold">TCD par agence</h2>

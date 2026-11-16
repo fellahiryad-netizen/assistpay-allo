@@ -4,6 +4,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { can, requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { CAAR_FLAGS, DEFAULT_BAREME, DEFAULT_OPTIONS, DEFAULT_RATES, analyseCaarWorkbook, type CaarAnalysis, type CaarBareme, type CaarFlag } from "@/features/caar/services/caar-engine";
+import { explainGap, type CaarGapDetail, type GapRow } from "@/features/caar/services/caar-gap";
 import { logAction } from "@/features/journal/services/journal-service";
 import { fail, ok, type ActionResult } from "@/types";
 import { MONTHS_FR, todayIso } from "@/utils/dates";
@@ -35,6 +36,8 @@ export interface CaarProductionDetail extends CaarProductionDTO {
   products: Array<[string, string, number, number, number]>;
   kinds: Array<{ flag: string; label: string; severity: string; count: number }>;
   checks: Array<{ label: string; declared: number; ours: number; src: string }>;
+  /** Détail de l'écart avec le total déclaré (null s'il n'y a pas d'écart). */
+  gap: CaarGapDetail | null;
   message: string;
   anomalyLines: Array<{ line: number; agence: string; police: string; nom: string; prime: number | null; flags: string[]; basis: string }>;
 }
@@ -132,6 +135,22 @@ export async function listProductions(actor: AuthUser): Promise<ActionResult<{ i
   return ok({ items: rows.map(toDTO), canEdit: can(actor, "CAAR", "EDIT") });
 }
 
+/** Recalcule le détail d'écart à partir du contrôle enregistré (total déclaré et lignes du fichier). */
+function buildGap(payload: Record<string, unknown>, chunks: Array<{ rows: Prisma.JsonValue }>): CaarGapDetail | null {
+  const check = Array.isArray(payload.checks) ? obj(payload.checks[0]) : {};
+  if (check.declared === undefined) return null;
+  const line = Number(/ligne (\d+)/i.exec(String(check.src ?? ""))?.[1]);
+  const rows: GapRow[] = [];
+  for (const chunk of chunks) {
+    if (!Array.isArray(chunk.rows)) continue;
+    for (const raw of chunk.rows as unknown[]) {
+      if (!Array.isArray(raw)) continue;
+      rows.push({ line: num(raw[0]), agence: String(raw[1] ?? ""), police: String(raw[2] ?? ""), nom: String(raw[3] ?? ""), prime: raw[9] === null || raw[9] === undefined ? null : num(raw[9]), include: Number(raw[10]) === 1, flags: String(raw[11] ?? "").split(",").filter(Boolean) });
+    }
+  }
+  return explainGap(rows, num(check.declared), Number.isFinite(line) ? line : null, num(check.ours));
+}
+
 /** Détail d'une production : TCD, produits, anomalies, message à la succursale. */
 export async function getProduction(actor: AuthUser, id: string): Promise<ActionResult<CaarProductionDetail & { canEdit: boolean; canBill: boolean }>> {
   const guard = requireAccess(actor, "CAAR");
@@ -150,6 +169,7 @@ export async function getProduction(actor: AuthUser, id: string): Promise<Action
       return { flag, label: info?.label ?? flag, severity: info?.severity ?? "info", count: num(count) };
     }),
     checks: Array.isArray(payload.checks) ? payload.checks.map((check) => ({ label: String(obj(check).label ?? ""), declared: num(obj(check).declared), ours: num(obj(check).ours), src: String(obj(check).src ?? "") })) : [],
+    gap: buildGap(payload, row.chunks),
     message: String(payload.message ?? ""),
     anomalyLines: anomalies.map((entry) => {
       const item = obj(entry);
@@ -169,7 +189,7 @@ export async function getProduction(actor: AuthUser, id: string): Promise<Action
 }
 
 /** Résultat de l'aperçu d'un fichier (sans le détail des lignes). */
-export type CaarPreview = Omit<CaarAnalysis, "records"> & { anomalies: number };
+export type CaarPreview = Omit<CaarAnalysis, "records"> & { anomalies: number; gap: CaarGapDetail | null };
 
 /** Aperçu du contrôle d'un fichier (sans enregistrement). */
 export async function previewProduction(actor: AuthUser, file: CaarFile): Promise<ActionResult<CaarPreview>> {
@@ -185,7 +205,8 @@ export async function previewProduction(actor: AuthUser, file: CaarFile): Promis
   const analysis = analyseCaarWorkbook(sheets, file.name, await loadBareme(), Number(todayIso().slice(0, 4)));
   if (!analysis) return fail("Colonnes non reconnues : il faut au moins le code agence, la prime et la police, le nom ou l'immatriculation.", "VALIDATION");
   const { records, ...rest } = analysis;
-  return ok({ ...rest, anomalies: records.filter((record) => record.flags.some((flag) => ANOMALY_FLAGS.has(flag))).length });
+  const gap = explainGap(records, analysis.declared?.prime ?? null, analysis.declared?.line ?? null, analysis.totals.prime);
+  return ok({ ...rest, gap, anomalies: records.filter((record) => record.flags.some((flag) => ANOMALY_FLAGS.has(flag))).length });
 }
 
 /**
