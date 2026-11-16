@@ -1,0 +1,52 @@
+/** Facture établie sur laquelle on peut passer un avoir. */
+export interface AvoirableInvoiceDTO {
+  id: string;
+  num: string;
+  num2: string;
+  client: string;
+  succ: string;
+  date: string | null;
+  objet: string;
+  perTxt: string;
+  ttc: number;
+  /** Total déjà passé en avoir (avoirs actifs, valeur positive). */
+  avoirs: number;
+  /** Reste que l'on peut encore passer en avoir. */
+  reste: number;
+  /** État de la ligne au suivi : EN_ATTENTE (non encaissée), REGLE (encaissée) ou null. */
+  statut: string | null;
+}
+
+/** Avoir émis. */
+export interface AvoirDTO {
+  id: string;
+  num: string;
+  client: string;
+  clientLabel: string;
+  date: string | null;
+  origineNum: string;
+  origineId: string;
+  /** Montant TTC de l'avoir, en valeur positive. */
+  ttc: number;
+  motif: string;
+  annule: boolean;
+  suite: string;
+}
+
+/** Données d'impression d'un avoir (montants affichés en négatif). */
+export interface AvoirPrintData {
+  num: string;
+  date: string | null;
+  annule: boolean;
+  cli: { nom: string; adresse: string; tel: string; rc: string; nif: string; nis: string; ai: string };
+  origine: { num: string; date: string | null; succ: string; perTxt: string; ht: number; tva: number; ttc: number };
+  motif: string;
+  suite: string;
+  ht: number;
+  tva: number;
+  ttc: number;
+  avoirsPrecedents: number;
+  netRestant: number;
+  lettres: string;
+  emAi: string;
+}

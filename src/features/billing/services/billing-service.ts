@@ -98,6 +98,7 @@ async function usedNumbers(): Promise<string[]> {
     if (extra.factureFrais) out.push(extra.factureFrais);
   }
   for (const doc of issued) {
+    if (str(obj(doc.payload).kind) === "avoir") continue;
     out.push(doc.num);
     const num2 = str(obj(doc.payload).num2);
     if (num2) out.push(num2);
@@ -257,6 +258,7 @@ export async function listIssued(actor: AuthUser, filter: "all" | "bdg" | "gam" 
   const byLegacy = new Map(invoices.map((invoice) => [invoice.legacyId, invoice]));
   return ok(
     docs
+      .filter((doc) => str(obj(doc.payload).kind) !== "avoir")
       .map((doc) => {
         const payload = obj(doc.payload);
         const preset = presetById(str(payload.preset));
@@ -303,7 +305,7 @@ export async function getIssued(actor: AuthUser, id: string): Promise<ActionResu
   const guard = requireAccess(actor, "FACT");
   if (!guard.success) return guard;
   const doc = await db.issuedInvoice.findUnique({ where: { id } });
-  if (!doc) return fail("Facture introuvable.", "NOT_FOUND");
+  if (!doc || str(obj(doc.payload).kind) === "avoir") return fail("Facture introuvable.", "NOT_FOUND");
   return ok({ id: doc.id, draft: draftFromPayload(doc.payload), canEdit: can(actor, "FACT", "EDIT"), canRectify: can(actor, "FACT", "EDIT") && can(actor, "A_RECT", "EDIT"), isAdmin: actor.isAdmin, versions: Number(obj(doc.payload).rectifiee ?? 0) || 0 });
 }
 
@@ -330,6 +332,7 @@ export async function saveDraft(actor: AuthUser, input: SaveBillingInput): Promi
   if (!draft.cli.nom || !draft.cli.nif) return fail("Coordonnées du partenaire incomplètes (raison sociale et NIF obligatoires).", "VALIDATION");
   const existingDoc = input.issuedId ? await db.issuedInvoice.findUnique({ where: { id: input.issuedId } }) : null;
   if (input.issuedId && !existingDoc) return fail("Facture introuvable.", "NOT_FOUND");
+  if (existingDoc && str(obj(existingDoc.payload).kind) === "avoir") return fail("Un avoir ne se rectifie pas : annulez-le dans l'onglet Factures d'avoir, puis refaites-le.", "CONFLICT");
   if (existingDoc && !can(actor, "A_RECT", "EDIT")) return fail("Le droit « Rectifier une facture établie » ne vous est pas accordé.", "FORBIDDEN");
   if (existingDoc && !input.motif) return fail("Indiquez le motif de la rectification.", "VALIDATION");
   const numbers = [isBdg && draft.bdgType === "fra" ? "" : draft.num, isBdg && draft.bdgType !== "deb" ? draft.num2 : ""].filter(Boolean);
@@ -479,6 +482,10 @@ export async function deleteIssued(actor: AuthUser, input: { id: string; motif: 
   if (!guard.success) return guard;
   const doc = await db.issuedInvoice.findUnique({ where: { id: input.id } });
   if (!doc) return fail("Facture introuvable.", "NOT_FOUND");
+  if (str(obj(doc.payload).kind) === "avoir") return fail("Un avoir ne se supprime pas : annulez-le dans l'onglet Factures d'avoir.", "CONFLICT");
+  const avoirs = await db.issuedInvoice.findMany({ select: { num: true, payload: true } });
+  const blocking = avoirs.find((other) => str(obj(other.payload).kind) === "avoir" && str(obj(obj(other.payload).avoir as Prisma.JsonValue).origineId) === doc.id && str(obj(obj(other.payload).avoir as Prisma.JsonValue).statut) !== "annule");
+  if (blocking) return fail(`Cette facture a un avoir actif (${blocking.num}) : annulez-le d'abord.`, "CONFLICT");
   try {
     const linked = doc.invoiceLegacyId ? await db.invoice.findUnique({ where: { legacyId: doc.invoiceLegacyId } }) : null;
     if (linked && linked.status === "REGLE") return fail("Cette facture est réglée : remettez-la d'abord en attente avant de la supprimer.", "CONFLICT");
