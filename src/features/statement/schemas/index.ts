@@ -48,6 +48,8 @@ export const statementQuerySchema = z.object({
   sens: z.enum(["CREDIT", "DEBIT"]).optional().catch(undefined),
   month: z.string().regex(/^\d{4}-\d{2}$/).optional().catch(undefined),
   q: z.string().trim().max(120).optional().catch(undefined),
+  /** « 1 » : seulement les virements cumulés (une ligne rapprochée à plusieurs factures). */
+  cumul: z.enum(["1"]).optional().catch(undefined),
   page: z.coerce.number().int().min(1).max(10_000).default(1).catch(1),
 });
 export type StatementQuery = z.infer<typeof statementQuerySchema>;

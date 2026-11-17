@@ -22,6 +22,7 @@ import {
 import { logAction } from "@/features/journal/services/journal-service";
 import { fail, ok, type ActionResult } from "@/types";
 import { fromIsoDate } from "@/utils/dates";
+import { cumulForInvoices } from "@/features/statement/services/cumul";
 import { findCombinations, type CumulPart } from "@/features/invoices/lib/cumul";
 import { formatDA } from "@/utils/format";
 
@@ -200,6 +201,8 @@ export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promis
       }),
     ]);
     const printable = await printableIds(actor, rows);
+    const cumulInfos = await cumulForInvoices(rows.filter((row) => row.status === "REGLE").map((row) => row.legacyId));
+    const cumulPaid = Object.fromEntries(rows.flatMap((row) => { const info = cumulInfos.get(row.legacyId); return info ? [[row.id, { date: info.date, montant: info.montant, nb: info.parts.length }] as const] : []; }));
     return ok({
       items: rows.map(toInvoiceDTO),
       printable,
@@ -209,6 +212,7 @@ export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promis
       pageCount: Math.max(1, Math.ceil(total / PAGE_SIZE)),
       sumMontant: decimalToNumber(sum._sum.montant) ?? 0,
       cumul,
+      cumulPaid,
       canEdit: { CREDIT: can(actor, "FCLI", "EDIT"), DEBIT: can(actor, "FFOUR", "EDIT") },
     });
   } catch (error) {

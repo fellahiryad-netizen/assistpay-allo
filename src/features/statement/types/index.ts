@@ -107,6 +107,8 @@ export interface StatementLineDTO {
   transfer: { id: string; ref: string; produit: string; nb: number; mois: string } | null;
   /** Ligne paie (salaires, CNAS, impôts) probable. */
   payroll: boolean;
+  /** Virement cumulé : factures réglées par cette ligne (au moins deux), sinon null. */
+  cumul: Array<{ numero: string; tiers: string; montant: number }> | null;
 }
 
 /** Facture proposée lors d'une affectation manuelle. */

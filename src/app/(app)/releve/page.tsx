@@ -42,6 +42,7 @@ export default async function StatementPage({ searchParams }: Readonly<{ searchP
     sens: first(raw.sens),
     month: first(raw.month),
     q: first(raw.q),
+    cumul: tab === "cumules" ? "1" : undefined,
     page: first(raw.page),
   });
   const [result, options] = await Promise.all([listStatementLines(user, query), getInvoiceFilterOptions(user)]);
@@ -59,6 +60,7 @@ export default async function StatementPage({ searchParams }: Readonly<{ searchP
     ...(data.canEdit ? [{ href: "/releve?onglet=importer", label: "Importer et rapprocher", active: tab === "importer" }] : []),
     { href: "/releve?onglet=a-traiter", label: "À traiter", active: tab === "a-traiter", count: todoCount },
     { href: "/releve?onglet=historique", label: "Historique", active: tab === "historique" },
+    { href: "/releve?onglet=cumules", label: "Montants cumulés", active: tab === "cumules" },
   ];
   const categories = options.success ? options.data.categories : [];
 
@@ -77,6 +79,19 @@ export default async function StatementPage({ searchParams }: Readonly<{ searchP
             </p>
             <StatementLines lines={data.items} canEdit={data.canEdit} categories={categories} />
             <Pagination page={data.page} pageCount={data.pageCount} hrefFor={(page) => `/releve?onglet=a-traiter&page=${page}`} />
+          </>
+        )
+      ) : null}
+      {tab === "cumules" ? (
+        data.items.length === 0 ? (
+          <StateMessage kind="empty" title="Aucun montant cumulé" message="Aucune ligne du relevé n'est rapprochée à plusieurs factures." />
+        ) : (
+          <>
+            <p className="mb-3 text-sm text-muted-foreground">
+              Virements qui règlent plusieurs factures à la fois, avec la date de réception du virement et le détail des factures.
+            </p>
+            <StatementLines lines={data.items} canEdit={data.canEdit} categories={categories} />
+            <Pagination page={data.page} pageCount={data.pageCount} hrefFor={(page) => `/releve?onglet=cumules&page=${page}`} />
           </>
         )
       ) : null}

@@ -39,6 +39,7 @@ export function StatementLines({ lines, canEdit, categories }: Readonly<Statemen
               {line.status === "A_TRAITER" && ageDays(line.date) > 30 ? <Badge variant="warning">À traiter depuis {ageDays(line.date)} jours</Badge> : null}
               {line.twinDate ? <Badge variant="destructive">Doublon probable : même montant et libellé le {formatDate(line.twinDate)}</Badge> : null}
               {line.payroll ? <Badge variant="warning">Ligne de paie probable</Badge> : null}
+              {line.cumul ? <Badge variant="warning">MONTANT CUMULÉ · {line.cumul.length} factures</Badge> : null}
               {line.transfer ? (
                 <Link href="/releve/rapprochement" className="inline-flex">
                   <Badge variant="accent">
@@ -47,6 +48,22 @@ export function StatementLines({ lines, canEdit, categories }: Readonly<Statemen
                 </Link>
               ) : null}
             </div>
+            {line.cumul ? (
+              <ul className="mt-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs">
+                {line.cumul.map((part) => (
+                  <li key={part.numero} className="flex justify-between gap-3">
+                    <span>
+                      {part.numero} · {part.tiers}
+                    </span>
+                    <span className="tabular-nums">{formatDA(part.montant)}</span>
+                  </li>
+                ))}
+                <li className="mt-1 flex justify-between gap-3 border-t border-amber-500/40 pt-1 font-semibold">
+                  <span>Virement reçu le {formatDate(line.date)}</span>
+                  <span className="tabular-nums">{formatDA(line.montant)}</span>
+                </li>
+              </ul>
+            ) : null}
           </div>
           <div className={cn("shrink-0 text-right font-semibold tabular-nums md:w-40", line.sens === "DEBIT" ? "text-destructive" : "text-success")}>
             {line.sens === "DEBIT" ? "− " : "+ "}

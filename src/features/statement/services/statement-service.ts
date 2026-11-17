@@ -8,6 +8,7 @@ import { writeExtra } from "@/features/invoices/services/invoice-extra";
 import { decimalToNumber } from "@/features/invoices/services/invoice-mapper";
 import { isPayrollInvoice, moduleForSens } from "@/features/invoices/services/invoice-rules";
 import { ensureCaatAdvance } from "@/features/invoices/services/caat-advances";
+import { cumulForLines, cumulLineIds } from "@/features/statement/services/cumul";
 import { logAction } from "@/features/journal/services/journal-service";
 import { IGNORE_MOTIFS, type ApplyProposalsInput, type AssignCaatInput, type AssignCaatMonthsInput, type IgnoreLineInput, AssignLineInput, AssignSearchInput, CreateFromLineInput, StatementQuery } from "@/features/statement/schemas";
 import { analyseLines, bankBranch, branchCompat, inFamily, paidEntries } from "@/features/statement/services/statement-matching";
@@ -353,6 +354,7 @@ function toLineDTO(
   row: Prisma.BankStatementLineGetPayload<Record<string, never>>,
   transfers: TransferRef[],
   twins: Map<string, string>,
+  cumul: Array<{ numero: string; tiers: string; montant: number }> | null = null,
 ): StatementLineDTO {
   const montant = decimalToNumber(row.montant);
   const transfer = row.status === "A_TRAITER" ? transferForLine({ sens: row.sens, montant }, transfers, lineRefusals(row.extra)) : null;
@@ -372,6 +374,7 @@ function toLineDTO(
     motif: motifOf(row.extra),
     transfer: transfer ? { id: transfer.id, ref: transfer.ref, produit: productLabel(transfer.type), nb: transfer.nb, mois: transfer.mois } : null,
     payroll: PAYROLL_PATTERN.test(upperPlain(row.libelle)) || row.invoiceRefs.some((ref) => ref.startsWith("rh:")),
+    cumul,
   };
 }
 
@@ -388,6 +391,7 @@ export async function listStatementLines(
     ...(query.month
       ? { date: { gte: fromIsoDate(`${query.month}-01`) ?? undefined, lt: fromIsoDate(shiftIsoDate(`${query.month}-28`, 7).slice(0, 8) + "01") ?? undefined } }
       : {}),
+    ...(query.cumul ? { id: { in: await cumulLineIds() } } : {}),
     ...(query.q ? { OR: [{ libelle: { contains: query.q, mode: "insensitive" } }, { numero: { contains: query.q, mode: "insensitive" } }] } : {}),
   };
   try {
@@ -415,8 +419,9 @@ export async function listStatementLines(
         if (twin) twins.set(row.id, toIsoDate(twin.date) ?? "");
       }
     }
+    const cumuls = await cumulForLines(rows);
     return ok({
-      items: rows.map((row) => toLineDTO(row, transfers, twins)),
+      items: rows.map((row) => toLineDTO(row, transfers, twins, cumuls.get(row.id)?.parts ?? null)),
       total,
       page: query.page,
       pageSize: PAGE_SIZE,
