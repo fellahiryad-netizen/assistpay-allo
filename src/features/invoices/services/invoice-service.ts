@@ -22,7 +22,7 @@ import {
 import { logAction } from "@/features/journal/services/journal-service";
 import { fail, ok, type ActionResult } from "@/types";
 import { fromIsoDate } from "@/utils/dates";
-import { cumulForInvoices } from "@/features/statement/services/cumul";
+import { cumulForAmount, cumulForInvoices } from "@/features/statement/services/cumul";
 import { findCombinations, type CumulPart } from "@/features/invoices/lib/cumul";
 import { formatDA } from "@/utils/format";
 
@@ -141,6 +141,7 @@ export function buildInvoiceWhere(actor: AuthUser, query: Omit<InvoiceQuery, "pa
       query.categorie ? { categorie: query.categorie } : {},
       branchIds ? { id: { in: branchIds } } : {},
       ...amountFieldConditions(query.m),
+      query.d ? { dateOperation: fromIsoDate(query.d) } : {},
       query.q
         ? {
             OR: [
@@ -184,7 +185,10 @@ export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promis
     let cumul: string[] | null = null;
     const range = query.m ? centsRange(query.m) : null;
     if (range && (await db.invoice.count({ where })) === 0) {
-      const matches = await cumulatedMatches(actor, query, range);
+      // 1) Virement du relevé déjà rapproché à plusieurs factures, au montant demandé (fiable) ; 2) à défaut, combinaisons du même tiers.
+      const exact = await cumulForAmount(range, query.d);
+      const exactInvoices = exact.legacyIds.length ? await db.invoice.findMany({ where: { AND: [{ legacyId: { in: exact.legacyIds } }, (await buildInvoiceWhereWithBranch(actor, { ...query, m: undefined, status: undefined, d: undefined })) ?? { id: "__aucun__" }] }, select: { id: true } }) : [];
+      const matches = exactInvoices.length ? { ids: exactInvoices.map((row) => row.id), notes: exact.notes } : await cumulatedMatches(actor, query, range);
       if (matches.ids.length > 0) {
         where = { id: { in: matches.ids } };
         cumul = matches.notes;

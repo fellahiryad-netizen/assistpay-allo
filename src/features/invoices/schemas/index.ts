@@ -23,6 +23,8 @@ export const invoiceQuerySchema = z.object({
   /** Recherche par montant (facture, débours ou frais). */
   m: z.string().trim().max(40).optional().catch(undefined),
   succursale: z.string().trim().max(120).optional().catch(undefined),
+  /** Date de règlement exacte (AAAA-MM-JJ) : date de réception du virement ou du chèque. */
+  d: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().catch(undefined),
   page: z.coerce.number().int().min(1).max(10_000).default(1).catch(1),
 });
 export type InvoiceQuery = z.infer<typeof invoiceQuerySchema>;

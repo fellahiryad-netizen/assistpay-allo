@@ -25,6 +25,7 @@ export function InvoiceFilters({ query, options }: Readonly<InvoiceFiltersProps>
       <div className="relative">
         <Input name="m" defaultValue={query.m ?? ""} inputMode="decimal" autoComplete="off" placeholder="Montant (ex. 5 435 384,50)" aria-label="Recherche par montant" />
       </div>
+      <Input name="d" type="date" defaultValue={query.d ?? ""} aria-label="Date de règlement (date de réception du virement)" title="Date de règlement : date de réception du virement ou du chèque" />
       <NativeSelect name="sens" defaultValue={query.sens ?? ""} aria-label="Sens">
         {options.sens.length > 1 ? <option value="">Crédit et débit</option> : null}
         {options.sens.map((sens) => (

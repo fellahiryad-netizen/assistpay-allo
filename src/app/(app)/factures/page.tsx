@@ -36,6 +36,7 @@ function exportHref(query: InvoiceQuery, format?: "suivi"): string {
   if (query.q) params.set("q", query.q);
   if (query.m) params.set("m", query.m);
   if (query.succursale) params.set("succursale", query.succursale);
+  if (query.d) params.set("d", query.d);
   return `/api/factures/export?${params.toString()}`;
 }
 
@@ -48,6 +49,7 @@ function toSearch(query: InvoiceQuery, page: number): string {
   if (query.q) params.set("q", query.q);
   if (query.m) params.set("m", query.m);
   if (query.succursale) params.set("succursale", query.succursale);
+  if (query.d) params.set("d", query.d);
   if (page > 1) params.set("page", String(page));
   const search = params.toString();
   return search ? `/factures?${search}` : "/factures";
@@ -67,6 +69,7 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
     categorie: first(raw.categorie),
     q: first(raw.q),
     m: first(raw.m),
+    d: first(raw.d),
     page: first(raw.page),
   });
   const [result, options] = await Promise.all([listInvoices(user, query), getInvoiceFilterOptions(user)]);
@@ -129,7 +132,7 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
       {data.cumul ? (
         <div className="mb-3 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
           <p className="font-medium">
-            Aucune facture ne porte ce montant seul : il correspond à un virement cumulé de plusieurs factures du même tiers (tous statuts confondus).
+            Aucune facture ne porte ce montant seul : c'est un virement cumulé de plusieurs factures (tous statuts confondus).
           </p>
           <ul className="mt-1 list-disc pl-5 text-muted-foreground">
             {data.cumul.map((note) => (

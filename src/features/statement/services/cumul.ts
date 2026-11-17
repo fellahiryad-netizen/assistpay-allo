@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { decimalToNumber } from "@/features/invoices/services/invoice-mapper";
-import { toIsoDate } from "@/utils/dates";
+import { fromIsoDate, toIsoDate } from "@/utils/dates";
 
 /** Une facture réglée par un virement cumulé. */
 export interface CumulPartDTO {
@@ -48,6 +48,29 @@ export async function cumulForLines(lines: ReadonlyArray<{ id: string; date: Dat
     out.set(line.id, { lineId: line.id, date: toIsoDate(line.date) ?? "", montant: decimalToNumber(line.montant), parts });
   }
   return out;
+}
+
+/**
+ * Virements du relevé (crédits ou débits) au montant cherché qui règlent plusieurs factures : références des factures et une note par virement.
+ * `date` (AAAA-MM-JJ) restreint à la date de réception du virement.
+ */
+export async function cumulForAmount(range: { lo: number; hi: number }, date?: string): Promise<{ legacyIds: string[]; notes: string[] }> {
+  const lines = await db.bankStatementLine.findMany({
+    where: { montant: { gte: range.lo / 100 - 0.005, lte: range.hi / 100 + 0.005 }, invoiceRefs: { isEmpty: false }, ...(date ? { date: fromIsoDate(date) ?? undefined } : {}) },
+    select: { id: true, date: true, montant: true, invoiceRefs: true },
+    orderBy: { date: "desc" },
+    take: 20,
+  });
+  const infos = await cumulForLines(lines);
+  const legacyIds: string[] = [];
+  const notes: string[] = [];
+  for (const line of lines) {
+    const info = infos.get(line.id);
+    if (!info) continue;
+    legacyIds.push(...invoiceBases(line.invoiceRefs));
+    notes.push(`Virement reçu le ${info.date.split("-").reverse().join("/")} de ${info.montant.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} DA : ${info.parts.map((part) => part.numero).join(" + ")}`);
+  }
+  return { legacyIds, notes };
 }
 
 /** Virement cumulé de chaque facture donnée (clé : legacyId de la facture), s'il y en a un. */
