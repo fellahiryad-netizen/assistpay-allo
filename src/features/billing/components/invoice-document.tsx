@@ -199,9 +199,15 @@ function Page({ draft, presetId, number, rows, totals, ttc, entete }: Readonly<P
       )}
     </div>
   );
+  return withLetterhead(sheet, entete);
+}
+
+/**
+ * Papier à en-tête : marge de feuille nulle (le navigateur n'imprime alors ni date, ni titre, ni adresse de page) ; la place du logo et des coordonnées
+ * est réservée sur chaque page par un en-tête et un pied de tableau, répétés à chaque page. Les autres modes ne changent rien.
+ */
+function withLetterhead(sheet: React.JSX.Element, entete?: LetterheadMode): React.JSX.Element {
   if (entete !== "papier") return sheet;
-  // Papier à en-tête : marge de feuille nulle (le navigateur n'imprime alors ni date, ni titre, ni adresse de page) ; la place du logo et des coordonnées
-  // est réservée sur chaque page par un en-tête et un pied de tableau, répétés à chaque page.
   return (
     <table className="fx-wrap">
       <thead>
@@ -255,8 +261,8 @@ export function InvoiceDocument({ draft, entete }: Readonly<{ draft: BillingDraf
     ];
     return (
       <>
-        {draft.bdgType !== "fra" ? <BdgPage draft={draft} presetId="_bdgdeb" number={draft.num} rows={debRows} totals={invoiceTotals(deb)} ttc={deb.ttc} /> : null}
-        {draft.bdgType !== "deb" ? <BdgPage draft={draft} presetId="_bdgfra" number={draft.num2} rows={fraRows} totals={invoiceTotals(fra)} ttc={fra.ttc} /> : null}
+        {draft.bdgType !== "fra" ? <BdgPage draft={draft} presetId="_bdgdeb" number={draft.num} rows={debRows} totals={invoiceTotals(deb)} ttc={deb.ttc} entete={entete} /> : null}
+        {draft.bdgType !== "deb" ? <BdgPage draft={draft} presetId="_bdgfra" number={draft.num2} rows={fraRows} totals={invoiceTotals(fra)} ttc={fra.ttc} entete={entete} /> : null}
       </>
     );
   }
@@ -274,8 +280,10 @@ export function InvoiceDocument({ draft, entete }: Readonly<{ draft: BillingDraf
           rows={[{ nb: String(lines.length), des: "FOURNITURE ET POSE", qte: String(lines.length), ht: String(ht) }]}
           totals={[["TOTAL HT", ht], ["TVA 19 %", tva], ["TOTAL TTC", r2(ht + tva), true]]}
           ttc={r2(ht + tva)}
+          entete={entete}
         />
-        <div className="fx-page">
+        {withLetterhead(
+        <div className={`fx-page${entete ? ` fx-${entete}` : ""}`}>
           <div className="fx-top">
             <div>
               <b style={{ fontSize: 16, color: "#6b1f86" }}>ANNEXE — DÉTAIL DES DOSSIERS</b>
@@ -316,12 +324,15 @@ export function InvoiceDocument({ draft, entete }: Readonly<{ draft: BillingDraf
               </tr>
             </tbody>
           </table>
-        </div>
+          {entete === "charte" ? <img className="fx-pied" src="/entete/pied.png" alt="EURL ALLO ASSISTANCE — coordonnées" /> : null}
+        </div>,
+          entete,
+        )}
       </>
     );
   }
-  // Les factures BDG gardent leur présentation d'origine, quel que soit le mode demandé.
-  return <Page draft={draft} presetId={draft.preset} number={draft.num} rows={rows} totals={totals.lines} ttc={totals.ttc} entete={/^bdg/.test(preset.m) ? undefined : entete} />;
+  // Toutes les factures, BDG comprises, suivent le mode demandé (charte ou papier à en-tête).
+  return <Page draft={draft} presetId={draft.preset} number={draft.num} rows={rows} totals={totals.lines} ttc={totals.ttc} entete={entete} />;
 }
 
 /** Page d'une facture BDG (modèles internes « _bdgdeb », « _bdgfra », « _bdggamsum »). */
