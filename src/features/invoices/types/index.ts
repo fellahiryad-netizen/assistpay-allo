@@ -65,6 +65,8 @@ export interface InvoiceListResult {
   pageSize: number;
   pageCount: number;
   sumMontant: number;
+  /** Montant cherché = somme de plusieurs factures du même tiers (virement cumulé) : une ligne par combinaison trouvée, sinon null. */
+  cumul: string[] | null;
   /** Factures émises (module Facturation) liées aux lignes de la page : id de la ligne → id de la facture imprimable. */
   printable: Record<string, string>;
   /** Peut-on modifier les factures de chaque sens ? */

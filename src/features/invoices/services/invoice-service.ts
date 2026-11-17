@@ -22,6 +22,7 @@ import {
 import { logAction } from "@/features/journal/services/journal-service";
 import { fail, ok, type ActionResult } from "@/types";
 import { fromIsoDate } from "@/utils/dates";
+import { findCombinations, type CumulPart } from "@/features/invoices/lib/cumul";
 import { formatDA } from "@/utils/format";
 
 const PAGE_SIZE = 50;
@@ -65,6 +66,47 @@ export function amountFieldConditions(raw: string | undefined): Prisma.InvoiceWh
   const value = Number(cleaned);
   const range = cleaned.includes(".") ? { gte: value - 0.005, lte: value + 0.005 } : { gte: value, lt: value + 1 };
   return [{ OR: [{ montant: range }, { debours: range }, { frais: range }, { montantGlobal: range }] }];
+}
+
+/** Bornes (en centimes) d'un montant saisi : exact avec décimales, sinon toute la plage « 27500,xx ». Null si la saisie n'est pas un montant. */
+function centsRange(raw: string): { lo: number; hi: number } | null {
+  const cleaned = raw.replace(/[\s\u00a0\u202f]/g, "").replace(/da$/i, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
+  const cents = Math.round(Number(cleaned) * 100);
+  return cleaned.includes(".") ? { lo: cents, hi: cents } : { lo: cents, hi: cents + 99 };
+}
+
+/**
+ * Montant cumulé : un virement peut régler plusieurs factures d'un même tiers. Quand aucune facture ne porte le montant cherché,
+ * on cherche les groupes de 2 ou 3 factures du même tiers dont la somme le donne. Lecture seule, aucune règle de calcul.
+ * Le filtre de statut est ignoré (le virement a pu déjà régler ces factures).
+ */
+async function cumulatedMatches(actor: AuthUser, query: Omit<InvoiceQuery, "page">, range: { lo: number; hi: number }): Promise<{ ids: string[]; notes: string[] }> {
+  const base = await buildInvoiceWhereWithBranch(actor, { ...query, m: undefined, status: undefined });
+  if (!base) return { ids: [], notes: [] };
+  const rows = await db.invoice.findMany({
+    where: { AND: [base, { origine: { not: "rh" } }, { montant: { gt: 0, lt: range.hi / 100 } }] },
+    select: { id: true, tiers: true, numero: true, montant: true },
+    take: 6000,
+  });
+  const groups = new Map<string, CumulPart[]>();
+  for (const row of rows) {
+    const key = row.tiers.trim().toUpperCase();
+    const list = groups.get(key) ?? [];
+    list.push({ id: row.id, numero: row.numero, cents: Math.round((decimalToNumber(row.montant) ?? 0) * 100) });
+    groups.set(key, list);
+  }
+  const ids = new Set<string>();
+  const notes: string[] = [];
+  for (const [tiers, list] of groups) {
+    if (list.length < 2 || list.length > 600) continue;
+    for (const parts of findCombinations(list, range, 20 - notes.length)) {
+      parts.forEach((part) => ids.add(part.id));
+      notes.push(`${tiers} : ${parts.map((part) => `${part.numero || "sans n°"} (${formatDA(part.cents / 100)})`).join(" + ")}`);
+    }
+    if (notes.length >= 20) break;
+  }
+  return { ids: [...ids], notes };
 }
 
 /** Identifiants des factures CAAT / CAAR d'une succursale (nom tel que proposé dans le filtre). */
@@ -138,6 +180,15 @@ export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promis
   try {
     // Les totaux mensuels « Charges de personnel » appartiennent à l'onglet RH : jamais dans la liste.
     where = { AND: [where, { origine: { not: "rh" } }] };
+    let cumul: string[] | null = null;
+    const range = query.m ? centsRange(query.m) : null;
+    if (range && (await db.invoice.count({ where })) === 0) {
+      const matches = await cumulatedMatches(actor, query, range);
+      if (matches.ids.length > 0) {
+        where = { id: { in: matches.ids } };
+        cumul = matches.notes;
+      }
+    }
     const [total, sum, rows] = await Promise.all([
       db.invoice.count({ where }),
       db.invoice.aggregate({ where, _sum: { montant: true } }),
@@ -157,6 +208,7 @@ export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promis
       pageSize: PAGE_SIZE,
       pageCount: Math.max(1, Math.ceil(total / PAGE_SIZE)),
       sumMontant: decimalToNumber(sum._sum.montant) ?? 0,
+      cumul,
       canEdit: { CREDIT: can(actor, "FCLI", "EDIT"), DEBIT: can(actor, "FFOUR", "EDIT") },
     });
   } catch (error) {

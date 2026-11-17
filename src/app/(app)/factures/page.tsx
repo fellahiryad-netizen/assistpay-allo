@@ -126,6 +126,18 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
         ]}
       />
       <InvoiceFilters query={query} options={options.data} />
+      {data.cumul ? (
+        <div className="mb-3 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+          <p className="font-medium">
+            Aucune facture ne porte ce montant seul : il correspond à un virement cumulé de plusieurs factures du même tiers (tous statuts confondus).
+          </p>
+          <ul className="mt-1 list-disc pl-5 text-muted-foreground">
+            {data.cumul.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {data.items.length === 0 ? (
         <StateMessage kind="empty" title="Aucune facture ne correspond" message="Modifiez les filtres ou la recherche." />
       ) : (
