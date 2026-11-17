@@ -197,10 +197,10 @@
   .fx-page .fx-pied { width: 100%; height: auto; display: block; margin-top: 4px; }
   .fx-page.fx-charte .fx-top { border-bottom: 0; }
   .fx-page.fx-papier { padding-top: 46mm; padding-bottom: 34mm; background-image: linear-gradient(#fff, #fff); }
-  /* Papier à en-tête : le bloc FACTURE / n° / date / produit remonte à côté du logo et du trait du papier (il s'arrête avant le trait vertical), au lieu de laisser tout le haut vide.
+  /* Papier à en-tête : le bloc FACTURE / n° / date / produit remonte à côté du logo et du trait du papier (il s'arrête à 3 mm du trait vertical, soit 185 mm du bord gauche), au lieu de laisser tout le haut vide.
      Seule la première page gagne la place ; les pages suivantes gardent la marge réservée au logo. */
   .fx-page.fx-papier .fx-top.fx-head { margin-top: -34mm; }
-  .fx-page.fx-papier .fx-top.fx-head > div:last-child { margin-right: 24mm; }
+  .fx-page.fx-papier .fx-top.fx-head > div:last-child { margin-right: 13mm; }
   .fx-page .fx-legal { border-top: 1px solid #d9cfe3; padding-top: 6px; font-size: 10px; color: #6c6480; text-align: center; }
 }
 
