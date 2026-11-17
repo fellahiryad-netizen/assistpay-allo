@@ -83,7 +83,6 @@ export function BillingEditor({ initial, issuedId, canEdit, scope = "all" }: Rea
         keys.forEach((key, index) => {
           row[key] = (cells[index] ?? "").trim();
         });
-        if (preset.m === "bdgpair" && !row.pu && draft.bdgType !== "deb") row.pu = "800";
         return row;
       })
       // On écarte seulement l'en-tête du tableau et la ligne de total : les agences dont le nom commence par « AGENCE » restent.

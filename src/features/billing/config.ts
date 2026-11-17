@@ -113,6 +113,9 @@ function simpleTotals(ht: number): BillingTotals {
   return { lines: [["TOTAL HT", ht], ["TVA 19 %", tva], ["TOTAL TTC", r2(ht + tva), true]], ht, tva, ttc: r2(ht + tva) };
 }
 
+/** Frais de gestion BDG : montant fixe par dossier, en DA HT (frais de gestion = nombre de dossiers × 800 DA). */
+export const BDG_FRAIS_DOSSIER = 800;
+
 /** Modèles de tableau : colonnes, calculs et totaux propres à chaque type de facture. */
 export const MODELS: Readonly<Record<string, BillingModel>> = {
   hono: { lbl: "Honoraire – désignation / période / montant", cols: [{ k: "des", l: "DÉSIGNATION", w: "52%" }, { k: "per", l: "PÉRIODE" }, { k: "ht", l: "MONTANT HT", t: "money" }], ht: "ht" },
@@ -241,12 +244,12 @@ export const MODELS: Readonly<Record<string, BillingModel>> = {
       { k: "ag", l: "Agence", w: "34%" },
       { k: "nb", l: "Nb dossiers", t: "num", clear: true },
       { k: "mt", l: "Montant BDG HT (débours)", t: "money" },
-      { k: "pu", l: "Frais / dossier HT", t: "money", keep: true },
-      { k: "ft", l: "Frais de gestion HT", t: "money", calc: (r) => r2(num(r.nb) * num(r.pu)) },
+      { k: "pu", l: "Frais / dossier HT", t: "money", calc: () => BDG_FRAIS_DOSSIER },
+      { k: "ft", l: "Frais de gestion HT", t: "money", calc: (r) => r2(num(r.nb) * BDG_FRAIS_DOSSIER) },
     ],
     totals: (rows) => {
       const d = r2(rows.reduce((sum, row) => sum + num(row.mt), 0));
-      const f = r2(rows.reduce((sum, row) => sum + num(row.nb) * num(row.pu), 0));
+      const f = r2(rows.reduce((sum, row) => sum + num(row.nb) * BDG_FRAIS_DOSSIER, 0));
       const dt = r2(d * 0.19);
       const ft = r2(f * 0.19);
       const deb = { ht: d, tva: dt, ttc: r2(d + dt) };

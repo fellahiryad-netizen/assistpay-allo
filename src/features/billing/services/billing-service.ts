@@ -404,7 +404,7 @@ export async function saveDraft(actor: AuthUser, input: SaveBillingInput): Promi
         numero: short,
         libelle:
           draft.client === "TRUST"
-            ? `SINISTRE BDG ${draft.perTxt.toUpperCase()}/TRUST – ${dossiers} dossier${dossiers > 1 ? "s" : ""} (frais de gestion ${formatDA(num(draft.rows[0]?.pu) || 800)} HT / dossier)`
+            ? `SINISTRE BDG ${draft.perTxt.toUpperCase()}/TRUST – ${dossiers} dossier${dossiers > 1 ? "s" : ""} (frais de gestion ${formatDA(800)} HT / dossier)`
             : `SINISTRE BDG ${draft.perTxt.toUpperCase()}/CAAT-Succursale-${draft.succ.toUpperCase()}`,
         montant: r2(debours + frais),
         debours,
