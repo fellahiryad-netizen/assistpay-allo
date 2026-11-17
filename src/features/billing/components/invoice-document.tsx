@@ -68,7 +68,7 @@ function Page({ draft, presetId, number, rows, totals, ttc, entete }: Readonly<P
   const details = Object.entries(draft.details).filter(([, value]) => value.trim());
   const sheet = (
     <div className={`fx-page${entete ? ` fx-${entete}` : ""}`}>
-      <div className="fx-top">
+      <div className="fx-top fx-head">
         {entete === "papier" ? <div /> : <img className="fx-logo" src="/logo-allo.png" alt="Allo Assistance" />}
         <div>
           <h1>FACTURE</h1>
