@@ -103,7 +103,7 @@ export function AvoirDocument({ data }: Readonly<{ data: AvoirPrintData }>): Rea
           <span className="tabular-nums">{money(data.ttc)} DA</span>
         </p>
         <p className="flex justify-between">
-          <span>Reste dû sur la facture</span>
+          <span>{data.factureReglee ? "Net de la facture après avoirs" : "Reste dû sur la facture"}</span>
           <span className="tabular-nums">{money(data.netRestant)} DA</span>
         </p>
       </div>

@@ -7,6 +7,7 @@ import { CLIENT_LABELS } from "@/features/billing/config";
 import { getControlSettings } from "@/features/settings/services/settings-service";
 import { decimalToNumber } from "@/features/invoices/services/invoice-mapper";
 import { logAction } from "@/features/journal/services/journal-service";
+import { checkHtCeiling, validateAvoirDate } from "@/features/avoirs/lib/avoir-guards";
 import { avoirAmounts, manualAvoirAmounts, nextAvoirNumber, remainingAvoirable, type AvoirAmounts } from "@/features/avoirs/lib/avoir-calc";
 import { AVOIR_MOTIF_LABELS, type CancelAvoirInput, type CreateAvoirInput } from "@/features/avoirs/schemas";
 import type { AvoirableInvoiceDTO, AvoirDTO, AvoirPrintData, AvoirTrackingDTO } from "@/features/avoirs/types";
@@ -155,14 +156,21 @@ export async function createAvoir(actor: AuthUser, input: CreateAvoirInput): Pro
   if (!(originAmounts.ttc > 0)) return fail("Cette facture n'a pas de montant à corriger.", "VALIDATION");
   const date = input.date ?? todayIso();
   const originDate = toIsoDate(origin.date);
-  if (originDate && date < originDate) return fail("La date de l'avoir ne peut pas précéder celle de la facture.", "VALIDATION");
+  const dateError = validateAvoirDate(date, todayIso(), originDate);
+  if (dateError) return fail(dateError, "VALIDATION");
   const year = Number(date.slice(0, 4));
   const motifTexte = [AVOIR_MOTIF_LABELS[input.categorie], input.motif].filter(Boolean).join(" : ");
   try {
-    const created = await db.$transaction(
+    const run = (): Promise<{ id: string; num: string; ttc: number }> => db.$transaction(
       async (tx) => {
-        const docs = await tx.issuedInvoice.findMany({ select: { id: true, num: true, ttc: true, payload: true } });
-        const used = docs.filter((doc) => isAvoir(doc.payload) && isActive(doc.payload) && originOf(doc.payload) === origin.id).map((doc) => decimalToNumber(doc.ttc) ?? 0);
+        // Requêtes ciblées : avoirs de cette facture d'origine, et numéros AV de l'année seulement.
+        const originAvoirs = await tx.issuedInvoice.findMany({
+          where: { AND: [{ payload: { path: ["kind"], equals: "avoir" } }, { payload: { path: ["avoir", "origineId"], equals: origin.id } }] },
+          select: { ht: true, ttc: true, payload: true },
+        });
+        const activeAvoirs = originAvoirs.filter((doc) => isActive(doc.payload));
+        const used = activeAvoirs.map((doc) => decimalToNumber(doc.ttc) ?? 0);
+        const usedHt = activeAvoirs.map((doc) => decimalToNumber(doc.ht) ?? 0);
         const reste = remainingAvoirable(originAmounts.ttc, used);
         if (reste <= 0.005) throw new AvoirError("Cette facture est déjà entièrement couverte par des avoirs.");
         let amounts: AvoirAmounts;
@@ -181,7 +189,12 @@ export async function createAvoir(actor: AuthUser, input: CreateAvoirInput): Pro
         if (wanted > reste + 0.005) throw new AvoirError(`Le montant (${formatDA(wanted)} TTC) dépasse le reste avoirable de cette facture (${formatDA(reste)}).`);
         // Avoir « total » : si des avoirs partiels existent déjà, il couvre le reste de la facture.
         const final = input.mode === "total" && used.length ? avoirAmounts(originAmounts, "partiel", reste) : amounts;
-        const num = nextAvoirNumber(docs.filter((doc) => isAvoir(doc.payload)).map((doc) => doc.num), year);
+        if (input.mode !== "total") {
+          const ceiling = checkHtCeiling(originAmounts.ht, usedHt, final.ht);
+          if (ceiling) throw new AvoirError(ceiling);
+        }
+        const yearNumbers = await tx.issuedInvoice.findMany({ where: { num: { startsWith: `AV/${year}/` } }, select: { num: true } });
+        const num = nextAvoirNumber(yearNumbers.map((doc) => doc.num), year);
         const payload = obj(origin.payload);
         const settings = await getControlSettings();
         const data: Prisma.InputJsonValue = {
@@ -229,18 +242,31 @@ export async function createAvoir(actor: AuthUser, input: CreateAvoirInput): Pro
         });
         return { id: row.id, num, ttc: final.ttc };
       },
-      { isolationLevel: "Serializable" },
+      { isolationLevel: "Serializable", maxWait: 5_000, timeout: 15_000 },
     );
+    let created: { id: string; num: string; ttc: number };
+    try {
+      created = await run();
+    } catch (error) {
+      if (!isSerializationFailure(error)) throw error;
+      created = await run(); // un seul nouvel essai : un autre avoir a été enregistré en même temps
+    }
     await logAction(actor, "Avoir établi", `${created.num} – ${CLIENT_LABELS[origin.client] ?? origin.client} – facture ${origin.num} – −${formatDA(created.ttc)} – ${motifTexte}`);
     return ok({ id: created.id, num: created.num });
   } catch (error) {
     if (error instanceof AvoirError) return fail(error.message, "VALIDATION");
+    if (isSerializationFailure(error)) return fail("Un autre avoir a été enregistré au même moment sur ces factures. Rien n'a été créé : rechargez la page puis recommencez.", "CONFLICT");
     console.error("[avoirs] création impossible :", error);
     return fail("L'avoir n'a pas pu être enregistré. Réessayez.", "DATABASE");
   }
 }
 
 class AvoirError extends Error {}
+
+/** Échec de sérialisation PostgreSQL / Prisma (P2034) : deux transactions concurrentes. */
+function isSerializationFailure(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2034";
+}
 
 /** Annule un avoir (il reste visible et son numéro n'est pas réutilisé). */
 export async function cancelAvoir(actor: AuthUser, input: CancelAvoirInput): Promise<ActionResult<{ num: string }>> {
@@ -273,7 +299,12 @@ export async function getAvoirForPrint(actor: AuthUser, id: string): Promise<Act
   const payload = obj(doc.payload);
   const avoir = obj(payload.avoir as Prisma.JsonValue);
   const cli = obj(payload.cli as Prisma.JsonValue);
-  const siblings = await db.issuedInvoice.findMany({ select: { id: true, ttc: true, date: true, num: true, payload: true } });
+  const siblings = await db.issuedInvoice.findMany({
+    where: { AND: [{ payload: { path: ["kind"], equals: "avoir" } }, { payload: { path: ["avoir", "origineId"], equals: originOf(doc.payload) } }] },
+    select: { id: true, ttc: true, num: true, payload: true },
+  });
+  const originDoc = originOf(doc.payload) ? await db.issuedInvoice.findUnique({ where: { id: originOf(doc.payload) }, select: { invoiceLegacyId: true } }) : null;
+  const originInvoice = originDoc?.invoiceLegacyId ? await db.invoice.findFirst({ where: { legacyId: originDoc.invoiceLegacyId }, select: { status: true } }) : null;
   const earlier = siblings
     .filter((other) => other.id !== doc.id && isAvoir(other.payload) && isActive(other.payload) && originOf(other.payload) === originOf(doc.payload) && other.num < doc.num)
     .map((other) => Math.abs(decimalToNumber(other.ttc) ?? 0));
@@ -295,5 +326,6 @@ export async function getAvoirForPrint(actor: AuthUser, id: string): Promise<Act
     netRestant: Math.max(0, Math.round((originTtc - earlierTotal - Math.abs(ttc)) * 100) / 100),
     lettres: amountInWords(Math.abs(ttc)),
     emAi: str(payload.emAi),
+    factureReglee: originInvoice?.status === "REGLE",
   });
 }

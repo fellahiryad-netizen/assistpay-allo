@@ -42,6 +42,7 @@ export function AvoirList({ items, canEdit, initialOrigineId = "" }: Readonly<{ 
   const focus = origineId ? items.filter((item) => item.origineId === origineId) : [];
   const focusTotal = Math.round(focus.filter((item) => !item.annule).reduce((sum, item) => sum + item.ttc, 0) * 100) / 100;
   const focusTtc = focus[0]?.origineTtc ?? 0;
+  const unknownOrigin = Boolean(initialOrigineId) && !items.some((item) => item.origineId === initialOrigineId);
 
   if (items.length === 0) return <p className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">Aucun avoir émis pour l&apos;instant.</p>;
   return (
@@ -51,6 +52,7 @@ export function AvoirList({ items, canEdit, initialOrigineId = "" }: Readonly<{ 
           Facture d&apos;origine
           <NativeSelect aria-label="Filtrer par facture d'origine" className="min-w-64" value={origineId} onChange={(event) => setOrigineId(event.target.value)}>
             <option value="">Toutes les factures</option>
+            {unknownOrigin ? <option value={initialOrigineId}>Facture introuvable</option> : null}
             {origins.map(([id, label]) => (
               <option key={id} value={id}>
                 {label}
@@ -63,6 +65,11 @@ export function AvoirList({ items, canEdit, initialOrigineId = "" }: Readonly<{ 
           <Input aria-label="Rechercher un avoir" className="h-10 w-56" placeholder="N° d'avoir, facture, motif…" value={search} onChange={(event) => setSearch(event.target.value)} />
         </label>
       </div>
+      {unknownOrigin && origineId === initialOrigineId ? (
+        <p role="alert" className="border-b p-3 text-sm font-medium text-destructive">
+          Facture introuvable : aucun avoir n&apos;est rattaché à cette facture (ou elle n&apos;existe pas). Choisissez une autre facture ou affichez toutes les factures.
+        </p>
+      ) : null}
       {origineId && focus.length > 0 ? (
         <p className="border-b p-3 text-sm" role="status">
           Facture <strong>{focus[0]?.origineNum}</strong> : TTC {formatDA(focusTtc)} · total des avoirs actifs <strong>−{formatDA(focusTotal)}</strong> · net restant <strong>{formatDA(Math.round((focusTtc - focusTotal) * 100) / 100)}</strong>

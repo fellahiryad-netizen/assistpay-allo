@@ -58,6 +58,8 @@ export interface AvoirPrintData {
   netRestant: number;
   lettres: string;
   emAi: string;
+  /** Vrai si la facture d'origine est déjà réglée (le net n'est alors pas « dû »). */
+  factureReglee: boolean;
 }
 
 /** Suivi des avoirs rattachés à une facture établie (facture d'origine). */
