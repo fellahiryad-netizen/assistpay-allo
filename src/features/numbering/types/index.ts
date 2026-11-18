@@ -121,8 +121,12 @@ export interface SeriesSummary {
   nextSeq: number;
   nextDisplay: string;
   gaps: GapRange[];
+  /** Tous les numéros manquants, y compris ceux d'avant le premier numéro enregistré. */
   gapCount: number;
+  /** Numéros manquants sans suppression connue, hors plages d'avant le premier numéro (reprise d'historique). */
   unexplainedGapCount: number;
+  /** Numéros manquants d'avant le premier numéro enregistré et non expliqués par une suppression (comptés à part). */
+  beforeFirstGapCount: number;
   duplicates: DuplicateInfo[];
   freed: FreedNumber[];
   partners: PartnerStat[];
@@ -140,5 +144,5 @@ export interface NumberingAnalysis {
   series: SeriesSummary[];
   unrecognised: UnrecognisedNumber[];
   years: number[];
-  totals: { series: number; gaps: number; unexplainedGaps: number; duplicates: number; freed: number; unrecognised: number };
+  totals: { series: number; gaps: number; unexplainedGaps: number; beforeFirstGaps: number; duplicates: number; freed: number; unrecognised: number };
 }

@@ -18,6 +18,10 @@ export interface InvoiceFiltersProps {
 export function InvoiceFilters({ query, options }: Readonly<InvoiceFiltersProps>): React.JSX.Element {
   return (
     <form method="get" className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6" role="search">
+      {/* Le classement (partenaire / fournisseur, mois) survit à une recherche ; `sens0` permet à la page d'abandonner le partenaire si le sens change. */}
+      {query.p ? <input type="hidden" name="p" value={query.p} /> : null}
+      {query.mois ? <input type="hidden" name="mois" value={query.mois} /> : null}
+      <input type="hidden" name="sens0" value={query.sens ?? "-"} />
       <div className="relative sm:col-span-2">
         <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input name="q" defaultValue={query.q ?? ""} placeholder="Tiers, numéro, libellé, montant…" className="pl-9" aria-label="Recherche" />

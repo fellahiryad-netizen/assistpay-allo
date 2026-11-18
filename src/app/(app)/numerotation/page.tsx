@@ -33,6 +33,10 @@ function rangeText(range: GapRange): string {
   return range.from === range.to ? range.fromDisplay : `${range.fromDisplay} → ${range.toDisplay}`;
 }
 
+function explainedCount(item: SeriesSummary): number {
+  return item.gapCount - item.unexplainedGapCount - item.beforeFirstGapCount;
+}
+
 function SeriesCard({ item }: Readonly<{ item: SeriesSummary }>): React.JSX.Element {
   const unexplained = item.gaps.filter((range) => !range.explained);
   const explained = item.gaps.filter((range) => range.explained);
@@ -48,7 +52,8 @@ function SeriesCard({ item }: Readonly<{ item: SeriesSummary }>): React.JSX.Elem
         <div className="flex flex-wrap gap-2 pt-1">
           <Badge variant={item.duplicates.length ? "destructive" : "success"}>{item.duplicates.length} doublon{item.duplicates.length > 1 ? "s" : ""}</Badge>
           <Badge variant={item.unexplainedGapCount ? "warning" : "success"}>{item.unexplainedGapCount} trou{item.unexplainedGapCount > 1 ? "s" : ""} à expliquer</Badge>
-          <Badge variant="muted">{item.gapCount - item.unexplainedGapCount} trou{item.gapCount - item.unexplainedGapCount > 1 ? "s" : ""} expliqué{item.gapCount - item.unexplainedGapCount > 1 ? "s" : ""} par une suppression</Badge>
+          {item.beforeFirstGapCount ? <Badge variant="muted">{item.beforeFirstGapCount} n° avant le premier enregistré (historique)</Badge> : null}
+          <Badge variant="muted">{explainedCount(item)} trou{explainedCount(item) > 1 ? "s" : ""} expliqué{explainedCount(item) > 1 ? "s" : ""} par une suppression</Badge>
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
@@ -170,6 +175,10 @@ export default async function NumberingPage({ searchParams }: Readonly<{ searchP
       <Notice tone="info" className="mb-4">
         La suite des factures partenaires (GAM, TRUST, CAAT, CAAR, MLA, TDA…) est commune : un trou n'est donc pas propre à un partenaire. Les séries BDG (GAM « AB », TRUST, CAAT) et les avoirs ont chacune leur suite.
       </Notice>
+      <Notice tone="warning" className="mb-4">
+        Le compteur de doublons peut inclure de faux doublons : quand une facture établie n'est pas reliée à sa ligne du suivi (et que le rapprochement par numéro et client n'est pas possible), les deux sont comptées comme deux documents. Vérifiez chaque doublon avant d'en tirer une conclusion.
+        {user.isAdmin ? null : " L'auteur et le motif des suppressions ne sont visibles que par les administrateurs."}
+      </Notice>
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         {choices.map((choice) => (
           <Link key={choice.href} href={choice.href} className={cn("rounded-md border px-3 py-1", choice.active ? "bg-primary text-primary-foreground" : "bg-card hover:bg-muted")}>
@@ -177,7 +186,7 @@ export default async function NumberingPage({ searchParams }: Readonly<{ searchP
           </Link>
         ))}
         <span className="text-muted-foreground">
-          · {totals.series} série{totals.series > 1 ? "s" : ""}, {totals.duplicates} doublon{totals.duplicates > 1 ? "s" : ""}, {totals.unexplainedGaps} trou{totals.unexplainedGaps > 1 ? "s" : ""} à expliquer, {totals.freed} numéro{totals.freed > 1 ? "s" : ""} libre{totals.freed > 1 ? "s" : ""}
+          · {totals.series} série{totals.series > 1 ? "s" : ""}, {totals.duplicates} doublon{totals.duplicates > 1 ? "s" : ""}, {totals.unexplainedGaps} trou{totals.unexplainedGaps > 1 ? "s" : ""} à expliquer{totals.beforeFirstGaps ? ` (+ ${totals.beforeFirstGaps} n° d'historique avant le premier enregistré)` : ""}, {totals.freed} numéro{totals.freed > 1 ? "s" : ""} libre{totals.freed > 1 ? "s" : ""}
         </span>
       </div>
       {shown.length === 0 ? (

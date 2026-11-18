@@ -25,7 +25,7 @@ import { fromIsoDate } from "@/utils/dates";
 import { cumulForAmount, cumulForInvoices } from "@/features/statement/services/cumul";
 import { findCombinations, type CumulPart } from "@/features/invoices/lib/cumul";
 import { formatDA } from "@/utils/format";
-import { classificationConditions } from "@/features/invoices/lib/classification";
+import { classificationConditions, matchesSupplier } from "@/features/invoices/lib/classification";
 import { PARTNER_GROUPS } from "@/features/partners/services/partner-service";
 
 const PAGE_SIZE = 50;
@@ -126,11 +126,23 @@ async function branchInvoiceIds(actor: AuthUser, label: string): Promise<string[
 /** Comme `buildInvoiceWhere`, en résolvant aussi le filtre par succursale. */
 export async function buildInvoiceWhereWithBranch(actor: AuthUser, query: Omit<InvoiceQuery, "page">): Promise<Prisma.InvoiceWhereInput | null> {
   const ids = query.succursale ? await branchInvoiceIds(actor, query.succursale) : undefined;
-  return buildInvoiceWhere(actor, query, ids ?? undefined);
+  const suppliers = query.sens === "DEBIT" && query.p ? await supplierValuesFor(actor, query.p) : undefined;
+  return buildInvoiceWhere(actor, query, ids ?? undefined, suppliers);
+}
+
+/**
+ * Valeurs brutes de `tiers` (visibles par l'utilisateur) qui forment le même fournisseur que `wanted` :
+ * même regroupement que la barre de classement (espaces et casse ignorés), pour que compteurs et liste concordent.
+ */
+async function supplierValuesFor(actor: AuthUser, wanted: string): Promise<string[] | undefined> {
+  const visibility = visibilityWhere(actor);
+  if (!visibility) return undefined;
+  const rows = await db.invoice.findMany({ where: { AND: [visibility, { sens: "DEBIT" }, { origine: { not: "rh" } }] }, distinct: ["tiers"], select: { tiers: true } });
+  return rows.map((row) => row.tiers).filter((tiers) => matchesSupplier(tiers, wanted));
 }
 
 /** Filtre complet d'une recherche de factures (visibilité + filtres de la liste) ; null si aucun accès. */
-export function buildInvoiceWhere(actor: AuthUser, query: Omit<InvoiceQuery, "page">, branchIds?: string[]): Prisma.InvoiceWhereInput | null {
+export function buildInvoiceWhere(actor: AuthUser, query: Omit<InvoiceQuery, "page">, branchIds?: string[], supplierValues?: readonly string[]): Prisma.InvoiceWhereInput | null {
   const visibility = visibilityWhere(actor);
   if (!visibility) return null;
   if (query.sens && !visibleSens(actor).includes(query.sens)) return null;
@@ -144,7 +156,7 @@ export function buildInvoiceWhere(actor: AuthUser, query: Omit<InvoiceQuery, "pa
       branchIds ? { id: { in: branchIds } } : {},
       ...amountFieldConditions(query.m),
       query.d ? { dateOperation: fromIsoDate(query.d) } : {},
-      ...classificationConditions(query, PARTNER_GROUPS),
+      ...classificationConditions(query, PARTNER_GROUPS, supplierValues),
       query.q
         ? {
             OR: [
@@ -202,7 +214,7 @@ export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promis
       db.invoice.aggregate({ where, _sum: { montant: true } }),
       db.invoice.findMany({
         where,
-        orderBy: [{ dateFacture: { sort: "desc", nulls: "last" } }, { dateOperation: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+        orderBy: [{ dateFacture: { sort: "desc", nulls: "last" } }, { dateOperation: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }, { id: "desc" }],
         skip: (query.page - 1) * PAGE_SIZE,
         take: PAGE_SIZE,
       }),

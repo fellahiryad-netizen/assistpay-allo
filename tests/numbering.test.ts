@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analyseNumbering, extractMotif, formatSeriesNumber, parseNumbers } from "@/features/numbering/lib/numbering-analysis";
+import { analyseNumbering, buildPairingIndex, extractMotif, pairedInvoice, formatSeriesNumber, parseNumbers } from "@/features/numbering/lib/numbering-analysis";
 import type { NumberSource } from "@/features/numbering/types";
 
 const src = (raw: string, docKey: string, origin: NumberSource["origin"] = "suivi"): NumberSource => ({ raw, docKey, origin, label: docKey });
@@ -111,5 +111,30 @@ describe("outils", () => {
     expect(extractMotif("GAM 26-000003")).toBeUndefined();
     expect(formatSeriesNumber("AVOIR", 2026, 8)).toBe("AV/2026/0008");
     expect(formatSeriesNumber("AB", 2026, 19)).toBe("000019-2026 AB");
+  });
+});
+
+describe("analyseNumbering : plages d'avant le premier numéro", () => {
+  it("ne compte pas les plages beforeFirst dans les trous à expliquer", () => {
+    const r = analyseNumbering([src("GAM 26-000004", "a"), src("GAM 26-000006", "b")], []);
+    const s = r.series[0];
+    expect(s).toMatchObject({ gapCount: 4, unexplainedGapCount: 1, beforeFirstGapCount: 3 });
+    expect(r.totals).toMatchObject({ unexplainedGaps: 1, beforeFirstGaps: 3 });
+  });
+});
+
+describe("rapprochement facture établie / facture du suivi sans lien", () => {
+  const index = buildPairingIndex([
+    { legacyId: "L1", tiers: "GAM Assurance", numbers: ["GAM 26-000001"] },
+    { legacyId: "L2", tiers: "TRUST", numbers: ["CAAT 26-000002"] },
+    { legacyId: "L3", tiers: "TRUST", numbers: ["CAAT 26-000002"] },
+  ]);
+  it("rapproche par numéro identique et même client (casse et espaces ignorés)", () => {
+    expect(pairedInvoice(index, "gam 26-000001", " GAM   assurance ")).toBe("L1");
+  });
+  it("refuse un autre client ou une correspondance ambiguë", () => {
+    expect(pairedInvoice(index, "GAM 26-000001", "TRUST")).toBeNull();
+    expect(pairedInvoice(index, "CAAT 26-000002", "TRUST")).toBeNull();
+    expect(pairedInvoice(index, "GAM 26-000001", "")).toBeNull();
   });
 });

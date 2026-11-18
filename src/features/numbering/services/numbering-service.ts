@@ -3,7 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { readExtra } from "@/features/invoices/services/invoice-extra";
-import { analyseNumbering, extractMotif } from "@/features/numbering/lib/numbering-analysis";
+import { analyseNumbering, buildPairingIndex, extractMotif, pairedInvoice } from "@/features/numbering/lib/numbering-analysis";
 import type { DeletionTrace, NumberSource, NumberingAnalysis } from "@/features/numbering/types";
 import { fail, ok, type ActionResult } from "@/types";
 
@@ -23,6 +23,12 @@ async function loadSources(): Promise<NumberSource[]> {
     db.issuedInvoice.findMany({ select: { id: true, num: true, client: true, invoiceLegacyId: true, payload: true } }),
   ]);
   const sources: NumberSource[] = [];
+  const index = buildPairingIndex(
+    invoices.map((invoice) => {
+      const extra = readExtra(invoice.extra);
+      return { legacyId: invoice.legacyId, tiers: invoice.tiers, numbers: [invoice.numero, extra.factureDebours ?? "", extra.factureFrais ?? ""] };
+    }),
+  );
   for (const invoice of invoices) {
     const docKey = `inv:${invoice.legacyId}`;
     const label = `${invoice.tiers || "Facture"} (suivi)`;
@@ -35,7 +41,9 @@ async function loadSources(): Promise<NumberSource[]> {
     const payload = obj(doc.payload);
     const isAvoir = str(payload.kind) === "avoir";
     // La facture établie et sa ligne du suivi sont le même document : même clé, pas de faux doublon.
-    const docKey = !isAvoir && doc.invoiceLegacyId ? `inv:${doc.invoiceLegacyId}` : `iss:${doc.id}`;
+    // Sans lien explicite, on rapproche par numéro identique + même client, seulement si une seule facture du suivi correspond.
+    const paired = !isAvoir && !doc.invoiceLegacyId ? pairedInvoice(index, doc.num, doc.client) : null;
+    const docKey = !isAvoir && doc.invoiceLegacyId ? `inv:${doc.invoiceLegacyId}` : paired ? `inv:${paired}` : `iss:${doc.id}`;
     const origin = isAvoir ? "avoir" : "etablie";
     const label = `${doc.client || "Facture"} (${isAvoir ? "avoir" : "facture établie"})`;
     sources.push({ raw: doc.num, docKey, origin, label });
@@ -45,12 +53,13 @@ async function loadSources(): Promise<NumberSource[]> {
   return sources;
 }
 
-async function loadDeletions(): Promise<DeletionTrace[]> {
+async function loadDeletions(isAdmin: boolean): Promise<DeletionTrace[]> {
   const [journal, setting] = await Promise.all([
     db.journalEntry.findMany({ where: { admin: false, action: { in: DELETION_ACTIONS } }, orderBy: { at: "desc" }, take: 5000, select: { at: true, userName: true, objet: true } }),
     db.setting.findUnique({ where: { key: "suppressions" } }),
   ]);
-  const traces: DeletionTrace[] = journal.map((row) => ({ text: row.objet, at: row.at.toISOString(), by: row.userName, motif: extractMotif(row.objet), origin: "journal" }));
+  // Le journal est réservé aux administrateurs : les autres utilisateurs voient qu'un numéro a été supprimé, sans l'auteur ni le motif.
+  const traces: DeletionTrace[] = journal.map((row) => ({ text: row.objet, at: row.at.toISOString(), by: isAdmin ? row.userName : undefined, motif: isAdmin ? extractMotif(row.objet) : undefined, origin: "journal" }));
   const items = obj(setting?.value).items;
   if (Array.isArray(items)) {
     for (const item of items) {
@@ -82,7 +91,7 @@ export async function getNumberingRegistry(actor: AuthUser): Promise<ActionResul
   const guard = requireAccess(actor, "FACT");
   if (!guard.success) return guard;
   try {
-    const [sources, deletions] = await Promise.all([loadSources(), loadDeletions()]);
+    const [sources, deletions] = await Promise.all([loadSources(), loadDeletions(actor.isAdmin)]);
     return ok(analyseNumbering(sources, deletions));
   } catch (error) {
     console.error("[numerotation] lecture impossible :", error);

@@ -6,6 +6,8 @@ import {
   classify,
   defaultMonth,
   groupOf,
+  matchesSupplier,
+  supplierKey,
   monthLabel,
   monthOf,
   monthRange,
@@ -140,5 +142,42 @@ describe("monthRange et classificationConditions", () => {
   });
   it("filtre les factures sans aucune date", () => {
     expect(classificationConditions({ sens: "DEBIT", mois: NO_DATE_MONTH }, GROUPS)).toEqual([{ dateFacture: null, dateOperation: null }]);
+  });
+});
+
+describe("fournisseurs : clé de groupe normalisée (casse, espaces)", () => {
+  const debit = { sens: "DEBIT" as const, useDefaultMonth: false, currentMonth: "2026-11", groups: {} };
+  it("regroupe les variantes de casse et d'espaces en un seul fournisseur", () => {
+    const rows = [row({ tiers: "Bouafia Mohamed" }), row({ tiers: "  BOUAFIA   mohamed " }), row({ tiers: "bouafia mohamed" })];
+    const result = classify(rows, debit);
+    expect(result.groups).toHaveLength(2);
+    expect(result.groups[1]).toMatchObject({ count: 3, total: 3000 });
+  });
+  it("le filtre par fournisseur retient toutes les variantes, comme la liste", () => {
+    const rows = [row({ tiers: "Bouafia  Mohamed" }), row({ tiers: "BOUAFIA MOHAMED" }), row({ tiers: "Autre" })];
+    const result = classify(rows, { ...debit, p: "Bouafia Mohamed" });
+    expect(result.tabs.TOUTES).toBe(2);
+    expect(result.groups.find((entry) => entry.active)).toMatchObject({ count: 2 });
+  });
+  it("« Sans nom » regroupe les noms vides ou blancs", () => {
+    const result = classify([row({ tiers: "" }), row({ tiers: "   " })], { ...debit, p: "Sans nom" });
+    expect(result.tabs.TOUTES).toBe(2);
+    expect(groupOf(row({ tiers: " " }), "DEBIT", {})).toBe("Sans nom");
+  });
+  it("matchesSupplier et supplierKey sont insensibles à la casse et aux espaces", () => {
+    expect(matchesSupplier(" Bouafia   MOHAMED", "bouafia mohamed")).toBe(true);
+    expect(matchesSupplier("Autre", "bouafia mohamed")).toBe(false);
+    expect(supplierKey("")).toBe(supplierKey("  "));
+  });
+  it("le filtre de base utilise les valeurs brutes calculées par le service", () => {
+    const [condition] = classificationConditions({ sens: "DEBIT", p: "Bouafia Mohamed" }, {}, ["Bouafia Mohamed", " BOUAFIA  Mohamed"]);
+    expect(condition).toEqual({ tiers: { in: ["Bouafia Mohamed", " BOUAFIA  Mohamed"] } });
+  });
+  it("expose les impayés de tous les mois, sans le mois par défaut", () => {
+    const rows = [row({ dateFacture: "2026-11-05" }), row({ dateFacture: "2026-03-05" })];
+    const byDefault = classify(rows, { sens: "CREDIT", useDefaultMonth: true, currentMonth: "2026-11", groups: GROUPS });
+    expect(byDefault.mois).toBe("2026-11");
+    expect(byDefault.tabs.A_REGLER).toBe(1);
+    expect(byDefault.unpaidAllMonths).toBe(2);
   });
 });

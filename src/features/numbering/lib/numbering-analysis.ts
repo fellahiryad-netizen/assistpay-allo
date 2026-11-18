@@ -182,7 +182,8 @@ function summarise(state: SeriesState): SeriesSummary {
       deletion,
     }));
   const gapCount = gaps.reduce((sum, range) => sum + range.count, 0);
-  const unexplainedGapCount = gaps.filter((range) => !range.explained).reduce((sum, range) => sum + range.count, 0);
+  const unexplainedGapCount = gaps.filter((range) => !range.explained && !range.beforeFirst).reduce((sum, range) => sum + range.count, 0);
+  const beforeFirstGapCount = gaps.filter((range) => !range.explained && range.beforeFirst).reduce((sum, range) => sum + range.count, 0);
   return {
     key: `${state.kind}:${state.year}`,
     kind: state.kind,
@@ -198,6 +199,7 @@ function summarise(state: SeriesState): SeriesSummary {
     gaps,
     gapCount,
     unexplainedGapCount,
+    beforeFirstGapCount,
     duplicates,
     freed,
     partners: [...partnerMap.values()].sort((a, b) => b.count - a.count || a.prefix.localeCompare(b.prefix, "fr")),
@@ -252,9 +254,36 @@ export function analyseNumbering(sources: readonly NumberSource[], deletions: re
       series: series.length,
       gaps: series.reduce((sum, item) => sum + item.gapCount, 0),
       unexplainedGaps: series.reduce((sum, item) => sum + item.unexplainedGapCount, 0),
+      beforeFirstGaps: series.reduce((sum, item) => sum + item.beforeFirstGapCount, 0),
       duplicates: series.reduce((sum, item) => sum + item.duplicates.length, 0),
       freed: series.reduce((sum, item) => sum + item.freed.filter((entry) => entry.status !== "reutilise").length, 0),
       unrecognised: unrecognised.length,
     },
   };
+}
+
+/** Clé de rapprochement « numéro + client » : casse et espaces ignorés. */
+export function pairingKey(num: string, client: string): string {
+  const clean = (text: string): string => text.trim().replace(/\s+/g, " ").toLowerCase();
+  return `${clean(num)}|${clean(client)}`;
+}
+
+/** Index numéro + client → identifiant de la facture du suivi ; une clé portée par plusieurs factures est écartée (rapprochement non sûr). */
+export function buildPairingIndex(invoices: ReadonlyArray<{ legacyId: string; numbers: readonly string[]; tiers: string }>): Map<string, string | null> {
+  const index = new Map<string, string | null>();
+  for (const invoice of invoices) {
+    for (const num of invoice.numbers) {
+      if (!num.trim() || !invoice.tiers.trim()) continue;
+      const key = pairingKey(num, invoice.tiers);
+      const known = index.get(key);
+      index.set(key, known === undefined || known === invoice.legacyId ? invoice.legacyId : null);
+    }
+  }
+  return index;
+}
+
+/** Identifiant de la facture du suivi portant ce numéro pour ce client, seulement si la correspondance est unique. */
+export function pairedInvoice(index: ReadonlyMap<string, string | null>, num: string, client: string): string | null {
+  if (!num.trim() || !client.trim()) return null;
+  return index.get(pairingKey(num, client)) ?? null;
 }

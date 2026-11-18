@@ -37,6 +37,8 @@ export interface Classification {
   /** Partenaire ou fournisseur appliqué (vide = tous). */
   p: string;
   tabs: Record<StatusTab, number>;
+  /** Factures à régler, tous mois confondus (partenaire choisi pris en compte) : c'est ce que montre l'onglet « À régler », qui n'hérite pas du mois par défaut. */
+  unpaidAllMonths: number;
   /** Première entrée = « tous », puis ordre alphabétique. */
   groups: ClassEntry[];
   /** Première entrée = « tous les mois », puis du plus récent au plus ancien, « sans date » en dernier. */
@@ -66,9 +68,32 @@ export function partnerOf(categorie: string, groups: Readonly<Record<string, rea
   return categorie || "Sans catégorie";
 }
 
-/** Libellé de regroupement d'une facture : partenaire (crédit) ou fournisseur (débit). */
+/** Nom de fournisseur normalisé : espaces de bord retirés, espaces multiples compressés, casse ignorée. */
+export function normalizeSupplier(tiers: string): string {
+  return tiers.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** Libellé affiché pour un fournisseur sans nom. */
+export const NO_SUPPLIER_LABEL = "Sans nom";
+
+/** Clé de groupe d'un fournisseur : identique côté liste en mémoire et côté filtre de base de données. Un nom vide vaut « sans nom ». */
+export function supplierKey(tiers: string): string {
+  return normalizeSupplier(tiers) || normalizeSupplier(NO_SUPPLIER_LABEL);
+}
+
+/** Vrai si la valeur brute de `tiers` appartient au groupe fournisseur désigné par `wanted` (nom choisi dans la barre). */
+export function matchesSupplier(tiers: string, wanted: string): boolean {
+  return supplierKey(tiers) === supplierKey(wanted);
+}
+
+/** Libellé de regroupement d'une facture : partenaire (crédit) ou fournisseur (débit, espaces compressés). */
 export function groupOf(row: Pick<ClassifiableRow, "categorie" | "tiers">, sens: "CREDIT" | "DEBIT", groups: Readonly<Record<string, readonly string[]>>): string {
-  return sens === "CREDIT" ? partnerOf(row.categorie, groups) : row.tiers.trim() || "Sans nom";
+  return sens === "CREDIT" ? partnerOf(row.categorie, groups) : row.tiers.trim().replace(/\s+/g, " ") || NO_SUPPLIER_LABEL;
+}
+
+/** Clé de groupe d'une facture (insensible à la casse et aux espaces pour les fournisseurs). */
+function groupKeyOf(row: Pick<ClassifiableRow, "categorie" | "tiers">, sens: "CREDIT" | "DEBIT", groups: Readonly<Record<string, readonly string[]>>): string {
+  return sens === "CREDIT" ? partnerOf(row.categorie, groups) : supplierKey(row.tiers);
 }
 
 /** Mois de rattachement `AAAA-MM` : date de facture, à défaut date de règlement, sinon `sans-date`. */
@@ -115,8 +140,9 @@ export function defaultMonth(rows: readonly ClassifiableRow[], currentMonth: str
  */
 export function classify(rows: readonly ClassifiableRow[], options: ClassifyOptions): Classification {
   const p = options.p ?? "";
-  const byGroup = (row: ClassifiableRow): string => groupOf(row, options.sens, options.groups);
-  const wantedGroup = (row: ClassifiableRow): boolean => !p || byGroup(row) === p;
+  const keyOf = (row: ClassifiableRow): string => groupKeyOf(row, options.sens, options.groups);
+  const wantedKey = options.sens === "CREDIT" ? p : supplierKey(p);
+  const wantedGroup = (row: ClassifiableRow): boolean => !p || keyOf(row) === wantedKey;
 
   const mois = options.mois ?? (options.useDefaultMonth ? defaultMonth(rows.filter((row) => inStatus(row, options.status) && wantedGroup(row)), options.currentMonth) : ALL_MONTHS);
   const wantedMonth = (row: ClassifiableRow): boolean => mois === ALL_MONTHS || monthOf(row) === mois;
@@ -128,15 +154,19 @@ export function classify(rows: readonly ClassifiableRow[], options: ClassifyOpti
     REGLEES: scoped.filter((row) => row.status === "REGLE").length,
   };
 
-  const groupMap = new Map<string, ClassifiableRow[]>();
+  const groupMap = new Map<string, { labels: Set<string>; rows: ClassifiableRow[] }>();
   for (const row of rows.filter((item) => inStatus(item, options.status) && wantedMonth(item))) {
-    const key = byGroup(row);
-    groupMap.set(key, [...(groupMap.get(key) ?? []), row]);
+    const key = keyOf(row);
+    const entry = groupMap.get(key) ?? { labels: new Set<string>(), rows: [] };
+    entry.labels.add(groupOf(row, options.sens, options.groups));
+    entry.rows.push(row);
+    groupMap.set(key, entry);
   }
-  if (p && !groupMap.has(p)) groupMap.set(p, []);
+  if (p && !groupMap.has(wantedKey)) groupMap.set(wantedKey, { labels: new Set([p]), rows: [] });
   const groupEntries: ClassEntry[] = [...groupMap.entries()]
-    .sort(([a], [b]) => a.localeCompare(b, "fr"))
-    .map(([key, list]) => ({ value: key, label: key, ...sumBy(list), active: key === p }));
+    .map(([key, entry]) => ({ key, label: [...entry.labels].sort((a, b) => a.localeCompare(b, "fr"))[0] ?? key, rows: entry.rows }))
+    .sort((a, b) => a.label.localeCompare(b.label, "fr"))
+    .map((entry) => ({ value: entry.label, label: entry.label, ...sumBy(entry.rows), active: entry.key === wantedKey && p !== "" }));
   const allGroups = rows.filter((item) => inStatus(item, options.status) && wantedMonth(item));
 
   const monthMap = new Map<string, ClassifiableRow[]>();
@@ -154,6 +184,7 @@ export function classify(rows: readonly ClassifiableRow[], options: ClassifyOpti
     mois,
     p,
     tabs,
+    unpaidAllMonths: rows.filter((row) => wantedGroup(row) && row.status === "EN_ATTENTE").length,
     groups: [{ value: "", label: options.sens === "CREDIT" ? "Tous les partenaires" : "Tous les fournisseurs", ...sumBy(allGroups), active: p === "" }, ...groupEntries],
     months: [{ value: ALL_MONTHS, label: monthLabel(ALL_MONTHS), ...sumBy(allMonths), active: mois === ALL_MONTHS }, ...monthEntries],
   };
@@ -175,6 +206,8 @@ export function monthRange(month: string): { start: Date; end: Date } | null {
 export function classificationConditions(
   query: { sens?: "CREDIT" | "DEBIT"; p?: string; mois?: string },
   groups: Readonly<Record<string, readonly string[]>>,
+  /** Valeurs brutes de `tiers` du groupe fournisseur choisi (calculées par le service avec `matchesSupplier`) ; à défaut, repli sur une égalité insensible à la casse. */
+  supplierValues?: readonly string[],
 ): Prisma.InvoiceWhereInput[] {
   const out: Prisma.InvoiceWhereInput[] = [];
   if (query.p && query.sens === "CREDIT") {
@@ -182,7 +215,8 @@ export function classificationConditions(
     const categories = known ? [...known] : [query.p === "Sans catégorie" ? "" : query.p];
     out.push({ categorie: { in: categories } });
   } else if (query.p && query.sens === "DEBIT") {
-    out.push(query.p === "Sans nom" ? { tiers: { in: ["", " "] } } : { tiers: { equals: query.p, mode: "insensitive" } });
+    if (supplierValues) out.push({ tiers: { in: [...supplierValues] } });
+    else out.push(matchesSupplier("", query.p) ? { tiers: { in: ["", " "] } } : { tiers: { equals: query.p, mode: "insensitive" } });
   }
   if (query.mois === NO_DATE_MONTH) {
     out.push({ dateFacture: null, dateOperation: null });

@@ -16,6 +16,7 @@ import { InvoiceTable } from "@/features/invoices/components/invoice-table";
 import { invoiceQuerySchema, type InvoiceQuery } from "@/features/invoices/schemas";
 import { getInvoiceClassification } from "@/features/invoices/services/invoice-classification";
 import { getInvoiceFilterOptions, listInvoices } from "@/features/invoices/services/invoice-service";
+import { monthLabel } from "@/features/invoices/lib/classification";
 import { todayIso } from "@/utils/dates";
 import { formatDA } from "@/utils/format";
 
@@ -111,9 +112,13 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
     mois: first(raw.mois),
     page: first(raw.page),
   });
+  // Si le sens a été changé dans le formulaire de filtres, le partenaire / fournisseur choisi n'a plus de sens : on l'abandonne.
+  const previousSens = first(raw.sens0);
+  if (previousSens !== undefined && previousSens !== (parsed.sens ?? "-")) parsed.p = undefined;
   // Classement simple (partenaire / fournisseur puis mois) : seulement sur les vues partenaires et fournisseurs, et jamais pendant une recherche par montant.
   const classified = Boolean(parsed.sens) && !parsed.m;
   // Le mois courant est proposé seulement à l'arrivée sur la vue : dès qu'une recherche ou un filtre est posé, on cherche partout.
+  // L'onglet « À régler » ne reçoit jamais de mois par défaut (il masquerait des impayés) ; `!parsed.status` l'exclut déjà.
   const fresh = !parsed.mois && !parsed.p && !parsed.q && !parsed.d && !parsed.annee && !parsed.categorie && !parsed.succursale && !parsed.status;
   const classification = classified ? await getInvoiceClassification(user, parsed, fresh) : null;
   const flat = { ...parsed, p: undefined, mois: undefined };
@@ -170,11 +175,20 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
       <TabsNav
         tabs={[
           { href: toSearch({ ...query, status: undefined }, 1), label: "Toutes", active: !query.status, count: classification?.success ? classification.data.tabs.TOUTES : undefined },
-          { href: toSearch({ ...query, status: "EN_ATTENTE" }, 1), label: "À régler", active: query.status === "EN_ATTENTE", count: classification?.success ? classification.data.tabs.A_REGLER : undefined },
+          // Les impayés ne sont jamais limités à un mois par défaut : seul un mois choisi explicitement dans l'URL est conservé.
+          { href: toSearch({ ...query, status: "EN_ATTENTE", mois: parsed.mois }, 1), label: "À régler", active: query.status === "EN_ATTENTE", count: classification?.success ? (parsed.mois ? classification.data.tabs.A_REGLER : classification.data.unpaidAllMonths) : undefined },
           { href: toSearch({ ...query, status: "REGLE" }, 1), label: "Réglées", active: query.status === "REGLE", count: classification?.success ? classification.data.tabs.REGLEES : undefined },
           ...(query.sens === "CREDIT" && can(user, "FACT", "VIEW") ? [{ href: "/avoirs", label: "Avoirs", active: false }] : []),
         ]}
       />
+      {classification?.success && query.status !== "EN_ATTENTE" && classification.data.mois !== "tous" ? (
+        <p className="mb-3 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm" role="status">
+          <span className="font-medium">Mois : {monthLabel(classification.data.mois)}</span> —{" "}
+          <Link href={toSearch({ ...query, mois: "tous" }, 1)} className="underline underline-offset-2">
+            voir tous les mois
+          </Link>
+        </p>
+      ) : null}
       {classification?.success ? <InvoiceClassificationBar {...classificationProps(query, classification.data.groups, classification.data.months)} /> : null}
       <InvoiceFilters query={query} options={options.data} />
       {data.cumul ? (
