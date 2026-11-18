@@ -202,6 +202,10 @@ function summarise(state: SeriesState): SeriesSummary {
     beforeFirstGapCount,
     duplicates,
     freed,
+    entries: seqs.flatMap((seq) => {
+      const slot = state.slots.get(seq);
+      return slot ? [{ seq, display: formatSeriesNumber(state.kind, state.year, seq), docs: [...slot.docs.values()].map((doc) => ({ raw: doc.raw, label: doc.label })) }] : [];
+    }),
     partners: [...partnerMap.values()].sort((a, b) => b.count - a.count || a.prefix.localeCompare(b.prefix, "fr")),
   };
 }

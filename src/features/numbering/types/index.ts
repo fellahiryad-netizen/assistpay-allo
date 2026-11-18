@@ -104,6 +104,13 @@ export interface PartnerStat {
   lastDisplay: string;
 }
 
+/** Un numéro existant de la série, avec les documents qui le portent (sert à la recherche par numéro). */
+export interface SeriesEntry {
+  seq: number;
+  display: string;
+  docs: Array<{ raw: string; label: string }>;
+}
+
 /** Résumé d'une série (famille + année). */
 export interface SeriesSummary {
   key: string;
@@ -130,6 +137,8 @@ export interface SeriesSummary {
   duplicates: DuplicateInfo[];
   freed: FreedNumber[];
   partners: PartnerStat[];
+  /** Tous les numéros existants de la série (recherche par numéro). */
+  entries: SeriesEntry[];
 }
 
 /** Numéro non reconnu par aucune série. */

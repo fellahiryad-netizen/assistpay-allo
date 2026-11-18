@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getNumberingRegistry } from "@/features/numbering/services/numbering-service";
-import type { DeletionInfo, FreedStatus, GapRange, SeriesSummary } from "@/features/numbering/types";
+import type { DeletionInfo, FreedStatus, GapRange, SeriesKind, SeriesSummary } from "@/features/numbering/types";
 import { cn } from "@/utils/cn";
 import { todayIso } from "@/utils/dates";
 import { formatDateTime } from "@/utils/format";
@@ -28,6 +28,23 @@ const ORIGIN_LABELS: Readonly<Record<DeletionInfo["origin"], string>> = {
   demande: "Demande validée",
   rectification: "Rectification",
 };
+
+const TYPE_CHOICES: ReadonlyArray<{ id: string; label: string; kinds: readonly SeriesKind[] | null }> = [
+  { id: "tous", label: "Tous", kinds: null },
+  { id: "honoraires", label: "Honoraires (factures partenaires)", kinds: ["FACT"] },
+  { id: "bdg", label: "BDG", kinds: ["AB", "TRUST_BDG", "CAAT_BDG"] },
+  { id: "avoirs", label: "Avoirs", kinds: ["AVOIR"] },
+];
+
+/** Verdict en une phrase pour une série : rien à signaler, ou ce qu'il faut regarder. */
+function verdict(item: SeriesSummary): { ok: boolean; text: string } {
+  const problems: string[] = [];
+  if (item.duplicates.length) problems.push(`${item.duplicates.length} doublon${item.duplicates.length > 1 ? "s" : ""}`);
+  if (item.unexplainedGapCount) problems.push(`${item.unexplainedGapCount} numéro${item.unexplainedGapCount > 1 ? "s" : ""} manquant${item.unexplainedGapCount > 1 ? "s" : ""} sans explication`);
+  const reprise = item.freed.filter((entry) => entry.status === "libre_reprise").length;
+  if (reprise) problems.push(`${reprise} numéro${reprise > 1 ? "s" : ""} supprimé${reprise > 1 ? "s" : ""} qui sera${reprise > 1 ? "ont" : ""} redonné${reprise > 1 ? "s" : ""}`);
+  return problems.length ? { ok: false, text: `À vérifier : ${problems.join(", ")}` } : { ok: true, text: "Rien à signaler" };
+}
 
 function rangeText(range: GapRange): string {
   return range.from === range.to ? range.fromDisplay : `${range.fromDisplay} → ${range.toDisplay}`;
@@ -159,16 +176,36 @@ export default async function NumberingPage({ searchParams }: Readonly<{ searchP
   const user = await requireUser();
   const result = await getNumberingRegistry(user);
   if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="Registre indisponible" message={result.error} />;
-  const raw = (await searchParams).annee;
-  const param = Array.isArray(raw) ? raw[0] : raw;
+  const params = await searchParams;
+  const first = (value: string | string[] | undefined): string => (Array.isArray(value) ? (value[0] ?? "") : (value ?? ""));
+  const param = first(params.annee);
+  const typeId = TYPE_CHOICES.some((choice) => choice.id === first(params.type)) ? first(params.type) : "tous";
+  const kinds = TYPE_CHOICES.find((choice) => choice.id === typeId)?.kinds ?? null;
+  const query = first(params.q).trim();
   const currentYear = Number(todayIso().slice(0, 4));
   const wanted = param === "toutes" ? null : Number(param) || currentYear;
   const { series, years, totals, unrecognised } = result.data;
-  const shown = wanted === null ? series : series.filter((item) => item.year === wanted);
+  const byType = kinds ? series.filter((item) => kinds.includes(item.kind)) : series;
+  const shown = wanted === null ? byType : byType.filter((item) => item.year === wanted);
+  const yearParam = wanted === null ? "toutes" : String(wanted);
+  const link = (next: { annee?: string; type?: string }): string => {
+    const search = new URLSearchParams({ annee: next.annee ?? yearParam, type: next.type ?? typeId });
+    if (query) search.set("q", query);
+    return `/numerotation?${search.toString()}`;
+  };
   const choices: Array<{ href: string; label: string; active: boolean }> = [
-    ...years.map((year) => ({ href: `/numerotation?annee=${year}`, label: String(year), active: wanted === year })),
-    { href: "/numerotation?annee=toutes", label: "Toutes les années", active: wanted === null },
+    ...years.map((year) => ({ href: link({ annee: String(year) }), label: String(year), active: wanted === year })),
+    { href: link({ annee: "toutes" }), label: "Toutes les années", active: wanted === null },
   ];
+  const needle = query.toLowerCase();
+  const digits = query.replace(/\D/g, "");
+  const hits = query
+    ? byType.flatMap((item) =>
+        item.entries
+          .filter((entry) => entry.docs.some((doc) => doc.raw.toLowerCase().includes(needle)) || entry.display.toLowerCase().includes(needle) || (digits.length >= 2 && String(entry.seq) === String(Number(digits))))
+          .map((entry) => ({ item, entry })),
+      )
+    : [];
   return (
     <>
       <PageHeader title="Registre de numérotation" description="Pour chaque série (type de facture et année) : dernier numéro, trous, doublons et numéros libérés par une suppression. Page de consultation : rien n'est modifié." />
@@ -179,6 +216,77 @@ export default async function NumberingPage({ searchParams }: Readonly<{ searchP
         Le compteur de doublons peut inclure de faux doublons : quand une facture établie n'est pas reliée à sa ligne du suivi (et que le rapprochement par numéro et client n'est pas possible), les deux sont comptées comme deux documents. Vérifiez chaque doublon avant d'en tirer une conclusion.
         {user.isAdmin ? null : " L'auteur et le motif des suppressions ne sont visibles que par les administrateurs."}
       </Notice>
+      <form action="/numerotation" className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+        <input type="hidden" name="annee" value={yearParam} />
+        <input type="hidden" name="type" value={typeId} />
+        <input name="q" defaultValue={query} placeholder="Rechercher un numéro (ex. 000057, 26-155, AB)" className="h-9 w-72 rounded-md border bg-background px-3" />
+        <button type="submit" className="h-9 rounded-md bg-primary px-4 text-primary-foreground">
+          Rechercher
+        </button>
+        {query ? (
+          <Link href={link({})} className="text-muted-foreground underline" prefetch={false}>
+            Effacer
+          </Link>
+        ) : null}
+      </form>
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+        {TYPE_CHOICES.map((choice) => (
+          <Link key={choice.id} href={link({ type: choice.id })} className={cn("rounded-md border px-3 py-1", typeId === choice.id ? "bg-primary text-primary-foreground" : "bg-card hover:bg-muted")}>
+            {choice.label}
+          </Link>
+        ))}
+      </div>
+      {query ? (
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Résultat de la recherche « {query} »</CardTitle>
+            <CardDescription>
+              {hits.length ? `${hits.length} numéro${hits.length > 1 ? "s" : ""} trouvé${hits.length > 1 ? "s" : ""}` : "Aucun document ne porte ce numéro dans la sélection (type et année) en cours. Il peut avoir été supprimé : regardez les numéros manquants de la série, ou élargissez à « Toutes les années »."}
+            </CardDescription>
+          </CardHeader>
+          {hits.length ? (
+            <CardContent>
+              <ul className="divide-y rounded-md border text-sm">
+                {hits.slice(0, 50).map(({ item, entry }) => (
+                  <li key={`${item.key}-${entry.seq}`} className="px-3 py-2">
+                    <span className="font-medium tabular-nums">{entry.display}</span> · {item.label} {item.year}
+                    <span className="block text-xs text-muted-foreground">{entry.docs.map((doc) => `${doc.raw} · ${doc.label}`).join("  |  ")}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          ) : null}
+        </Card>
+      ) : null}
+      {shown.length ? (
+        <div className="mb-4 overflow-x-auto rounded-lg border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Série</TableHead>
+                <TableHead>Année</TableHead>
+                <TableHead>Dernier numéro</TableHead>
+                <TableHead>Vérification</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {shown.map((item) => {
+                const result = verdict(item);
+                return (
+                  <TableRow key={item.key}>
+                    <TableCell className="font-medium">{item.label}</TableCell>
+                    <TableCell className="tabular-nums">{item.year}</TableCell>
+                    <TableCell className="tabular-nums">{item.lastDisplay}</TableCell>
+                    <TableCell>
+                      <Badge variant={result.ok ? "success" : "warning"}>{result.text}</Badge>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         {choices.map((choice) => (
           <Link key={choice.href} href={choice.href} className={cn("rounded-md border px-3 py-1", choice.active ? "bg-primary text-primary-foreground" : "bg-card hover:bg-muted")}>
