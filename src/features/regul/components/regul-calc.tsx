@@ -130,6 +130,40 @@ export function RegulCalc({ index, sinMeta, canEdit, canExport, initialSucc, onS
   const A = useMemo(() => (ready ? analyse(succ, per, files, base, sinSet, index) : null), [ready, succ, per, files, base, sinSet, index]);
   const C = useMemo(() => (A ? calc(A, YEAR, index, saisies) : null), [A, index, saisies]);
 
+  /** Signature des fichiers déjà conservés automatiquement (évite de renvoyer deux fois le même dépôt). */
+  const keptRef = useRef("");
+
+  /** À l'import : les polices des fichiers de régularisation sont conservées sans autre clic, pour le contrôle des polices non retrouvées. */
+  useEffect(() => {
+    if (!A || !canEdit) return;
+    const hasMonth = new Set(files.filter((f) => months.includes(f.mois)).map((f) => f.mois));
+    const signature = `${A.s}|${per}|${files.map((f) => `${f.id}`).sort().join(",")}`;
+    if (!hasMonth.size || keptRef.current === signature) return;
+    keptRef.current = signature;
+    const fichiers = buildFichiers(A.s, YEAR, { valid: A.valid, annul: A.annul, garan: A.garan }, "").filter((f) => hasMonth.has(f.mois));
+    void (async () => {
+      let kept = 0;
+      try {
+        for (const fichier of fichiers) {
+          for (const [i, lot] of decouperFichier(fichier).entries()) {
+            const res = await saveFichierAction({ succursale: A.s, fichier: lot, suite: i > 0 });
+            if (!res.success) {
+              keptRef.current = "";
+              setMsg({ tone: "warning", text: `Les polices du fichier n'ont pas pu être conservées automatiquement : ${res.error}` });
+              return;
+            }
+            kept += res.data.lignes;
+          }
+        }
+        if (kept) setMsg({ tone: "success", text: `${f0(kept)} lignes de polices conservées automatiquement. Elles sont visibles dans l'onglet « Polices non retrouvées » (reportées avec le mois, annulées, annulées + sinistre, par agence).` });
+      } catch {
+        keptRef.current = "";
+        setMsg({ tone: "warning", text: "Les polices du fichier n'ont pas pu être conservées automatiquement." });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [A, canEdit, files, per]);
+
   function editAmount(key: string, field: "total" | "avance", raw: string): void {
     if (!canEdit) {
       setMsg({ tone: "warning", text: "Vous avez un accès en consultation uniquement." });
