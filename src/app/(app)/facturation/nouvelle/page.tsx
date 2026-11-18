@@ -3,9 +3,11 @@ import { requireUser } from "@/lib/auth";
 import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
 import { can } from "@/features/access/services/access-rules";
+import { GamImportDialog } from "@/features/billing/components/gam-import-dialog";
 import { BillingEditor } from "@/features/billing/components/billing-editor";
 import { prepareBillingSchema } from "@/features/billing/schemas";
 import { prepareDraft } from "@/features/billing/services/billing-service";
+import { todayIso } from "@/utils/dates";
 
 export const metadata: Metadata = { title: "Nouvelle facture" };
 
@@ -32,7 +34,9 @@ export default async function NewBillingPage({
   if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="Facture impossible à préparer" message={result.error} />;
   return (
     <>
-      <PageHeader title={scope === "bdg" ? "Factures BDG CAAT et TRUST" : scope === "gam" ? "Factures BDG GAM" : "Nouvelle facture"} description="Aperçu en direct ; à l'enregistrement, la facture est ajoutée aux factures partenaires en attente." />
+      <PageHeader title={scope === "bdg" ? "Factures BDG CAAT et TRUST" : scope === "gam" ? "Factures BDG GAM" : "Nouvelle facture"} description="Aperçu en direct ; à l'enregistrement, la facture est ajoutée aux factures partenaires en attente."
+        actions={scope === "gam" && can(user, "FACT", "EDIT") ? <GamImportDialog today={todayIso()} /> : undefined}
+      />
       <BillingEditor initial={result.data} canEdit={can(user, "FACT", "EDIT")} scope={scope} />
     </>
   );
