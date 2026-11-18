@@ -20,7 +20,7 @@ export interface GamDetailInput {
 }
 
 const FIRST_ROW = 15;
-const COLUMNS = ["N°Dossier", "Matricule", "Nom Client", "Agence", "Préstation", "Produit", "Date", "N° sinistre", "Prix", "TVA 19%", "Prix total"] as const;
+const COLUMNS = ["N°Dossier", "Matricule", "Nom Client", "Agence", "Préstation", "Produit", "Date", "N° sinistre", "Prix HT", "TVA 19%", "Prix TTC"] as const;
 
 const frDate = (iso: string): string => (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso.split("-").reverse().join("/") : iso);
 const plain = (text: string): string => text.normalize("NFD").replace(/[̀-ͯ]/g, "");
