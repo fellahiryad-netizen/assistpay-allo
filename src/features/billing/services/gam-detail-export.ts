@@ -20,7 +20,7 @@ export interface GamDetailInput {
 }
 
 const FIRST_ROW = 15;
-const COLUMNS = ["N°Dossier", "Matricule", "Nom Client", "Agence", "Préstation", "Produit", "Date", "N° sinistre", "Prix"] as const;
+const COLUMNS = ["N°Dossier", "Matricule", "Nom Client", "Agence", "Préstation", "Produit", "Date", "N° sinistre", "Prix", "TVA 19%", "Prix total"] as const;
 
 const frDate = (iso: string): string => (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso.split("-").reverse().join("/") : iso);
 const plain = (text: string): string => text.normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -82,7 +82,12 @@ export function buildGamDetailSheets(inputs: readonly GamDetailInput[]): SheetTo
       put(at, 5, row.pres ?? "");
       put(at, 6, row.dt ?? "");
       put(at, 7, claim(row.sin));
-      put(at, 8, num(row.prix));
+      const prix = num(row.prix);
+      const exact = (value: number): number => Math.round(value * 1e6) / 1e6;
+      put(at, 8, prix);
+      // Comme dans le modèle remis au partenaire : TVA et prix total ligne par ligne (HT × 19 %, puis HT + TVA).
+      put(at, 9, { f: `I${at}*19%`, v: exact(prix * 0.19) });
+      put(at, 10, { f: `J${at}+I${at}`, v: exact(prix * 1.19) });
     });
     put(htRow, 7, "Total HT");
     put(htRow, 8, { f: `SUM(I${FIRST_ROW}:I${last})`, v: totals.ht });
@@ -94,7 +99,7 @@ export function buildGamDetailSheets(inputs: readonly GamDetailInput[]): SheetTo
     put(htRow + 5, 0, amountInWords(totals.ttc));
     put(htRow + 6, 0, "Règlement par chèque ou virement sur le compte suivant:");
     put(htRow + 7, 0, `(RIB): ${ISSUER.rib}`);
-    return { name: kind, rows: grid, widths: [18.7, 18, 34, 26, 12, 30, 12, 16, 16] };
+    return { name: kind, rows: grid, widths: [18.7, 18, 34, 26, 12, 30, 12, 16, 16, 14, 16] };
   });
 }
 
