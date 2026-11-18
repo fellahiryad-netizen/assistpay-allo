@@ -27,6 +27,7 @@ import { findCombinations, type CumulPart } from "@/features/invoices/lib/cumul"
 import { formatDA } from "@/utils/format";
 import { listAvoirBadges } from "@/features/avoirs/services/avoir-service";
 import { classificationConditions, matchesSupplier } from "@/features/invoices/lib/classification";
+import { checkSingleAdvance } from "@/features/invoices/services/advance-guard";
 import { PARTNER_GROUPS } from "@/features/partners/services/partner-service";
 
 const PAGE_SIZE = 50;
@@ -329,6 +330,8 @@ export async function createInvoice(actor: AuthUser, input: InvoiceInput): Promi
       });
       if (duplicate) return fail(`La facture ${input.numero} existe déjà pour ${input.tiers}.`, "CONFLICT");
     }
+    const single = await checkSingleAdvance(input);
+    if (!single.success) return single;
     const row = await db.invoice.create({
       data: { ...data, legacyId: `n-${crypto.randomUUID()}`, origine: "saisie", createdById: actor.id, updatedById: actor.id },
     });
@@ -395,6 +398,8 @@ export async function updateInvoice(actor: AuthUser, id: string, input: InvoiceI
     if (!guard.success) return guard;
     const data = toWriteData(input);
     if (data.payroll && !can(actor, "RH", "EDIT")) return fail("Les lignes de paie sont réservées à l'accès RH.", "FORBIDDEN");
+    const single = await checkSingleAdvance(input, id);
+    if (!single.success) return single;
     const row = await guardedUpdate(current, { ...data, classe: current.classe ?? data.classe, updatedById: actor.id });
     if (!row) return fail(CONCURRENT_MESSAGE, "CONFLICT");
     await syncIssuedDate(current, row);

@@ -119,7 +119,7 @@ export function AdvanceGrid({ table, deleteMode = "none" }: Readonly<{ table: Ad
                           className={cn("block w-full px-2 py-1.5 text-right tabular-nums", TONE[value.state], active && "outline outline-2 outline-primary", value.state !== "vide" && "cursor-pointer hover:brightness-95")}
                         >
                           {shown(value) || "·"}
-                          {value.invoices.length > 1 ? <span className="ml-1 text-[10px] opacity-70">×{value.invoices.length}</span> : null}
+                          {value.invoices.length > 1 ? <span className="ml-1 rounded bg-red-600 px-1 text-[10px] font-bold text-white" title="Plusieurs factures sur ce mois : une seule avance est attendue">⚠ ×{value.invoices.length}</span> : null}
                         </button>
                       </td>
                     );

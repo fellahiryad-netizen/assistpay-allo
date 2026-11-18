@@ -60,7 +60,8 @@ export interface AdvanceTable {
 }
 
 const MONTH_PREFIXES: ReadonlyArray<[string, number]> = [["JANV", 1], ["JAN", 1], ["FEV", 2], ["MARS", 3], ["AVR", 4], ["MAI", 5], ["JUIN", 6], ["JUIL", 7], ["AOUT", 8], ["SEPT", 9], ["OCT", 10], ["NOV", 11], ["DEC", 12]];
-const NOT_MONTHLY = /REGUL|REFACTUR|TRIMESTR|PASSI[FV]|DIRECTION|ANNEXE|LISTE JOINTE/;
+/** Libellés qui ne sont pas une avance mensuelle (régularisations, refacturations, trimestres…). */
+export const NOT_MONTHLY = /REGUL|REFACTUR|TRIMESTR|PASSI[FV]|DIRECTION|ANNEXE|LISTE JOINTE/;
 
 /** Mois de production (« AAAA-MM ») d'une facture : champ « période », sinon cité dans le libellé (« AOUT2026 », « Juillet 2026 »…). */
 export function productionPeriod(periode: string, libelle: string): string | null {
