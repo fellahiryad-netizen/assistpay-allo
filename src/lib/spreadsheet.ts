@@ -425,3 +425,60 @@ export function readCsvRows(bytes: Uint8Array): string[][] {
   }
   return rows;
 }
+
+/** Tableau à écrire par {@link writeTableWorkbook} : une ligne d'en-têtes puis des lignes de données. */
+export interface TableSheet {
+  name: string;
+  header: string[];
+  rows: Array<Array<string | number | null>>;
+  /** Largeur des colonnes en caractères (sinon ajustée au contenu). */
+  widths?: number[];
+  /** Colonnes (à partir de 0) affichées avec deux décimales. */
+  amountCols?: number[];
+  /** Libellé d'une ligne de total (sous une ligne vide) et colonnes sommées. */
+  totalLabel?: string;
+  sumCols?: number[];
+}
+
+/**
+ * Écrit un classeur de tableaux « bien filtrés » : filtre automatique, première ligne figée et en gras, colonnes ajustées,
+ * aucune couleur (impression noir et blanc), A4 paysage sur une page de large, en-têtes répétés à l'impression.
+ */
+export async function writeTableWorkbook(sheets: TableSheet[]): Promise<Uint8Array> {
+  const ExcelRuntime = (await import("exceljs")).default;
+  const wb = new ExcelRuntime.Workbook();
+  const used = new Set<string>();
+  for (const sheet of sheets) {
+    let name = sheet.name.replace(/[\\/?*[\]:]/g, " ").slice(0, 31) || "Feuille";
+    while (used.has(name.toLowerCase())) name = `${name.slice(0, 28)}_${used.size}`;
+    used.add(name.toLowerCase());
+    const ws = wb.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1, showGridLines: true }] });
+    const count = sheet.header.length;
+    const widths = sheet.header.map((h, c) => sheet.widths?.[c] ?? Math.min(60, Math.max(8, h.length + 2, ...sheet.rows.slice(0, 500).map((r) => String(r[c] ?? "").length + 2))));
+    widths.forEach((w, c) => {
+      ws.getColumn(c + 1).width = w;
+    });
+    const head = ws.addRow(sheet.header);
+    head.font = { bold: true, color: { argb: "FF000000" } };
+    head.alignment = { vertical: "middle", wrapText: true };
+    head.eachCell((cell) => {
+      cell.border = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
+    });
+    for (const row of sheet.rows) ws.addRow(row);
+    for (const c of sheet.amountCols ?? []) ws.getColumn(c + 1).numFmt = "#,##0.00";
+    const last = sheet.rows.length + 1;
+    if (sheet.totalLabel && sheet.sumCols?.length) {
+      const out = ws.getRow(last + 2);
+      out.getCell(1).value = sheet.totalLabel;
+      for (const c of sheet.sumCols) {
+        const letter = ws.getColumn(c + 1).letter;
+        out.getCell(c + 1).value = { formula: `SUM(${letter}2:${letter}${last})`, result: sheet.rows.reduce((a, r) => a + (typeof r[c] === "number" ? (r[c] as number) : 0), 0) };
+      }
+      out.font = { bold: true };
+    }
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1, last), column: count } };
+    ws.pageSetup = { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "1:1" };
+  }
+  const buffer = await wb.xlsx.writeBuffer();
+  return new Uint8Array(buffer);
+}

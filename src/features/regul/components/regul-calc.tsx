@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { regulWorkDataAction, saveResultsAction, saveSaisieAction } from "@/app/actions/regul-actions";
+import { regulWorkDataAction, saveFichierAction, saveResultsAction, saveSaisieAction } from "@/app/actions/regul-actions";
 import { Notice } from "@/components/common/notice";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -26,6 +26,7 @@ import {
   type RegulSin,
   type Saisie,
 } from "@/features/regul/services/regul-engine";
+import { buildFichiers } from "@/features/regul/services/regul-polices";
 import { buildRegulMessage } from "@/features/regul/services/regul-message";
 import { writeRegulWorkbook } from "@/features/regul/services/regul-export";
 import { readCsvRows, readWorkbook } from "@/lib/spreadsheet";
@@ -185,11 +186,25 @@ export function RegulCalc({ index, sinMeta, canEdit, canExport, initialSucc, onS
       }));
     startTransition(async () => {
       const res = await saveResultsAction({ resume: `${REGUL_LABELS[A.s]} ${per} ${YEAR} : Part Assisteur ${fm(C.tot.pa)} DA`, results });
-      if (!res.success) setMsg({ tone: "error", text: res.error });
-      else {
-        setMsg({ tone: "success", text: "Résultat enregistré dans le suivi." });
-        onSaved();
+      if (!res.success) {
+        setMsg({ tone: "error", text: res.error });
+        return;
       }
+      // Conservation des polices du fichier (un mois à la fois) pour le contrôle « polices non retrouvées ».
+      const hasMonth = new Set(results.map((r) => r.mois));
+      const fichiers = buildFichiers(A.s, YEAR, { valid: A.valid, annul: A.annul, garan: A.garan }, "").filter((f) => hasMonth.has(f.mois));
+      let kept = 0;
+      for (const fichier of fichiers) {
+        const kres = await saveFichierAction({ succursale: A.s, fichier });
+        if (!kres.success) {
+          setMsg({ tone: "warning", text: `Résultat enregistré, mais les polices du fichier n'ont pas été conservées : ${kres.error}` });
+          onSaved();
+          return;
+        }
+        kept += kres.data.lignes;
+      }
+      setMsg({ tone: "success", text: `Résultat enregistré dans le suivi. ${f0(kept)} lignes de polices conservées pour le contrôle des polices non retrouvées.` });
+      onSaved();
     });
   }
 

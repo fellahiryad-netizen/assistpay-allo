@@ -3,8 +3,10 @@
 import { z } from "zod";
 import { runAction } from "@/app/actions/action-helpers";
 import { REGUL_SUCCURSALES } from "@/features/regul/services/regul-engine";
+import { saveFichiers } from "@/features/regul/services/regul-polices-store";
+import type { RegulFichier } from "@/features/regul/services/regul-polices";
 import { regulOverview, regulWorkData, saveBase, saveIndex, saveResults, saveSaisie, saveSinistres, type RegulOverview, type RegulWorkData } from "@/features/regul/services/regul-store";
-import type { ActionResult } from "@/types";
+import { fail, type ActionResult } from "@/types";
 
 const succ = z.enum(REGUL_SUCCURSALES);
 const num = z.number().finite();
@@ -72,4 +74,20 @@ export async function saveIndexAction(input: Record<string, unknown>): Promise<A
 /** Remplace la base sinistres (administrateur). */
 export async function saveSinistresAction(input: { keys: string[]; jusqua: string; dossiers: number }): Promise<ActionResult<true>> {
   return runAction(z.object({ keys: z.array(z.string().max(120)).max(200000), jusqua: z.string().max(12), dossiers: z.number().int() }), input, (actor, d) => saveSinistres(actor, d));
+}
+
+/** Conserve les polices du fichier de régularisation analysé (un mois) ; recharger le même mois remplace la version précédente. */
+export async function saveFichierAction(input: { succursale: string; fichier: RegulFichier }): Promise<ActionResult<{ mois: number; lignes: number }>> {
+  const row = z.tuple([z.number().int().min(0), z.string().max(80), z.string().max(80), z.number().int().min(0).max(60), num, z.union([z.literal(0), z.literal(1), z.literal(2)])]);
+  const fichier = z.object({
+    succ,
+    mois: z.number().int().min(1).max(12),
+    annee: z.number().int().min(2020).max(2100),
+    maj: z.string().max(20),
+    fichiers: z.array(z.string().max(200)).max(40),
+    agences: z.record(z.string(), z.string().max(200)),
+    produits: z.array(z.string().max(80)).max(60),
+    rows: z.array(row).max(60000),
+  });
+  return runAction(z.object({ succursale: succ, fichier }), input, (actor, d) => (d.fichier.succ !== d.succursale ? Promise.resolve(fail<{ mois: number; lignes: number }>("Succursale incohérente.", "VALIDATION")) : saveFichiers(actor, [d.fichier])));
 }

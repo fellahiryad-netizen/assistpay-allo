@@ -10,15 +10,16 @@ import { RegulSuivi } from "@/features/regul/components/regul-suivi";
 import type { RegulOverview } from "@/features/regul/services/regul-store";
 import { cn } from "@/utils/cn";
 
-type Tab = "calc" | "suivi" | "ctrl" | "bases";
-const TABS: ReadonlyArray<[Tab, string]> = [["calc", "Régulariser"], ["suivi", "Suivi"], ["ctrl", "Contrôle qualité"], ["bases", "Bases de données"]];
+type Tab = "calc" | "suivi" | "ctrl" | "polices" | "bases";
+const TABS: ReadonlyArray<[Tab, string]> = [["calc", "Régulariser"], ["suivi", "Suivi"], ["ctrl", "Contrôle qualité"], ["polices", "Polices non retrouvées"], ["bases", "Bases de données"]];
 
-/** CAAT Régul 10 % : quatre onglets (Régulariser, Suivi, Contrôle qualité, Bases de données). */
-export function RegulApp({ overview, isAdmin, canEdit, canExport }: Readonly<{ overview: RegulOverview; isAdmin: boolean; canEdit: boolean; canExport: boolean }>): React.JSX.Element {
+/** CAAT Régul 10 % : cinq onglets (Régulariser, Suivi, Contrôle qualité, Polices non retrouvées, Bases de données). */
+export function RegulApp({ overview, isAdmin, canEdit, canExport, policesSlot, initialTab }: Readonly<{ overview: RegulOverview; isAdmin: boolean; canEdit: boolean; canExport: boolean; policesSlot: React.ReactNode; initialTab?: "polices" }>): React.JSX.Element {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("calc");
+  const [tab, setTab] = useState<Tab>(initialTab ?? "calc");
   const [succ, setSucc] = useState("");
   const [nonce, setNonce] = useState(0);
+  const policesLoaded = initialTab === "polices";
   const { index, sin, saved } = overview;
   const total = Object.values(index?.lignes ?? {}).reduce((a, b) => a + b, 0);
   const histCount = Object.values(index?.faits ?? {}).reduce((a, m) => a + Object.keys(m).length, 0);
@@ -37,7 +38,10 @@ export function RegulApp({ overview, isAdmin, canEdit, canExport }: Readonly<{ o
       </div>
       <div className="flex flex-wrap gap-1" role="group">
         {TABS.map(([key, label]) => (
-          <button key={key} type="button" aria-pressed={tab === key} onClick={() => setTab(key)} className={cn("rounded-md border px-3 py-1.5 text-sm", tab === key && "bg-primary text-primary-foreground")}>
+          <button key={key} type="button" aria-pressed={tab === key} onClick={() => {
+              setTab(key);
+              if (key === "polices" && !policesLoaded) router.push("/regul?onglet=polices");
+            }} className={cn("rounded-md border px-3 py-1.5 text-sm", tab === key && "bg-primary text-primary-foreground")}>
             {label}
           </button>
         ))}
@@ -57,6 +61,7 @@ export function RegulApp({ overview, isAdmin, canEdit, canExport }: Readonly<{ o
         />
       ) : null}
       {tab === "ctrl" ? <RegulCtrl index={index} saved={saved} /> : null}
+      <div hidden={tab !== "polices"}>{policesSlot}</div>
       {tab === "bases" ? <RegulBases index={index} sin={sin} isAdmin={isAdmin} onSaved={() => router.refresh()} /> : null}
     </div>
   );
