@@ -70,6 +70,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: "/partenaires", label: "Partenaires", icon: "partners", module: "PART" },
       { href: "/facturation", label: "Établir une facture", icon: "invoice", module: "FACT" },
       { href: "/avoirs", label: "Factures d'avoir", icon: "invoice", module: "FACT" },
+      { href: "/numerotation", label: "Registre de numérotation", icon: "invoice", module: "FACT" },
       { href: "/caar", label: "CAAR production", icon: "caar", module: "CAAR" },
       { href: "/bdg", label: "BDG débours et frais", icon: "bdg", module: "BDG" },
     ],
