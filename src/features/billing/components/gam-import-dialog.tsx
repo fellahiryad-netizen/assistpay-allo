@@ -68,6 +68,7 @@ export function GamImportDialog({ today }: Readonly<{ today: string }>): React.J
 
   const blocked = !preview || preview.unknown.length > 0 || (preview.fileTotalHt !== null && !preview.controlOk) || preview.nbConv + preview.nbTakaful === 0;
   const idOf = (kind: GamCreated["kind"]): string | undefined => created?.find((item) => item.kind === kind)?.id;
+  const printHref = `/imprimer/factures?ids=${[idOf("CONV"), idOf("TAKAFUL")].filter(Boolean).join(",")}`;
   const detailHref = created ? `/api/bdg/gam-detail?${[idOf("CONV") ? `conv=${idOf("CONV")}` : "", idOf("TAKAFUL") ? `takaful=${idOf("TAKAFUL")}` : ""].filter(Boolean).join("&")}` : "";
 
   return (
@@ -111,9 +112,20 @@ export function GamImportDialog({ today }: Readonly<{ today: string }>): React.J
                 </li>
               ))}
             </ul>
-            <a href={detailHref} className={buttonVariants({ variant: "outline" })}>
-              Télécharger le détail (Excel : CONV et TAKAFUL)
-            </a>
+            <div className="rounded-md border p-3">
+              <p className="mb-2 text-sm font-semibold">Dossier final : factures globales + détail des dossiers (Conventionnelle puis Takaful)</p>
+              <div className="flex flex-wrap gap-2">
+                <Link href={`${printHref}&entete=papier`} target="_blank" className={buttonVariants()}>
+                  Imprimer sur papier à en-tête
+                </Link>
+                <Link href={`${printHref}&entete=charte`} target="_blank" className={buttonVariants({ variant: "outline" })}>
+                  Imprimer avec la charte (logo)
+                </Link>
+                <a href={detailHref} className={buttonVariants({ variant: "outline" })}>
+                  Détail en Excel (CONV et TAKAFUL)
+                </a>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
