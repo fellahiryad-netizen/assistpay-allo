@@ -1,3 +1,4 @@
+import { db } from "@/lib/db";
 import { readWorkbook } from "@/lib/spreadsheet";
 import { requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
@@ -76,7 +77,8 @@ export async function previewGamImport(actor: AuthUser, bytes: Uint8Array): Prom
 /**
  * Crée les deux factures globales BDG GAM (Conventionnelle et Takaful) à partir du fichier système, avec le détail des dossiers.
  * Refus si un N° de sinistre n'est ni à 10 ni à 12 chiffres ou si le total ne correspond pas à celui du fichier.
- * La garde anti-doublon (même client, période et produit) de l'enregistrement s'applique à chacune des factures.
+ * Garde anti-doublon propre à l'import : refus si une facture du même type (Conventionnelle ou Takaful) existe déjà pour la même période,
+ * avant d'en créer aucune (la garde de saveDraft ne couvre pas ces préréglages, sans succursale).
  */
 export async function applyGamImport(actor: AuthUser, bytes: Uint8Array, options: GamImportOptions): Promise<ActionResult<GamCreated[]>> {
   const guard = requireAccess(actor, "FACT", "EDIT");
@@ -91,6 +93,13 @@ export async function applyGamImport(actor: AuthUser, bytes: Uint8Array, options
     { kind: "CONV", preset: "g_bdgab_c", lines: data.conv },
     { kind: "TAKAFUL", preset: "g_bdgab_t", lines: data.takaful },
   ];
+  const existing: string[] = [];
+  for (const entry of kinds) {
+    if (entry.lines.length === 0) continue;
+    const docs = await db.issuedInvoice.findMany({ where: { AND: [{ payload: { path: ["preset"], equals: entry.preset } }, { payload: { path: ["per"], equals: options.per } }] }, select: { num: true } });
+    if (docs.length) existing.push(`${entry.kind === "CONV" ? "Conventionnelle" : "Takaful"} ${docs.map((doc) => doc.num).join(", ")}`);
+  }
+  if (existing.length) return fail(`Une facture globale existe déjà pour ${periodLabel(options.per)} : ${existing.join(" ; ")}. Aucune facture n'a été créée ; supprimez l'existante ou changez la période.`, "CONFLICT");
   const created: GamCreated[] = [];
   for (const entry of kinds) {
     if (entry.lines.length === 0) continue;
