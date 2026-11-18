@@ -292,7 +292,12 @@ export function InvoiceDocument({ draft, entete }: Readonly<{ draft: BillingDraf
               {draft.perTxt ? ` · ${draft.perTxt}` : ""}
             </div>
           </div>
-          <table className="fx-t wide">
+          <table className="fx-t wide fx-annexe">
+            <colgroup>
+              {[4, 9, 9, 12, 10, 9, 9, 10.5, 9, 8.5, 10].map((width, index) => (
+                <col key={index} style={{ width: `${width}%` }} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
                 {["N", "N° dossier", "Matricule", "Nom client", "Agence", "Produit", "Date", "N° sinistre", "Prix HT", "TVA", "TTC"].map((label) => (
