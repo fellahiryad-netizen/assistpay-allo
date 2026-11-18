@@ -46,7 +46,7 @@ export default async function AdvancesPage({
           </a>
         ) : null}
       </div>
-      <AdvanceGrid table={table} />
+      <AdvanceGrid table={table} deleteMode={user.isAdmin ? "direct" : can(user, "A_SUPPR", "EDIT") ? "request" : "none"} />
     </>
   );
 }

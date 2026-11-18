@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMemo, useState, useTransition } from "react";
+import { requestDeletionAction } from "@/app/actions/deletion-actions";
+import { setInvoiceStatusAction } from "@/app/actions/invoice-actions";
 import { cn } from "@/utils/cn";
 import { formatDA } from "@/utils/format";
 import type { AdvanceCell, AdvanceTable } from "@/features/partners/services/advance-table";
@@ -22,7 +25,31 @@ const TONE: Record<AdvanceCell["state"], string> = {
 const LEGEND: ReadonlyArray<[AdvanceCell["state"], string]> = [["regle", "Réglé"], ["partiel", "Réglé en partie"], ["attente", "En attente"], ["zero", "Ligne créée, montant à saisir"]];
 
 /** Tableau de paiement dynamique : succursale × mois, trois lectures (facturé, encaissé, reste) et détail au clic. */
-export function AdvanceGrid({ table }: Readonly<{ table: AdvanceTable }>): React.JSX.Element {
+export function AdvanceGrid({ table, deleteMode = "none" }: Readonly<{ table: AdvanceTable; deleteMode?: "direct" | "request" | "none" }>): React.JSX.Element {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [message, setMessage] = useState<string | null>(null);
+
+  /** Supprime une facture du détail ; une facture réglée est d'abord remise en attente (après confirmation). */
+  function remove(inv: { id: string; status: string; libelle: string }): void {
+    const settled = inv.status === "REGLE";
+    const motif = window.prompt(
+      `${deleteMode === "direct" ? "Supprimer" : "Demander la suppression de"} « ${inv.libelle} » ?${settled ? "\nCette facture est réglée : elle sera remise en attente puis supprimée." : ""}${deleteMode === "direct" ? "\nAction définitive." : ""}\n\nMotif :`,
+    );
+    if (motif === null) return;
+    setMessage(null);
+    startTransition(async () => {
+      if (settled) {
+        const back = await setInvoiceStatusAction({ id: inv.id, status: "EN_ATTENTE" });
+        if (!back.success) return setMessage(back.error);
+      }
+      const result = await requestDeletionAction({ kind: "facture", id: inv.id, motif });
+      if (!result.success) return setMessage(result.error);
+      setMessage(result.data.done ? "Facture supprimée." : "Demande envoyée : un administrateur doit la valider.");
+      setSelected(null);
+      router.refresh();
+    });
+  }
   const [mode, setMode] = useState<Mode>("billed");
   const [selected, setSelected] = useState<Selected>(null);
   const [only, setOnly] = useState<"" | "attente" | "zero">("");
@@ -166,6 +193,11 @@ export function AdvanceGrid({ table }: Readonly<{ table: AdvanceTable }>): React
                     <Link href={`/factures/${inv.id}/modifier`} className="ml-3 text-primary underline">
                       Modifier
                     </Link>
+                    {deleteMode !== "none" ? (
+                      <button type="button" disabled={pending} onClick={() => remove(inv)} className="ml-3 text-destructive underline disabled:opacity-50">
+                        {deleteMode === "direct" ? "Supprimer" : "Demander la suppression"}
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))}
@@ -173,6 +205,7 @@ export function AdvanceGrid({ table }: Readonly<{ table: AdvanceTable }>): React
           </table>
         </div>
       ) : null}
+      {message ? <p role="alert" className="text-sm font-medium">{message}</p> : null}
     </div>
   );
 }
