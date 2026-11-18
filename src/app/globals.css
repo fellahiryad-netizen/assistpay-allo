@@ -184,6 +184,7 @@
   /* Annexe du détail des dossiers BDG GAM : colonnes fixes, 11 colonnes lisibles sur A4. */
   .fx-page .fx-t.fx-annexe { table-layout: fixed; }
   .fx-page .fx-t.fx-annexe td { font-size: 9px; padding: 4px 3px; overflow-wrap: anywhere; }
+  .fx-page .fx-t.fx-annexe th.fx-th-amt { font-size: 10px; font-weight: 800; letter-spacing: 0; }
   .fx-page .fx-t.fx-annexe td:nth-child(2),
   .fx-page .fx-t.fx-annexe td:nth-child(7),
   .fx-page .fx-t.fx-annexe td:nth-child(8) { white-space: nowrap; }

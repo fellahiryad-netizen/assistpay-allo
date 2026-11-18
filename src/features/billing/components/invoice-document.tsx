@@ -300,8 +300,10 @@ export function InvoiceDocument({ draft, entete }: Readonly<{ draft: BillingDraf
             </colgroup>
             <thead>
               <tr>
-                {["N", "N° dossier", "Matricule", "Nom client", "Agence", "Produit", "Date", "N° sinistre", "Prix HT", "TVA", "TTC"].map((label) => (
-                  <th key={label}>{label}</th>
+                {["N", "N° dossier", "Matricule", "Nom client", "Agence", "Produit", "Date", "N° sinistre", "Prix HT", "TVA 19 %", "Prix TTC"].map((label) => (
+                  <th key={label} className={label.endsWith("HT") || label.endsWith("TTC") || label.startsWith("TVA") ? "fx-th-amt" : undefined}>
+                    {label}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -322,7 +324,7 @@ export function InvoiceDocument({ draft, entete }: Readonly<{ draft: BillingDraf
                 </tr>
               ))}
               <tr className="sum">
-                <td colSpan={8}>Total : {lines.length} dossiers</td>
+                <td colSpan={8}>Total : {lines.length} dossiers (HT, TVA, TTC)</td>
                 <td className="n">{money(ht)}</td>
                 <td className="n">{money(tva)}</td>
                 <td className="n">{money(r2(ht + tva))}</td>
