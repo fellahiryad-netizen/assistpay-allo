@@ -10,7 +10,7 @@ import { logAction } from "@/features/journal/services/journal-service";
 import { checkHtCeiling, validateAvoirDate } from "@/features/avoirs/lib/avoir-guards";
 import { avoirAmounts, manualAvoirAmounts, nextAvoirNumber, remainingAvoirable, type AvoirAmounts } from "@/features/avoirs/lib/avoir-calc";
 import { AVOIR_MOTIF_LABELS, type CancelAvoirInput, type CreateAvoirInput } from "@/features/avoirs/schemas";
-import type { AvoirableInvoiceDTO, AvoirDTO, AvoirPrintData, AvoirTrackingDTO } from "@/features/avoirs/types";
+import type { AvoirableInvoiceDTO, AvoirBadgeDTO, AvoirDTO, AvoirPrintData, AvoirTrackingDTO } from "@/features/avoirs/types";
 import { fail, ok, type ActionResult } from "@/types";
 import { amountInWords } from "@/utils/amounts";
 import { toIsoDate, todayIso } from "@/utils/dates";
@@ -142,6 +142,39 @@ export async function getAvoirTrackingForInvoice(actor: AuthUser, invoiceLegacyI
   } catch (error) {
     console.error("[avoirs] suivi impossible :", error);
     return fail("Le suivi des avoirs n'a pas pu être chargé.", "DATABASE");
+  }
+}
+
+/**
+ * Avoirs rattachés aux lignes du suivi données (liste des factures) : id de la ligne (legacyId) → avoirs actifs, total et net.
+ * Ne renvoie que les lignes qui ont au moins un avoir actif. Lecture seule.
+ */
+export async function listAvoirBadges(actor: AuthUser, invoiceLegacyIds: readonly string[]): Promise<ActionResult<Record<string, AvoirBadgeDTO>>> {
+  const guard = requireAccess(actor, "FACT");
+  if (!guard.success) return guard;
+  if (invoiceLegacyIds.length === 0) return ok({});
+  try {
+    const origins = await db.issuedInvoice.findMany({ where: { invoiceLegacyId: { in: [...invoiceLegacyIds] } }, select: { id: true, num: true, ttc: true, invoiceLegacyId: true, payload: true } });
+    if (origins.length === 0) return ok({});
+    const avoirRows = await db.issuedInvoice.findMany({ where: { payload: { path: ["kind"], equals: "avoir" } }, select: { id: true, num: true, ttc: true, payload: true }, orderBy: [{ date: "desc" }, { num: "desc" }] });
+    const byOrigin = new Map<string, AvoirBadgeDTO["avoirs"]>();
+    for (const row of avoirRows) {
+      if (!isActive(row.payload)) continue;
+      const originId = originOf(row.payload);
+      byOrigin.set(originId, [...(byOrigin.get(originId) ?? []), { id: row.id, num: row.num, ttc: Math.abs(decimalToNumber(row.ttc) ?? 0) }]);
+    }
+    const result: Record<string, AvoirBadgeDTO> = {};
+    for (const origin of origins) {
+      const avoirs = byOrigin.get(origin.id);
+      if (!avoirs?.length || !origin.invoiceLegacyId || isAvoir(origin.payload)) continue;
+      const total = Math.round(avoirs.reduce((sum, item) => sum + item.ttc, 0) * 100) / 100;
+      const ttc = decimalToNumber(origin.ttc) ?? 0;
+      result[origin.invoiceLegacyId] = { origineId: origin.id, avoirs, total, net: Math.round((ttc - total) * 100) / 100 };
+    }
+    return ok(result);
+  } catch (error) {
+    console.error("[avoirs] pastilles impossibles :", error);
+    return fail("Les avoirs n'ont pas pu être chargés.", "DATABASE");
   }
 }
 

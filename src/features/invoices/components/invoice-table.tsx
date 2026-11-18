@@ -11,6 +11,7 @@ import { MarkPaidDialog } from "@/features/invoices/components/mark-paid-dialog"
 import { useOptimisticInvoices } from "@/features/invoices/hooks/use-optimistic-invoices";
 import type { MarkPaidInput } from "@/features/invoices/schemas";
 import type { InvoiceDTO, SensKey } from "@/features/invoices/types";
+import type { AvoirBadgeDTO } from "@/features/avoirs/types";
 import { daysBetween } from "@/utils/dates";
 import { formatDA, formatDate } from "@/utils/format";
 
@@ -40,6 +41,8 @@ export interface InvoiceTableProps {
   printable?: Record<string, string>;
   /** id de la facture → virement cumulé qui l'a réglée. */
   cumulPaid?: Record<string, { date: string; montant: number; nb: number }>;
+  /** id de la facture → avoirs actifs rattachés. */
+  avoirs?: Record<string, AvoirBadgeDTO>;
   isAdmin?: boolean;
 }
 
@@ -47,7 +50,7 @@ export interface InvoiceTableProps {
  * Liste des factures (cartes sur mobile, tableau à partir de la tablette) avec règlement en un clic.
  * Le passage à « Réglé » est affiché immédiatement (useOptimistic) puis confirmé par le serveur.
  */
-export function InvoiceTable({ items, canEdit, today, showSens, printable = {}, cumulPaid = {}, isAdmin = false }: Readonly<InvoiceTableProps>): React.JSX.Element {
+export function InvoiceTable({ items, canEdit, today, showSens, printable = {}, cumulPaid = {}, avoirs = {}, isAdmin = false }: Readonly<InvoiceTableProps>): React.JSX.Element {
   const [optimisticItems, applyPatch] = useOptimisticInvoices(items);
   const [, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -83,6 +86,20 @@ export function InvoiceTable({ items, canEdit, today, showSens, printable = {}, 
       });
     });
   }
+
+  const avoirBadge = (id: string): React.JSX.Element | null => {
+    const info = avoirs[id];
+    return info ? (
+      <Link
+        href={`/avoirs?origine=${info.origineId}`}
+        className="mt-1 block rounded border border-destructive/50 bg-destructive/10 px-1.5 py-0.5 text-[11px] font-semibold leading-tight text-destructive hover:underline"
+        title={`Avoir${info.avoirs.length > 1 ? "s" : ""} : ${info.avoirs.map((item) => item.num).join(", ")}`}
+      >
+        Avoir {info.avoirs.map((item) => item.num).join(", ")} · −{formatDA(info.total)}
+        <span className="block font-normal">Net restant : {formatDA(info.net)}</span>
+      </Link>
+    ) : null;
+  };
 
   const cumulBadge = (id: string): React.JSX.Element | null => {
     const info = cumulPaid[id];
@@ -146,6 +163,7 @@ export function InvoiceTable({ items, canEdit, today, showSens, printable = {}, 
               <div className="flex flex-col items-end gap-1">
                 <StatusBadge status={invoice.status} />
                 {cumulBadge(invoice.id)}
+                {avoirBadge(invoice.id)}
               </div>
             </div>
             <div className="mt-2 flex items-end justify-between gap-2">
@@ -217,6 +235,7 @@ export function InvoiceTable({ items, canEdit, today, showSens, printable = {}, 
                   <TableCell>
                     <StatusBadge status={invoice.status} />
                     {cumulBadge(invoice.id)}
+                    {avoirBadge(invoice.id)}
                     {invoice.partiel ? <span className="mt-1 block text-xs font-semibold text-primary">partiel</span> : null}
                   </TableCell>
                   <TableCell className="max-w-28 truncate text-xs text-muted-foreground">{invoice.par || "—"}</TableCell>

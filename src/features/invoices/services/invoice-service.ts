@@ -25,6 +25,7 @@ import { fromIsoDate } from "@/utils/dates";
 import { cumulForAmount, cumulForInvoices } from "@/features/statement/services/cumul";
 import { findCombinations, type CumulPart } from "@/features/invoices/lib/cumul";
 import { formatDA } from "@/utils/format";
+import { listAvoirBadges } from "@/features/avoirs/services/avoir-service";
 import { classificationConditions, matchesSupplier } from "@/features/invoices/lib/classification";
 import { PARTNER_GROUPS } from "@/features/partners/services/partner-service";
 
@@ -222,6 +223,8 @@ export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promis
     const printable = await printableIds(actor, rows);
     const cumulInfos = await cumulForInvoices(rows.filter((row) => row.status === "REGLE").map((row) => row.legacyId));
     const cumulPaid = Object.fromEntries(rows.flatMap((row) => { const info = cumulInfos.get(row.legacyId); return info ? [[row.id, { date: info.date, montant: info.montant, nb: info.parts.length }] as const] : []; }));
+    const badges = await listAvoirBadges(actor, rows.map((row) => row.legacyId));
+    const avoirs = Object.fromEntries(rows.flatMap((row) => { const info = badges.success ? badges.data[row.legacyId] : undefined; return info ? [[row.id, info] as const] : []; }));
     return ok({
       items: rows.map(toInvoiceDTO),
       printable,
@@ -232,6 +235,7 @@ export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promis
       sumMontant: decimalToNumber(sum._sum.montant) ?? 0,
       cumul,
       cumulPaid,
+      avoirs,
       canEdit: { CREDIT: can(actor, "FCLI", "EDIT"), DEBIT: can(actor, "FFOUR", "EDIT") },
     });
   } catch (error) {

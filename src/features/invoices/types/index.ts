@@ -1,3 +1,4 @@
+import type { AvoirBadgeDTO } from "@/features/avoirs/types";
 /** Sens comptable : crédit = facture partenaire (encaissement), débit = facture fournisseur (décaissement). */
 export const SENS_KEYS = ["CREDIT", "DEBIT"] as const;
 export type SensKey = (typeof SENS_KEYS)[number];
@@ -69,6 +70,8 @@ export interface InvoiceListResult {
   cumul: string[] | null;
   /** Virement cumulé qui a réglé la facture (id de la ligne → date, montant du virement, nombre de factures). */
   cumulPaid: Record<string, { date: string; montant: number; nb: number }>;
+  /** Avoirs rattachés aux factures de la page (id de la ligne → avoirs actifs, total, net). */
+  avoirs: Record<string, AvoirBadgeDTO>;
   /** Factures émises (module Facturation) liées aux lignes de la page : id de la ligne → id de la facture imprimable. */
   printable: Record<string, string>;
   /** Peut-on modifier les factures de chaque sens ? */

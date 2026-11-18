@@ -74,3 +74,13 @@ export interface AvoirTrackingDTO {
   /** Facture d'origine moins avoirs actifs. */
   netRestant: number;
 }
+
+/** Avoirs actifs d'une facture, pour la pastille de la liste des factures. */
+export interface AvoirBadgeDTO {
+  origineId: string;
+  avoirs: Array<{ id: string; num: string; ttc: number }>;
+  /** Total des avoirs actifs (valeur positive). */
+  total: number;
+  /** Facture d'origine moins avoirs actifs. */
+  net: number;
+}
