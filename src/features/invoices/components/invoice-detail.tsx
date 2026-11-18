@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AvoirsOfInvoice } from "@/features/avoirs/components/avoirs-of-invoice";
 import { InvoiceDpActions, type InvoiceDpItem } from "@/features/payment-requests/components/invoice-dp-actions";
 import { InvoiceStatusActions } from "@/features/invoices/components/invoice-status-actions";
 import {
@@ -98,6 +99,7 @@ export function InvoiceDetail({
             </div>
           ))}
         </dl>
+        {invoice.sens === "CREDIT" ? <AvoirsOfInvoice invoiceLegacyId={invoice.legacyId} /> : null}
       </CardContent>
     </Card>
   );

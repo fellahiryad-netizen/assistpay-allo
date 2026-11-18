@@ -9,13 +9,19 @@ import type { ActionResult } from "@/types";
 /** Établit un avoir sur une facture déjà émise. */
 export async function createAvoirAction(input: CreateAvoirInput): Promise<ActionResult<{ id: string; num: string }>> {
   const result = await runAction(createAvoirSchema, input, createAvoir);
-  if (result.success) revalidatePath("/avoirs", "layout");
+  if (result.success) {
+    revalidatePath("/avoirs", "layout");
+    revalidatePath("/factures", "layout");
+  }
   return result;
 }
 
 /** Annule un avoir (le numéro reste dans la série). */
 export async function cancelAvoirAction(input: CancelAvoirInput): Promise<ActionResult<{ num: string }>> {
   const result = await runAction(cancelAvoirSchema, input, cancelAvoir);
-  if (result.success) revalidatePath("/avoirs", "layout");
+  if (result.success) {
+    revalidatePath("/avoirs", "layout");
+    revalidatePath("/factures", "layout");
+  }
   return result;
 }

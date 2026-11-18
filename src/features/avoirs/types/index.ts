@@ -4,10 +4,13 @@ export interface AvoirableInvoiceDTO {
   num: string;
   num2: string;
   client: string;
+  clientLabel: string;
   succ: string;
   date: string | null;
   objet: string;
   perTxt: string;
+  ht: number;
+  tva: number;
   ttc: number;
   /** Total déjà passé en avoir (avoirs actifs, valeur positive). */
   avoirs: number;
@@ -26,8 +29,14 @@ export interface AvoirDTO {
   date: string | null;
   origineNum: string;
   origineId: string;
-  /** Montant TTC de l'avoir, en valeur positive. */
+  /** Montant TTC de la facture d'origine. */
+  origineTtc: number;
+  /** Montants de l'avoir, en valeur positive. */
+  ht: number;
+  tva: number;
   ttc: number;
+  /** Façon dont le montant a été établi : total, partiel (TTC réparti) ou libre. */
+  mode: string;
   motif: string;
   annule: boolean;
   suite: string;
@@ -49,4 +58,17 @@ export interface AvoirPrintData {
   netRestant: number;
   lettres: string;
   emAi: string;
+}
+
+/** Suivi des avoirs rattachés à une facture établie (facture d'origine). */
+export interface AvoirTrackingDTO {
+  origineId: string;
+  origineNum: string;
+  origineTtc: number;
+  /** Avoirs actifs et annulés, du plus récent au plus ancien. */
+  avoirs: Array<{ id: string; num: string; date: string | null; ttc: number; motif: string; annule: boolean }>;
+  /** Total des avoirs actifs (valeur positive). */
+  totalAvoirs: number;
+  /** Facture d'origine moins avoirs actifs. */
+  netRestant: number;
 }

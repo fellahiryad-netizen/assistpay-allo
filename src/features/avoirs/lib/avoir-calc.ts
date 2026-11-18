@@ -22,6 +22,36 @@ export function avoirAmounts(origin: AvoirAmounts, mode: "total" | "partiel", tt
   return { ht, tva: round2(ttc - ht), ttc };
 }
 
+/** Taux de TVA appliqué aux avoirs à montant libre (19 %, identique à celui des factures). */
+export const AVOIR_TVA_RATE = 0.19;
+
+/** Montants d'un avoir à montant libre, avec le contrôle d'arrondi. */
+export interface ManualAvoirAmounts extends AvoirAmounts {
+  /** Écart (en DA) entre la TVA retenue et HT × 19 % arrondi : 0 si le calcul tombe juste, ±0,01 au plus quand le TTC est saisi. */
+  ecartArrondi: number;
+  /** Vrai si HT + TVA = TTC au centime et si l'écart d'arrondi ne dépasse pas 0,01 DA. */
+  coherent: boolean;
+}
+
+/**
+ * Montants d'un avoir à montant libre.
+ * Saisie HT : TVA = HT × 19 % arrondie, TTC = HT + TVA.
+ * Saisie TTC : HT = TTC / 1,19 arrondi, TVA = TTC − HT (le TTC saisi est conservé tel quel ; l'écart éventuel d'un centime est signalé).
+ */
+export function manualAvoirAmounts(saisie: "ht" | "ttc", montant: number): ManualAvoirAmounts {
+  if (saisie === "ht") {
+    const ht = round2(montant);
+    const tva = round2(ht * AVOIR_TVA_RATE);
+    const ttc = round2(ht + tva);
+    return { ht, tva, ttc, ecartArrondi: 0, coherent: Math.round(ht * 100) + Math.round(tva * 100) === Math.round(ttc * 100) };
+  }
+  const ttc = round2(montant);
+  const ht = round2(ttc / (1 + AVOIR_TVA_RATE));
+  const tva = round2(ttc - ht);
+  const ecartArrondi = round2(tva - round2(ht * AVOIR_TVA_RATE));
+  return { ht, tva, ttc, ecartArrondi, coherent: Math.abs(ecartArrondi) <= 0.01 && Math.round(ht * 100) + Math.round(tva * 100) === Math.round(ttc * 100) };
+}
+
 /** Reste que l'on peut encore passer en avoir sur une facture. */
 export function remainingAvoirable(originTtc: number, avoirsTtc: readonly number[]): number {
   return Math.max(0, round2(originTtc - avoirsTtc.reduce((sum, value) => sum + Math.abs(value), 0)));

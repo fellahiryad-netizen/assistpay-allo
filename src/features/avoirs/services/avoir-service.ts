@@ -7,9 +7,9 @@ import { CLIENT_LABELS } from "@/features/billing/config";
 import { getControlSettings } from "@/features/settings/services/settings-service";
 import { decimalToNumber } from "@/features/invoices/services/invoice-mapper";
 import { logAction } from "@/features/journal/services/journal-service";
-import { avoirAmounts, nextAvoirNumber, remainingAvoirable } from "@/features/avoirs/lib/avoir-calc";
+import { avoirAmounts, manualAvoirAmounts, nextAvoirNumber, remainingAvoirable, type AvoirAmounts } from "@/features/avoirs/lib/avoir-calc";
 import { AVOIR_MOTIF_LABELS, type CancelAvoirInput, type CreateAvoirInput } from "@/features/avoirs/schemas";
-import type { AvoirableInvoiceDTO, AvoirDTO, AvoirPrintData } from "@/features/avoirs/types";
+import type { AvoirableInvoiceDTO, AvoirDTO, AvoirPrintData, AvoirTrackingDTO } from "@/features/avoirs/types";
 import { fail, ok, type ActionResult } from "@/types";
 import { amountInWords } from "@/utils/amounts";
 import { toIsoDate, todayIso } from "@/utils/dates";
@@ -58,10 +58,13 @@ export async function listAvoirable(actor: AuthUser): Promise<ActionResult<Avoir
           num: doc.num,
           num2: str(payload.num2),
           client: doc.client,
+          clientLabel: CLIENT_LABELS[doc.client] ?? doc.client,
           succ: str(payload.succ),
           date: toIsoDate(doc.date),
           objet: doc.objet,
           perTxt: str(payload.perTxt),
+          ht: decimalToNumber(doc.ht) ?? 0,
+          tva: decimalToNumber(doc.tva) ?? 0,
           ttc,
           avoirs: Math.round(used.reduce((sum, value) => sum + Math.abs(value), 0) * 100) / 100,
           reste: remainingAvoirable(ttc, used),
@@ -89,13 +92,56 @@ export async function listAvoirs(actor: AuthUser): Promise<ActionResult<AvoirDTO
           date: toIsoDate(doc.date),
           origineNum: str(avoir.origineNum),
           origineId: str(avoir.origineId),
+          origineTtc: Number(avoir.origineTtc) || 0,
+          ht: Math.abs(decimalToNumber(doc.ht) ?? 0),
+          tva: Math.abs(decimalToNumber(doc.tva) ?? 0),
           ttc: Math.abs(decimalToNumber(doc.ttc) ?? 0),
+          mode: str(avoir.mode),
           motif: str(avoir.motifTexte),
           annule: !isActive(doc.payload),
           suite: str(avoir.suite),
         };
       }),
   );
+}
+
+/**
+ * Suivi des avoirs d'une facture établie, retrouvée par la ligne du suivi à laquelle elle se rattache (fiche facture).
+ * Renvoie null s'il n'y a pas de facture établie liée ou pas d'avoir : la fiche n'affiche alors rien. Lecture seule.
+ */
+export async function getAvoirTrackingForInvoice(actor: AuthUser, invoiceLegacyId: string): Promise<ActionResult<AvoirTrackingDTO | null>> {
+  const guard = requireAccess(actor, "FACT");
+  if (!guard.success) return guard;
+  try {
+    const origin = await db.issuedInvoice.findFirst({ where: { invoiceLegacyId } });
+    if (!origin || isAvoir(origin.payload)) return ok(null);
+    const rows = await db.issuedInvoice.findMany({
+      where: { AND: [{ payload: { path: ["kind"], equals: "avoir" } }, { payload: { path: ["avoir", "origineId"], equals: origin.id } }] },
+      orderBy: [{ date: "desc" }, { num: "desc" }],
+    });
+    if (rows.length === 0) return ok(null);
+    const originTtc = decimalToNumber(origin.ttc) ?? 0;
+    const avoirs = rows.map((row) => ({
+      id: row.id,
+      num: row.num,
+      date: toIsoDate(row.date),
+      ttc: Math.abs(decimalToNumber(row.ttc) ?? 0),
+      motif: str(obj(obj(row.payload).avoir as Prisma.JsonValue).motifTexte),
+      annule: !isActive(row.payload),
+    }));
+    const totalAvoirs = Math.round(avoirs.filter((item) => !item.annule).reduce((sum, item) => sum + item.ttc, 0) * 100) / 100;
+    return ok({
+      origineId: origin.id,
+      origineNum: [origin.num, str(obj(origin.payload).num2)].filter(Boolean).join(" / "),
+      origineTtc: originTtc,
+      avoirs,
+      totalAvoirs,
+      netRestant: Math.round((originTtc - totalAvoirs) * 100) / 100,
+    });
+  } catch (error) {
+    console.error("[avoirs] suivi impossible :", error);
+    return fail("Le suivi des avoirs n'a pas pu être chargé.", "DATABASE");
+  }
 }
 
 /** Établit un avoir sur une facture déjà émise (total ou partiel). */
@@ -118,10 +164,21 @@ export async function createAvoir(actor: AuthUser, input: CreateAvoirInput): Pro
         const docs = await tx.issuedInvoice.findMany({ select: { id: true, num: true, ttc: true, payload: true } });
         const used = docs.filter((doc) => isAvoir(doc.payload) && isActive(doc.payload) && originOf(doc.payload) === origin.id).map((doc) => decimalToNumber(doc.ttc) ?? 0);
         const reste = remainingAvoirable(originAmounts.ttc, used);
-        const amounts = avoirAmounts({ ...originAmounts, ttc: originAmounts.ttc }, input.mode, input.mode === "total" ? undefined : input.ttc);
-        const wanted = input.mode === "total" ? reste : amounts.ttc;
         if (reste <= 0.005) throw new AvoirError("Cette facture est déjà entièrement couverte par des avoirs.");
-        if (wanted > reste + 0.005) throw new AvoirError(`Le montant dépasse le reste avoirable de cette facture (${formatDA(reste)}).`);
+        let amounts: AvoirAmounts;
+        let ecartArrondi = 0;
+        if (input.mode === "manuel") {
+          if (input.saisie === undefined || input.montant === undefined) throw new AvoirError("Indiquez le montant de l'avoir (HT ou TTC).");
+          const manual = manualAvoirAmounts(input.saisie, input.montant);
+          if (!manual.coherent) throw new AvoirError("Contrôle d'arrondi : HT + TVA ne correspond pas au TTC. Vérifiez le montant saisi.");
+          ecartArrondi = manual.ecartArrondi;
+          amounts = { ht: manual.ht, tva: manual.tva, ttc: manual.ttc };
+        } else {
+          amounts = avoirAmounts(originAmounts, input.mode, input.mode === "total" ? undefined : input.ttc);
+        }
+        const wanted = input.mode === "total" ? reste : amounts.ttc;
+        if (!(wanted > 0)) throw new AvoirError("Le montant de l'avoir doit être supérieur à zéro.");
+        if (wanted > reste + 0.005) throw new AvoirError(`Le montant (${formatDA(wanted)} TTC) dépasse le reste avoirable de cette facture (${formatDA(reste)}).`);
         // Avoir « total » : si des avoirs partiels existent déjà, il couvre le reste de la facture.
         const final = input.mode === "total" && used.length ? avoirAmounts(originAmounts, "partiel", reste) : amounts;
         const num = nextAvoirNumber(docs.filter((doc) => isAvoir(doc.payload)).map((doc) => doc.num), year);
@@ -147,6 +204,8 @@ export async function createAvoir(actor: AuthUser, input: CreateAvoirInput): Pro
             origineTva: originAmounts.tva,
             origineTtc: originAmounts.ttc,
             mode: input.mode,
+            saisie: input.mode === "manuel" ? input.saisie : null,
+            ecartArrondi,
             categorie: input.categorie,
             motifTexte,
             suite: input.suite,
