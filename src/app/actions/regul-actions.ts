@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { runAction } from "@/app/actions/action-helpers";
 import { REGUL_SUCCURSALES } from "@/features/regul/services/regul-engine";
-import { saveFichiers } from "@/features/regul/services/regul-polices-store";
+import { saveFichiers, type FichiersSaved } from "@/features/regul/services/regul-polices-store";
 import type { RegulFichier } from "@/features/regul/services/regul-polices";
 import { regulOverview, regulWorkData, saveBase, saveIndex, saveResults, saveSaisie, saveSinistres, type RegulOverview, type RegulWorkData } from "@/features/regul/services/regul-store";
 import { fail, type ActionResult } from "@/types";
@@ -76,18 +76,26 @@ export async function saveSinistresAction(input: { keys: string[]; jusqua: strin
   return runAction(z.object({ keys: z.array(z.string().max(120)).max(200000), jusqua: z.string().max(12), dossiers: z.number().int() }), input, (actor, d) => saveSinistres(actor, d));
 }
 
-/** Conserve les polices du fichier de régularisation analysé (un mois) ; recharger le même mois remplace la version précédente. */
-export async function saveFichierAction(input: { succursale: string; fichier: RegulFichier }): Promise<ActionResult<{ mois: number; lignes: number }>> {
+/**
+ * Conserve les polices du fichier de régularisation analysé (un mois). Fusion par nom de fichier avec l'enregistrement du mois :
+ * les fichiers rechargés sont remplacés, les autres conservés. `suite` : lot suivant d'un même chargement (envoi découpé en lots).
+ */
+export async function saveFichierAction(input: { succursale: string; fichier: RegulFichier; suite?: boolean }): Promise<ActionResult<FichiersSaved>> {
   const row = z.tuple([z.number().int().min(0), z.string().max(80), z.string().max(80), z.number().int().min(0).max(60), num, z.union([z.literal(0), z.literal(1), z.literal(2)])]);
-  const fichier = z.object({
-    succ,
-    mois: z.number().int().min(1).max(12),
-    annee: z.number().int().min(2020).max(2100),
-    maj: z.string().max(20),
-    fichiers: z.array(z.string().max(200)).max(40),
-    agences: z.record(z.string(), z.string().max(200)),
-    produits: z.array(z.string().max(80)).max(60),
-    rows: z.array(row).max(60000),
-  });
-  return runAction(z.object({ succursale: succ, fichier }), input, (actor, d) => (d.fichier.succ !== d.succursale ? Promise.resolve(fail<{ mois: number; lignes: number }>("Succursale incohérente.", "VALIDATION")) : saveFichiers(actor, [d.fichier])));
+  const fichier = z
+    .object({
+      succ,
+      mois: z.number().int().min(1).max(12),
+      annee: z.number().int().min(2020).max(2100),
+      maj: z.string().max(20),
+      fichiers: z.array(z.string().max(200)).max(40),
+      agences: z.record(z.string(), z.string().max(200)),
+      produits: z.array(z.string().max(80)).max(60),
+      rows: z.array(row).max(30000),
+      origine: z.array(z.number().int().min(0).max(40)).max(30000).optional(),
+    })
+    .refine((f) => !f.origine || f.origine.length === f.rows.length, { message: "Origine des lignes incohérente." });
+  return runAction(z.object({ succursale: succ, fichier, suite: z.boolean().optional() }), input, (actor, d) =>
+    d.fichier.succ !== d.succursale ? Promise.resolve(fail<FichiersSaved>("Succursale incohérente.", "VALIDATION")) : saveFichiers(actor, [d.fichier], { suite: d.suite }),
+  );
 }

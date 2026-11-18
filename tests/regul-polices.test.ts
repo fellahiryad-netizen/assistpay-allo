@@ -130,3 +130,98 @@ describe("export et paramètres", () => {
     expect(parsePolicesQuery({ succ: "ORAN", agence: "100", statut: "ANNULEE", mois: "7" })).toEqual({ succ: "ORAN", agence: 100, statut: "ANNULEE", mois: 7 });
   });
 });
+
+import { decouperFichier, fusionnerFichier, lireFichier } from "@/features/regul/services/regul-polices";
+
+describe("croiserPolices : cas limites", () => {
+  const imm = (n: string): string => `${n}-116-16`;
+  const run = (b: BaseRow[], f: RegulFichier[]) => croiserPolices("ORAN", b, f, null, {}, { mois: [7] });
+
+  it("une régularisation antérieure seule n'est pas une report", () => {
+    const r = run([base(7, 100, "P1/0", imm("111111"))], [fichier(7, [[100, "P9", imm("999999"), 0, 1, 0]]), fichier(6, [[100, "P1", imm("111111"), 0, 500, 0]])]);
+    expect(r.absentes[0]?.statut).toBe("INTROUVABLE");
+  });
+  it("flotte mensuelle : présente chaque mois au consolidé et en régul sauf ce mois, introuvable", () => {
+    const r = run([base(7, 100, "F1/0", imm("123123")), base(8, 100, "F1/0", imm("123123"))], [fichier(7, [[100, "P9", imm("999999"), 0, 1, 0]]), fichier(8, [[100, "F1", imm("123123"), 0, 500, 0]])]);
+    expect(r.absentes[0]?.statut).toBe("INTROUVABLE");
+  });
+  it("réapparition au consolidé avec une autre part assisteur : reportée probable", () => {
+    const r = run([base(7, 100, "P3/0", imm("333333")), base(9, 100, "P3/0", imm("333333"), 1000, 700)], [fichier(7, [[100, "P9", imm("999999"), 0, 1, 0]])]);
+    expect(r.absentes[0]?.statut).toBe("REPORTEE_PROBABLE");
+    expect(compterParAgence(r)[0]?.reporteesProbables).toBe(1);
+    expect(filtrerStatut(r, "REPORTEE_PROBABLE").absentes).toHaveLength(1);
+    expect(parsePolicesQuery({ statut: "REPORTEE_PROBABLE" }).statut).toBe("REPORTEE_PROBABLE");
+  });
+  it("changement de garantie (+300 / -100, produits différents) : introuvable avec mention, pas annulée", () => {
+    const b: BaseRow[] = [[7, 100, "G1/0", imm("555000"), 1, 300, 150], [7, 100, "G1/0", imm("555000"), 2, -100, -50]];
+    const r = run(b, [fichier(7, [[100, "P9", imm("999999"), 0, 1, 0]])]);
+    expect(r.absentes[0]?.statut).toBe("INTROUVABLE");
+    expect(r.absentes[0]?.remarque).toBe("changement de garantie possible");
+    expect(r.absentes[0]?.annulee).toBe(false);
+    expect(r.annulees).toHaveLength(0);
+  });
+  it("une négative d'un autre mois ne rend pas annulée", () => {
+    const r = run([base(7, 100, "N1/0", imm("777000")), base(8, 100, "N1/0", imm("777000"), -1000, -500)], [fichier(7, [[100, "P9", imm("999999"), 0, 1, 0]])]);
+    expect(r.absentes[0]?.statut).not.toBe("ANNULEE");
+  });
+  it("immatriculation illisible : présente seulement si la régul compte autant de lignes que l'avance", () => {
+    const b = [base(7, 100, "Z1/0", "?"), base(7, 100, "Z1/0", "??")];
+    expect(run(b, [fichier(7, [[100, "Z1", "", 0, 1, 0]])]).absentes.length).toBeGreaterThan(0);
+    expect(run(b, [fichier(7, [[100, "Z1", "", 0, 1, 0], [100, "Z1", "", 0, 1, 0]])]).absentes).toHaveLength(0);
+  });
+});
+
+describe("fusion et rechargement partiel", () => {
+  const f = (names: string[], rows: RegulFichier["rows"], origine: number[], produits = ["Rapide"]): RegulFichier => ({ ...fichier(7, rows), fichiers: names, produits, origine });
+  it("conserve les fichiers absents du nouvel envoi et remplace ceux rechargés", () => {
+    const old = f(["A.xlsx", "B.xlsx"], [[100, "P1", "111111-116-16", 0, 1, 0], [100, "P2", "222222-116-16", 0, 1, 0]], [0, 1]);
+    const neu = f(["B.xlsx"], [[100, "P3", "333333-116-16", 0, 1, 0]], [0]);
+    const out = fusionnerFichier(old, neu, false);
+    expect(out.conserves).toEqual(["A.xlsx"]);
+    expect(out.fichier.rows.map((r) => r[1]).sort()).toEqual(["P1", "P3"]);
+    expect(out.fichier.fichiers.sort()).toEqual(["A.xlsx", "B.xlsx"]);
+  });
+  it("fusionne les lots d'un même chargement sans rien remplacer, et remappe les produits", () => {
+    const lots = decouperFichier(f(["A.xlsx"], [[100, "P1", "111111-116-16", 0, 1, 0], [100, "P2", "222222-116-16", 1, 1, 0], [100, "P3", "333333-116-16", 1, 1, 0]], [0, 0, 0], ["Rapide", "Gold"]), 2);
+    expect(lots).toHaveLength(2);
+    const first = fusionnerFichier(null, lots[0] as RegulFichier, false).fichier;
+    const second = fusionnerFichier(first, lots[1] as RegulFichier, true).fichier;
+    expect(second.rows).toHaveLength(3);
+    expect(second.produits.sort()).toEqual(["Gold", "Rapide"]);
+  });
+  it("ancien enregistrement sans origine : signalé, jamais mélangé", () => {
+    const old: RegulFichier = { ...fichier(7, [[100, "P1", "111111-116-16", 0, 1, 0]]), fichiers: ["A.xlsx"] };
+    const out = fusionnerFichier(old, f(["B.xlsx"], [[100, "P2", "222222-116-16", 0, 1, 0]], [0]), false);
+    expect(out.perdus).toEqual(["A.xlsx"]);
+    expect(out.fichier.rows).toHaveLength(1);
+  });
+  it("lireFichier ignore une forme inconnue sans planter", () => {
+    expect(lireFichier(null)).toBeNull();
+    expect(lireFichier({ succ: "ORAN" })).toBeNull();
+    expect(lireFichier({ ...fichier(7, [[100, "P1", "x", 0, 1, 9 as never]]) })).toBeNull();
+    expect(lireFichier(fichier(7, [[100, "P1", "x", 0, 1, 0]]))?.rows).toHaveLength(1);
+  });
+  it("tronque les cellules parasites au lieu de les rejeter", () => {
+    const out = buildFichiers("ORAN", 2026, { valid: [line({ bp: "P".repeat(200), immat: "I".repeat(200) })], annul: [], garan: [] }, "");
+    expect(out[0]?.rows[0]?.[1]).toHaveLength(80);
+    expect(out[0]?.rows[0]?.[2]).toHaveLength(80);
+  });
+});
+
+describe("volume", () => {
+  it("60 000 lignes de base et de régularisation en moins de 2 s", () => {
+    const n = 60000;
+    const b: BaseRow[] = [];
+    const rows: RegulFichier["rows"] = [];
+    for (let i = 0; i < n; i++) {
+      b.push(base(7, 100 + (i % 5), `P${i}/0`, `${100000 + i}-116-16`));
+      if (i % 3) rows.push([100 + (i % 5), `P${i}`, `${100000 + i}-116-16`, 0, 500, 0]);
+    }
+    const t = Date.now();
+    const lines = rows.map((r, i) => line({ bp: r[1], immat: r[2], code: r[0], fichier: i % 2 ? "a.xlsx" : "b.xlsx" }));
+    buildFichiers("ORAN", 2026, { valid: lines, annul: [], garan: [] }, "");
+    const res = croiserPolices("ORAN", b, [fichier(7, rows)], null, {}, { mois: [7] });
+    expect(res.absentes).toHaveLength(n / 3);
+    expect(Date.now() - t).toBeLessThan(2000);
+  });
+});

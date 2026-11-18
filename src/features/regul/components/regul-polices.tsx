@@ -3,15 +3,14 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { f0, fm } from "@/features/regul/components/regul-format";
 import { REGUL_LABELS, REGUL_MOIS, REGUL_SUCCURSALES } from "@/features/regul/services/regul-engine";
-import { STATUT_LABELS, type PoliceRow, type PolicesView } from "@/features/regul/services/regul-polices";
-import type { PolicesParams } from "@/features/regul/services/regul-polices-query";
+import { STATUT_LABELS, type PoliceRow, type PolicesQuery, type PolicesView } from "@/features/regul/services/regul-polices";
 import { cn } from "@/utils/cn";
 
 const MAX_ROWS = 200;
 const mois = (m: number): string => REGUL_MOIS[m - 1] ?? String(m);
 const selectClass = "h-9 rounded-md border bg-background px-2 text-sm";
 
-function exportHref(p: PolicesParams): string {
+function exportHref(p: PolicesQuery): string {
   const q = new URLSearchParams();
   if (p.succ) q.set("succ", p.succ);
   if (p.agence) q.set("agence", String(p.agence));
@@ -56,6 +55,7 @@ function PoliceTable({ title, rows, showStatut }: Readonly<{ title: string; rows
                     <td className="px-2 py-1">
                       {x.statut ? STATUT_LABELS[x.statut] : ""}
                       {x.reapparition.length ? ` (${x.reapparition.map(mois).join(", ")}, ${x.reapparitionSource === "regul" ? "régul" : "avance"})` : ""}
+                      {x.remarque ? ` : ${x.remarque}` : ""}
                     </td>
                   ) : null}
                   <td className="px-2 py-1">{x.annulee ? "Oui" : "Non"}</td>
@@ -74,12 +74,13 @@ function PoliceTable({ title, rows, showStatut }: Readonly<{ title: string; rows
 }
 
 /** Bloc « Polices non retrouvées » de CAAT Régul 10 % : filtres (URL), compteurs, ventilation succursale puis agence, listes et export Excel. */
-export function RegulPolices({ view, params, error, canExport }: Readonly<{ view: PolicesView | null; params: PolicesParams; error: string | null; canExport: boolean }>): React.JSX.Element {
+export function RegulPolices({ view, params, error, canExport }: Readonly<{ view: PolicesView | null; params: PolicesQuery; error: string | null; canExport: boolean }>): React.JSX.Element {
   const blocks = view?.blocks ?? [];
   const sum = (f: (b: (typeof blocks)[number]) => number): number => blocks.reduce((a, b) => a + f(b), 0);
   const counters: Array<[string, number]> = [
     ["Polices de l'avance absentes de la régul", sum((b) => b.result.absentes.length)],
     ["dont reportées", sum((b) => b.result.absentes.filter((x) => x.statut === "REPORTEE").length)],
+    ["dont reportées probables", sum((b) => b.result.absentes.filter((x) => x.statut === "REPORTEE_PROBABLE").length)],
     ["dont annulées", sum((b) => b.result.absentes.filter((x) => x.statut === "ANNULEE").length)],
     ["dont introuvables", sum((b) => b.result.absentes.filter((x) => x.statut === "INTROUVABLE").length)],
     ["Polices annulées", sum((b) => b.result.annulees.length)],
@@ -91,7 +92,7 @@ export function RegulPolices({ view, params, error, canExport }: Readonly<{ view
       <Card className="p-4">
         <h3 className="mb-1 font-semibold">Polices non retrouvées</h3>
         <p className="mb-3 text-sm text-muted-foreground">
-          Polices du consolidé « avance 90 % » qui ne se retrouvent pas dans la régularisation 10 % du même mois : reportées sur un autre mois, annulées, ou introuvables sans explication. Le contrôle utilise les fichiers de régularisation conservés lors de « Enregistrer dans le suivi ».
+          Polices du consolidé « avance 90 % » qui ne se retrouvent pas dans la régularisation 10 % du même mois : reportées sur un autre mois, annulées, ou introuvables sans explication. Une immatriculation illisible est comparée au nombre de lignes de la police : on sait alors qu'un véhicule manque, pas lequel. Le contrôle utilise les fichiers de régularisation conservés lors de « Enregistrer dans le suivi ».
         </p>
         <form method="get" className="flex flex-wrap items-end gap-3">
           <input type="hidden" name="onglet" value="polices" />
@@ -113,6 +114,7 @@ export function RegulPolices({ view, params, error, canExport }: Readonly<{ view
             <select name="statut" defaultValue={params.statut} className={selectClass}>
               <option value="">Tous</option>
               <option value="REPORTEE">Reportée</option>
+              <option value="REPORTEE_PROBABLE">Reportée probable</option>
               <option value="ANNULEE">Annulée</option>
               <option value="INTROUVABLE">Introuvable</option>
             </select>
@@ -133,6 +135,8 @@ export function RegulPolices({ view, params, error, canExport }: Readonly<{ view
         </form>
       </Card>
       {error ? <Notice tone="error">{error}</Notice> : null}
+      {params.statut ? <Notice tone="info">Le filtre « statut » ne s&apos;applique qu&apos;à la liste des polices non retrouvées : les polices annulées, avec sinistre et annulées + sinistre ne dépendent pas du statut choisi.</Notice> : null}
+      {view?.anciennes?.length ? <Notice tone="warning">{view.anciennes.map((s) => REGUL_LABELS[s] ?? s).join(", ")} : données anciennes à recharger (forme inconnue, ignorées). Rechargez le fichier de régularisation concerné.</Notice> : null}
       {view && !view.sinLoaded ? <Notice tone="warning">Base sinistres non chargée : les colonnes et listes « sinistre » sont vides ou non renseignées.</Notice> : null}
       {view?.sansRegul.length ? (
         <Notice tone="info">
@@ -148,7 +152,7 @@ export function RegulPolices({ view, params, error, canExport }: Readonly<{ view
       )}
       {blocks.length ? (
         <>
-          <div className="grid gap-2 sm:grid-cols-4 lg:grid-cols-7">
+          <div className="grid gap-2 sm:grid-cols-4 lg:grid-cols-8">
             {counters.map(([label, n]) => (
               <div key={label} className="rounded-lg border bg-card p-3">
                 <span className="block text-lg font-semibold tabular-nums">{f0(n)}</span>
@@ -163,12 +167,13 @@ export function RegulPolices({ view, params, error, canExport }: Readonly<{ view
                 <span className="ml-2 text-xs font-normal text-muted-foreground">régul conservée : {b.result.moisRegul.map((m) => mois(m).toLowerCase()).join(", ")}</span>
               </h4>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] text-sm">
+                <table className="w-full min-w-[840px] text-sm">
                   <thead>
                     <tr className="bg-muted/50 text-xs">
                       <th className="px-2 py-1.5 text-left">Agence</th>
                       <th className="px-2 py-1.5 text-right">Absentes</th>
                       <th className="px-2 py-1.5 text-right">Reportées</th>
+                      <th className="px-2 py-1.5 text-right">Reportées probables</th>
                       <th className="px-2 py-1.5 text-right">Annulées</th>
                       <th className="px-2 py-1.5 text-right">Introuvables</th>
                       <th className="px-2 py-1.5 text-right">Polices annulées</th>
@@ -182,6 +187,7 @@ export function RegulPolices({ view, params, error, canExport }: Readonly<{ view
                         <td className="px-2 py-1">{a.code} {a.agence}</td>
                         <td className="px-2 py-1 text-right tabular-nums">{a.absentes}</td>
                         <td className="px-2 py-1 text-right tabular-nums">{a.reportees}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{a.reporteesProbables}</td>
                         <td className="px-2 py-1 text-right tabular-nums">{a.annulees}</td>
                         <td className="px-2 py-1 text-right tabular-nums">{a.introuvables}</td>
                         <td className="px-2 py-1 text-right tabular-nums">{a.annuleesTotal}</td>
@@ -191,7 +197,7 @@ export function RegulPolices({ view, params, error, canExport }: Readonly<{ view
                     ))}
                     <tr className="border-t font-semibold">
                       <td className="px-2 py-1">Total</td>
-                      {([(a) => a.absentes, (a) => a.reportees, (a) => a.annulees, (a) => a.introuvables, (a) => a.annuleesTotal, (a) => a.sinistrees, (a) => a.annuleesSinistre] as Array<(a: (typeof b.agences)[number]) => number>).map((pick, i) => (
+                      {([(a) => a.absentes, (a) => a.reportees, (a) => a.reporteesProbables, (a) => a.annulees, (a) => a.introuvables, (a) => a.annuleesTotal, (a) => a.sinistrees, (a) => a.annuleesSinistre] as Array<(a: (typeof b.agences)[number]) => number>).map((pick, i) => (
                         <td key={i} className="px-2 py-1 text-right tabular-nums">{b.agences.reduce((n, a) => n + pick(a), 0)}</td>
                       ))}
                     </tr>

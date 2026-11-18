@@ -26,7 +26,7 @@ import {
   type RegulSin,
   type Saisie,
 } from "@/features/regul/services/regul-engine";
-import { buildFichiers } from "@/features/regul/services/regul-polices";
+import { buildFichiers, decouperFichier } from "@/features/regul/services/regul-polices";
 import { buildRegulMessage } from "@/features/regul/services/regul-message";
 import { writeRegulWorkbook } from "@/features/regul/services/regul-export";
 import { readCsvRows, readWorkbook } from "@/lib/spreadsheet";
@@ -194,16 +194,29 @@ export function RegulCalc({ index, sinMeta, canEdit, canExport, initialSucc, onS
       const hasMonth = new Set(results.map((r) => r.mois));
       const fichiers = buildFichiers(A.s, YEAR, { valid: A.valid, annul: A.annul, garan: A.garan }, "").filter((f) => hasMonth.has(f.mois));
       let kept = 0;
-      for (const fichier of fichiers) {
-        const kres = await saveFichierAction({ succursale: A.s, fichier });
-        if (!kres.success) {
-          setMsg({ tone: "warning", text: `Résultat enregistré, mais les polices du fichier n'ont pas été conservées : ${kres.error}` });
-          onSaved();
-          return;
+      const conserves = new Set<string>();
+      try {
+        for (const fichier of fichiers) {
+          // Envoi par lots (corps de requête limité) : même clé, le serveur fusionne les lots suivants avec le premier.
+          const lots = decouperFichier(fichier);
+          for (const [i, lot] of lots.entries()) {
+            const kres = await saveFichierAction({ succursale: A.s, fichier: lot, suite: i > 0 });
+            if (!kres.success) {
+              setMsg({ tone: "warning", text: `Résultats enregistrés, mais les polices n'ont pas pu être conservées : ${kres.error}` });
+              onSaved();
+              return;
+            }
+            kept += kres.data.lignes;
+            if (i === 0) for (const name of kres.data.conserves) conserves.add(name);
+          }
         }
-        kept += kres.data.lignes;
+      } catch {
+        setMsg({ tone: "warning", text: "Résultats enregistrés, mais les polices n'ont pas pu être conservées." });
+        onSaved();
+        return;
       }
-      setMsg({ tone: "success", text: `Résultat enregistré dans le suivi. ${f0(kept)} lignes de polices conservées pour le contrôle des polices non retrouvées.` });
+      const reste = conserves.size ? ` Fichiers déjà conservés pour ces mois et non rechargés : ${[...conserves].join(", ")}.` : "";
+      setMsg({ tone: "success", text: `Résultat enregistré dans le suivi. ${f0(kept)} lignes de polices conservées pour le contrôle des polices non retrouvées.${reste}` });
       onSaved();
     });
   }
