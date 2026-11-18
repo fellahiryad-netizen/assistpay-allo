@@ -10,9 +10,11 @@ import { TabsNav } from "@/components/common/tabs-nav";
 import { buttonVariants } from "@/components/ui/button";
 import { SupplierImportDialog } from "@/features/payment-requests/components/supplier-import-dialog";
 import { InvoiceImportDialog } from "@/features/invoices/components/invoice-import-dialog";
+import { InvoiceClassificationBar, type ClassificationBarEntry } from "@/features/invoices/components/invoice-classification-bar";
 import { InvoiceFilters } from "@/features/invoices/components/invoice-filters";
 import { InvoiceTable } from "@/features/invoices/components/invoice-table";
 import { invoiceQuerySchema, type InvoiceQuery } from "@/features/invoices/schemas";
+import { getInvoiceClassification } from "@/features/invoices/services/invoice-classification";
 import { getInvoiceFilterOptions, listInvoices } from "@/features/invoices/services/invoice-service";
 import { todayIso } from "@/utils/dates";
 import { formatDA } from "@/utils/format";
@@ -37,6 +39,8 @@ function exportHref(query: InvoiceQuery, format?: "suivi"): string {
   if (query.m) params.set("m", query.m);
   if (query.succursale) params.set("succursale", query.succursale);
   if (query.d) params.set("d", query.d);
+  if (query.p) params.set("p", query.p);
+  if (query.mois) params.set("mois", query.mois);
   return `/api/factures/export?${params.toString()}`;
 }
 
@@ -50,9 +54,42 @@ function toSearch(query: InvoiceQuery, page: number): string {
   if (query.m) params.set("m", query.m);
   if (query.succursale) params.set("succursale", query.succursale);
   if (query.d) params.set("d", query.d);
+  if (query.p) params.set("p", query.p);
+  if (query.mois) params.set("mois", query.mois);
   if (page > 1) params.set("page", String(page));
   const search = params.toString();
   return search ? `/factures?${search}` : "/factures";
+}
+
+/** Paramètres de l'URL à conserver dans un formulaire de classement (tous sauf celui qu'on change). */
+function hiddenFields(query: InvoiceQuery, omit: "p" | "mois"): Record<string, string> {
+  const fields: Record<string, string | undefined> = {
+    sens: query.sens,
+    status: query.status,
+    annee: query.annee ? String(query.annee) : undefined,
+    categorie: query.categorie,
+    succursale: query.succursale,
+    q: query.q,
+    d: query.d,
+    p: omit === "p" ? undefined : query.p,
+    mois: omit === "mois" ? undefined : query.mois,
+  };
+  return Object.fromEntries(Object.entries(fields).filter((entry): entry is [string, string] => Boolean(entry[1])));
+}
+
+/** Entrées de la barre de classement avec leurs liens (le mois choisi est toujours écrit dans l'URL). */
+function classificationProps(
+  query: InvoiceQuery,
+  groups: ReadonlyArray<{ value: string; label: string; count: number; total: number; active: boolean }>,
+  months: ReadonlyArray<{ value: string; label: string; count: number; total: number; active: boolean }>,
+): { groupTitle: string; groups: ClassificationBarEntry[]; months: ClassificationBarEntry[]; hiddenForGroups: Record<string, string>; hiddenForMonths: Record<string, string> } {
+  return {
+    groupTitle: query.sens === "DEBIT" ? "Fournisseur" : "Partenaire",
+    groups: groups.map((entry) => ({ ...entry, href: toSearch({ ...query, p: entry.value || undefined }, 1) })),
+    months: months.map((entry) => ({ ...entry, href: toSearch({ ...query, mois: entry.value }, 1) })),
+    hiddenForGroups: hiddenFields(query, "p"),
+    hiddenForMonths: hiddenFields(query, "mois"),
+  };
 }
 
 const TITLES = { CREDIT: "Factures partenaires", DEBIT: "Factures fournisseurs" } as const;
@@ -61,7 +98,7 @@ const TITLES = { CREDIT: "Factures partenaires", DEBIT: "Factures fournisseurs" 
 export default async function InvoicesPage({ searchParams }: Readonly<{ searchParams: SearchParams }>): Promise<React.JSX.Element> {
   const user = await requireUser();
   const raw = await searchParams;
-  const query = invoiceQuerySchema.parse({
+  const parsed = invoiceQuerySchema.parse({
     sens: first(raw.sens),
     status: first(raw.status),
     succursale: first(raw.succursale),
@@ -70,8 +107,17 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
     q: first(raw.q),
     m: first(raw.m),
     d: first(raw.d),
+    p: first(raw.p),
+    mois: first(raw.mois),
     page: first(raw.page),
   });
+  // Classement simple (partenaire / fournisseur puis mois) : seulement sur les vues partenaires et fournisseurs, et jamais pendant une recherche par montant.
+  const classified = Boolean(parsed.sens) && !parsed.m;
+  // Le mois courant est proposé seulement à l'arrivée sur la vue : dès qu'une recherche ou un filtre est posé, on cherche partout.
+  const fresh = !parsed.mois && !parsed.p && !parsed.q && !parsed.d && !parsed.annee && !parsed.categorie && !parsed.succursale && !parsed.status;
+  const classification = classified ? await getInvoiceClassification(user, parsed, fresh) : null;
+  const flat = { ...parsed, p: undefined, mois: undefined };
+  const query: InvoiceQuery = classification?.success ? { ...parsed, p: classification.data.p || undefined, mois: classification.data.mois } : classified ? parsed : flat;
   const [result, options] = await Promise.all([listInvoices(user, query), getInvoiceFilterOptions(user)]);
   const title = query.sens ? TITLES[query.sens] : "Factures";
 
@@ -123,11 +169,13 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
       />
       <TabsNav
         tabs={[
-          { href: toSearch({ ...query, status: "EN_ATTENTE" }, 1), label: "En attente", active: query.status === "EN_ATTENTE" },
-          { href: toSearch({ ...query, status: "REGLE" }, 1), label: "Réglées", active: query.status === "REGLE" },
-          { href: toSearch({ ...query, status: undefined }, 1), label: "Tout", active: !query.status },
+          { href: toSearch({ ...query, status: undefined }, 1), label: "Toutes", active: !query.status, count: classification?.success ? classification.data.tabs.TOUTES : undefined },
+          { href: toSearch({ ...query, status: "EN_ATTENTE" }, 1), label: "À régler", active: query.status === "EN_ATTENTE", count: classification?.success ? classification.data.tabs.A_REGLER : undefined },
+          { href: toSearch({ ...query, status: "REGLE" }, 1), label: "Réglées", active: query.status === "REGLE", count: classification?.success ? classification.data.tabs.REGLEES : undefined },
+          ...(query.sens === "CREDIT" && can(user, "FACT", "VIEW") ? [{ href: "/avoirs", label: "Avoirs", active: false }] : []),
         ]}
       />
+      {classification?.success ? <InvoiceClassificationBar {...classificationProps(query, classification.data.groups, classification.data.months)} /> : null}
       <InvoiceFilters query={query} options={options.data} />
       {data.cumul ? (
         <div className="mb-3 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">

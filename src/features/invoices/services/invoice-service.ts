@@ -25,6 +25,8 @@ import { fromIsoDate } from "@/utils/dates";
 import { cumulForAmount, cumulForInvoices } from "@/features/statement/services/cumul";
 import { findCombinations, type CumulPart } from "@/features/invoices/lib/cumul";
 import { formatDA } from "@/utils/format";
+import { classificationConditions } from "@/features/invoices/lib/classification";
+import { PARTNER_GROUPS } from "@/features/partners/services/partner-service";
 
 const PAGE_SIZE = 50;
 const NO_ACCESS = "Vous n'avez accès à aucune facture.";
@@ -142,6 +144,7 @@ export function buildInvoiceWhere(actor: AuthUser, query: Omit<InvoiceQuery, "pa
       branchIds ? { id: { in: branchIds } } : {},
       ...amountFieldConditions(query.m),
       query.d ? { dateOperation: fromIsoDate(query.d) } : {},
+      ...classificationConditions(query, PARTNER_GROUPS),
       query.q
         ? {
             OR: [
@@ -199,7 +202,7 @@ export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promis
       db.invoice.aggregate({ where, _sum: { montant: true } }),
       db.invoice.findMany({
         where,
-        orderBy: [{ createdAt: "desc" }, { dateFacture: "desc" }],
+        orderBy: [{ dateFacture: { sort: "desc", nulls: "last" } }, { dateOperation: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
         skip: (query.page - 1) * PAGE_SIZE,
         take: PAGE_SIZE,
       }),
