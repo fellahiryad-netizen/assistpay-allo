@@ -170,10 +170,15 @@ export function HrAnomalies({
 
   return (
     <Card className="mb-4 border-warning/40 p-4">
-      <h2 className="flex items-center gap-2 text-base font-semibold">
-        <AlertTriangle className="size-4 text-warning" aria-hidden />
-        Anomalies ({total})
-      </h2>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          <AlertTriangle className="size-4 text-warning" aria-hidden />
+          Anomalies ({total})
+        </h2>
+        <Button type="button" size="sm" variant="outline" className="ml-auto" onClick={() => router.refresh()} aria-label="Revérifier les anomalies maintenant">
+          Revérifier
+        </Button>
+      </div>
       <p className="mb-2 text-xs text-muted-foreground">
         Indications à vérifier : rien n'est modifié automatiquement. Corrigez
         l'écriture, supprimez le doublon, ou validez l'anomalie si elle est
