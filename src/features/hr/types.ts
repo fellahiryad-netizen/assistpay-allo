@@ -25,11 +25,24 @@ export interface HrBankInfo {
   detail: string;
 }
 
-/** Anomalie affichée dans l'encadré de la page RH. */
+/** Anomalie affichée dans l'encadré de la page RH, avec les écritures concernées (pour les corriger ou supprimer). */
 export interface HrAnomalyDTO {
+  key: string;
   kind: "doublon" | "beneficiaire" | "periode";
   level: "certain" | "probable" | null;
   message: string;
+  entries: HrEntryDTO[];
+}
+
+/** Anomalie validée (« vérifiée, c'est normal »), rétablissable. */
+export interface HrValidatedAnomalyDTO {
+  key: string;
+  kind: "doublon" | "beneficiaire" | "periode";
+  message: string;
+  motif: string;
+  par: string;
+  /** Horodatage ISO. */
+  le: string;
 }
 
 /** Saisie RH. */

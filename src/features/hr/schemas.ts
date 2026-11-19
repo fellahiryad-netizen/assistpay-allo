@@ -7,6 +7,8 @@ export const hrQuerySchema = z.object({
   mois: z.string().regex(/^\d{4}-\d{2}$/).optional().catch(undefined),
   nature: z.string().max(60).optional().catch(undefined),
   q: z.string().trim().max(100).optional().catch(undefined),
+  /** « tout » : affiche toutes les anomalies (sinon les 60 premières). */
+  anomalies: z.literal("tout").optional().catch(undefined),
   /** « verifier » : seulement les paiements par chèque ou virement non rapprochés avec certitude du relevé (probables ou non trouvés). */
   releve: z.literal("verifier").optional().catch(undefined),
 });
@@ -36,3 +38,11 @@ export type HrEntryInput = z.infer<typeof hrEntrySchema>;
 
 /** Suppression d'une écriture RH. */
 export const hrDeleteSchema = z.object({ id: z.string().min(1).max(64) });
+
+/** Validation d'une anomalie RH : clé stable et motif facultatif. */
+export const hrAnomalyValidateSchema = z.object({ key: z.string().min(1).max(400), motif: z.string().trim().max(200).default("") });
+/** Validation d'anomalie reçue par le service. */
+export type HrAnomalyValidateInput = z.infer<typeof hrAnomalyValidateSchema>;
+
+/** Rétablissement d'une anomalie validée. */
+export const hrAnomalyRestoreSchema = z.object({ key: z.string().min(1).max(400) });

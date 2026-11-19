@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AlertTriangle, Download, Lock } from "lucide-react";
+import { Download, Lock } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { HrAnomalies } from "@/features/hr/components/hr-anomalies";
 import { HrEntryDialog } from "@/features/hr/components/hr-entry-dialog";
 import { hrQuerySchema } from "@/features/hr/schemas";
 import { listHr } from "@/features/hr/services/hr-service";
@@ -19,8 +20,6 @@ import { MONTHS_FR, todayIso } from "@/utils/dates";
 import { formatDA, formatDate } from "@/utils/format";
 
 export const metadata: Metadata = { title: "RH (salaires)" };
-
-const ANOMALY_LABELS = { doublon: "Doublon", beneficiaire: "Bénéficiaire", periode: "Période" } as const;
 
 const GROUPS: HrGroup[] = ["sal", "cnas", "g50", "autre"];
 const sum = (totals: HrTotals): number => GROUPS.reduce((acc, group) => acc + totals[group], 0);
@@ -46,14 +45,14 @@ export default async function HrPage({
   const user = await requireUser();
   const raw = await searchParams;
   const one = (value: string | string[] | undefined): string | undefined => (Array.isArray(value) ? value[0] : value) || undefined;
-  const query = hrQuerySchema.parse({ annee: one(raw.annee), mois: one(raw.mois), nature: one(raw.nature), q: one(raw.q), releve: one(raw.releve) });
+  const query = hrQuerySchema.parse({ annee: one(raw.annee), mois: one(raw.mois), nature: one(raw.nature), q: one(raw.q), releve: one(raw.releve), anomalies: one(raw.anomalies) });
   const result = await listHr(user, query);
   if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="RH indisponible" message={result.error} />;
   const data = result.data;
   const today = todayIso();
   const link = (patch: Record<string, string | undefined>): string => {
     const params = new URLSearchParams();
-    const merged = { annee: String(data.year), mois: query.mois, nature: query.nature, q: query.q, releve: query.releve, ...patch };
+    const merged = { annee: String(data.year), mois: query.mois, nature: query.nature, q: query.q, releve: query.releve, anomalies: query.anomalies, ...patch };
     for (const [key, value] of Object.entries(merged)) if (value) params.set(key, value);
     return `/rh?${params.toString()}`;
   };
@@ -84,24 +83,15 @@ export default async function HrPage({
           </Link>
         ))}
       </div>
-      {data.anomalyCount > 0 ? (
-        <Card className="mb-4 border-warning/40 p-4">
-          <h2 className="flex items-center gap-2 text-base font-semibold">
-            <AlertTriangle className="size-4 text-warning" aria-hidden />
-            Anomalies ({data.anomalyCount})
-          </h2>
-          <p className="mb-2 text-xs text-muted-foreground">Indications à vérifier : rien n'est modifié automatiquement. Corrigez ou supprimez l'écriture concernée depuis la liste ci-dessous.</p>
-          <ul className="space-y-1 text-sm">
-            {data.anomalies.map((anomaly, index) => (
-              <li key={`${anomaly.kind}-${index}`} className="flex flex-wrap items-start gap-2">
-                <Badge variant={anomaly.level === "certain" ? "destructive" : "warning"}>{ANOMALY_LABELS[anomaly.kind]}</Badge>
-                <span className="min-w-0 flex-1">{anomaly.message}</span>
-              </li>
-            ))}
-          </ul>
-          {data.anomalyCount > data.anomalies.length ? <p className="mt-2 text-xs text-muted-foreground">{data.anomalyCount - data.anomalies.length} autre(s) non affichée(s).</p> : null}
-        </Card>
-      ) : null}
+      <HrAnomalies
+        anomalies={data.anomalies}
+        validated={data.validatedAnomalies}
+        total={data.anomalyCount}
+        showAllHref={query.anomalies === "tout" || data.anomalyCount <= data.anomalies.length ? null : link({ anomalies: "tout" })}
+        canEdit={data.canEdit}
+        beneficiaries={data.beneficiaries}
+        today={today}
+      />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {[...GROUPS.map((group) => [HR_GROUP_LABELS[group], data.totals[group]] as const), ["Total charges de personnel", sum(data.totals)] as const].map(([label, value]) => (
           <Card key={label} className="p-3">

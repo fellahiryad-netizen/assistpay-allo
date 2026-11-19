@@ -4,10 +4,10 @@ import { writeWorkbook } from "@/lib/spreadsheet";
 import type { HrEntry, Prisma } from "@/generated/prisma/client";
 import { can, requireAccess, requireAdmin } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
-import type { HrEntryInput, HrQuery } from "@/features/hr/schemas";
+import type { HrAnomalyValidateInput, HrEntryInput, HrQuery } from "@/features/hr/schemas";
 import { normalizeText } from "@/utils/text";
-import { HR_GROUP_LABELS, hrGroup, type HrAnomalyDTO, type HrBankInfo, type HrEntryDTO, type HrGroup, type HrTotals } from "@/features/hr/types";
-import { detectHrAnomalies } from "@/features/hr/lib/hr-anomalies";
+import { HR_GROUP_LABELS, hrGroup, type HrAnomalyDTO, type HrBankInfo, type HrValidatedAnomalyDTO, type HrEntryDTO, type HrGroup, type HrTotals } from "@/features/hr/types";
+import { detectHrAnomalies, partitionAnomalies, type HrAnomaly, type HrAnomalyValidation } from "@/features/hr/lib/hr-anomalies";
 import { isBankEntry, matchHrToBank, type HrBankEntry, type HrBankLine, type HrBankMatch } from "@/features/hr/lib/hr-bank-match";
 import { describeHrEntry, duplicateMessage, evaluateDuplicate, type HrDuplicate, type HrEntryLike } from "@/features/hr/lib/hr-duplicates";
 import { logAction } from "@/features/journal/services/journal-service";
@@ -97,13 +97,67 @@ function bankInfoOf(row: HrEntry, match: HrBankMatch | undefined, lines: Map<str
   };
 }
 
+const VALIDATIONS_KEY = "hr:anomalies:validees";
+const MAX_VALIDATIONS = 500;
+
+/** Lecture tolérante des validations enregistrées (réglage JSON `{ items: [...] }`) : les éléments mal formés sont ignorés. */
+function readValidations(value: Prisma.JsonValue | undefined): HrAnomalyValidation[] {
+  const items = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>).items : null;
+  if (!Array.isArray(items)) return [];
+  const out: HrAnomalyValidation[] = [];
+  for (const raw of items as unknown[]) {
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw as Record<string, unknown>;
+    if (typeof item.key !== "string" || !item.key) continue;
+    out.push({ key: item.key, motif: typeof item.motif === "string" ? item.motif : "", par: typeof item.par === "string" ? item.par : "", parId: typeof item.parId === "string" ? item.parId : "", le: typeof item.le === "string" ? item.le : "" });
+  }
+  return out;
+}
+
+async function loadValidations(): Promise<HrAnomalyValidation[]> {
+  const row = await db.setting.findUnique({ where: { key: VALIDATIONS_KEY } });
+  return readValidations(row?.value);
+}
+
+async function saveValidations(items: HrAnomalyValidation[]): Promise<void> {
+  const value = JSON.parse(JSON.stringify({ items: items.slice(-MAX_VALIDATIONS) })) as Prisma.InputJsonValue;
+  await db.setting.upsert({ where: { key: VALIDATIONS_KEY }, create: { key: VALIDATIONS_KEY, value }, update: { value } });
+}
+
+const anomalyEntries = (rows: HrEntry[]): Parameters<typeof detectHrAnomalies>[0] => rows.map((row) => ({ ...toLike(row), id: row.id, monthKey: monthKey(row) }));
+
+/** Valide une anomalie (« j'ai vérifié, c'est normal ») : elle sort du compteur et de la liste tant que les écritures concernées ne changent pas. Accès RH en modification. */
+export async function validateHrAnomaly(actor: AuthUser, input: HrAnomalyValidateInput): Promise<ActionResult<{ key: string }>> {
+  const guard = requireAccess(actor, "RH", "EDIT");
+  if (!guard.success) return guard;
+  const anomaly = detectHrAnomalies(anomalyEntries(await db.hrEntry.findMany())).find((item) => item.key === input.key);
+  if (!anomaly) return fail("Cette anomalie n'existe plus (une écriture a été modifiée ou supprimée). Rechargez la page.", "NOT_FOUND");
+  const items = (await loadValidations()).filter((item) => item.key !== input.key);
+  items.push({ key: input.key, motif: input.motif, par: actor.name, parId: actor.id, le: new Date().toISOString() });
+  await saveValidations(items);
+  await logAction(actor, "Anomalie RH validée", `${anomaly.message}${input.motif ? ` – motif : ${input.motif}` : ""}`);
+  return ok({ key: input.key });
+}
+
+/** Rétablit une anomalie validée : elle réapparaît dans la liste à traiter. Accès RH en modification. */
+export async function restoreHrAnomaly(actor: AuthUser, input: { key: string }): Promise<ActionResult<{ key: string }>> {
+  const guard = requireAccess(actor, "RH", "EDIT");
+  if (!guard.success) return guard;
+  const items = await loadValidations();
+  if (!items.some((item) => item.key === input.key)) return fail("Cette anomalie n'est pas dans les anomalies validées.", "NOT_FOUND");
+  await saveValidations(items.filter((item) => item.key !== input.key));
+  const anomaly = detectHrAnomalies(anomalyEntries(await db.hrEntry.findMany())).find((item) => item.key === input.key);
+  await logAction(actor, "Anomalie RH rétablie", anomaly?.message ?? input.key);
+  return ok({ key: input.key });
+}
+
 const emptyTotals = (): HrTotals => ({ sal: 0, cnas: 0, g50: 0, autre: 0 });
 
 /** Écran RH : saisies filtrées, totaux de l'année et synthèse mensuelle. Confidentiel (accès RH). */
 export async function listHr(
   actor: AuthUser,
   query: HrQuery,
-): Promise<ActionResult<{ entries: HrEntryDTO[]; totalCount: number; totalAmount: number; years: number[]; year: number | "all"; totals: HrTotals; months: Array<{ key: string; totals: HrTotals }>; natures: string[]; beneficiaries: string[]; canEdit: boolean; anomalies: HrAnomalyDTO[]; anomalyCount: number; notFoundCount: number; probableCount: number }>> {
+): Promise<ActionResult<{ entries: HrEntryDTO[]; totalCount: number; totalAmount: number; years: number[]; year: number | "all"; totals: HrTotals; months: Array<{ key: string; totals: HrTotals }>; natures: string[]; beneficiaries: string[]; canEdit: boolean; anomalies: HrAnomalyDTO[]; anomalyCount: number; validatedAnomalies: HrValidatedAnomalyDTO[]; notFoundCount: number; probableCount: number }>> {
   const guard = requireAccess(actor, "RH");
   if (!guard.success) return guard;
   const rows = await db.hrEntry.findMany({ orderBy: [{ date: "desc" }, { ordre: "desc" }] });
@@ -132,7 +186,18 @@ export async function listHr(
     const status = bankInfo.get(row.id)?.status;
     return status === "non_trouve" || status === "probable";
   };
-  const anomalies = detectHrAnomalies(inYear.map((row) => ({ ...toLike(row), id: row.id, monthKey: monthKey(row) })));
+  const { open: anomalies, validated } = partitionAnomalies(detectHrAnomalies(anomalyEntries(inYear)), await loadValidations());
+  const rowById = new Map(inYear.map((row) => [row.id, row]));
+  const anomalyDto = (anomaly: HrAnomaly): HrAnomalyDTO => ({
+    key: anomaly.key,
+    kind: anomaly.kind,
+    level: anomaly.level,
+    message: anomaly.message,
+    entries: anomaly.entryIds.flatMap((id) => {
+      const row = rowById.get(id);
+      return row ? [toDTO(row, bankInfo.get(id))] : [];
+    }),
+  });
   const filtered = inYear.filter(
     (row) =>
       (!query.nature || row.nature === query.nature) &&
@@ -142,8 +207,9 @@ export async function listHr(
   );
   return ok({
     entries: filtered.slice(0, 400).map((row) => toDTO(row, bankInfo.get(row.id))),
-    anomalies: anomalies.slice(0, 60).map(({ kind, level, message }) => ({ kind, level, message })),
+    anomalies: (query.anomalies === "tout" ? anomalies : anomalies.slice(0, 60)).map(anomalyDto),
     anomalyCount: anomalies.length,
+    validatedAnomalies: validated.map(({ anomaly, validation }) => ({ key: anomaly.key, kind: anomaly.kind, message: anomaly.message, motif: validation.motif, par: validation.par, le: validation.le })),
     notFoundCount: inYear.filter((row) => bankInfo.get(row.id)?.status === "non_trouve").length,
     probableCount: inYear.filter((row) => bankInfo.get(row.id)?.status === "probable").length,
     totalCount: filtered.length,

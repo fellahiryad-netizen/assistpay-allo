@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bankChequeNumbers, matchHrToBank, strongHrMatches, type HrBankEntry, type HrBankLine } from "@/features/hr/lib/hr-bank-match";
-import { detectHrAnomalies, inconsistentBeneficiary } from "@/features/hr/lib/hr-anomalies";
+import { anomalyKey, detectHrAnomalies, inconsistentBeneficiary, partitionAnomalies, shortHash } from "@/features/hr/lib/hr-anomalies";
 
 const entry = (patch: Partial<HrBankEntry>): HrBankEntry => ({ id: "e1", sens: "PAIEMENT", mode: "CHEQUE", cheque: "", montant: 13_916_005, date: "2026-11-04", ...patch });
 const line = (patch: Partial<HrBankLine>): HrBankLine => ({ id: "l1", date: "2026-11-05", libelle: "", montant: 13_916_005, sens: "DEBIT", ...patch });
@@ -108,5 +108,37 @@ describe("anomalies", () => {
       { ...base, id: "2", nature: "Salaire", beneficiaire: "Karim Haddad", montant: 80_000, monthKey: "2026-10", mois: "2026-10" },
     ]);
     expect(list).toHaveLength(0);
+  });
+});
+
+describe("clé stable et validation des anomalies", () => {
+  const base = { sens: "PAIEMENT" as const, mois: "2026-09", date: "2026-10-19", cheque: "", libelle: "G50 09-2026", monthKey: "2026-10", nature: "G50" };
+  const salaires = { ...base, id: "b", beneficiaire: "Salaires du personnel", montant: 100 };
+
+  it("la clé est stable et ne dépend pas de l'ordre des identifiants", () => {
+    const message = "Doublon probable : test";
+    expect(anomalyKey({ kind: "doublon", entryIds: ["b", "a"], message })).toBe(anomalyKey({ kind: "doublon", entryIds: ["a", "b"], message }));
+    expect(anomalyKey({ kind: "doublon", entryIds: ["a", "b"], message })).toMatch(/^doublon:a\+b:[0-9a-z]+$/);
+    expect(anomalyKey({ kind: "periode", entryIds: ["a", "b"], message })).not.toBe(anomalyKey({ kind: "doublon", entryIds: ["a", "b"], message }));
+    expect(shortHash("abc")).toBe(shortHash("abc"));
+    expect(shortHash("abc")).not.toBe(shortHash("abd"));
+  });
+
+  it("détecte les mêmes clés d'un appel à l'autre", () => {
+    const keys = (): string[] => detectHrAnomalies([salaires]).map((item) => item.key);
+    expect(keys()).toEqual(keys());
+    expect(keys().length).toBeGreaterThan(0);
+  });
+
+  it("une anomalie validée sort de la liste, et réapparaît si l'écriture change", () => {
+    const [anomaly] = detectHrAnomalies([salaires]).filter((item) => item.kind === "beneficiaire");
+    const validation = { key: anomaly!.key, motif: "vu", par: "RH", parId: "u1", le: "2026-11-19T10:00:00.000Z" };
+    const apres = partitionAnomalies(detectHrAnomalies([salaires]), [validation]);
+    expect(apres.open.filter((item) => item.kind === "beneficiaire")).toHaveLength(0);
+    expect(apres.validated).toHaveLength(1);
+    // Le bénéficiaire change (toujours incohérent) : le message change, donc la clé aussi, et l'anomalie revient.
+    const modifiee = partitionAnomalies(detectHrAnomalies([{ ...salaires, beneficiaire: "Salaires du personnel oct." }]), [validation]);
+    expect(modifiee.open.filter((item) => item.kind === "beneficiaire")).toHaveLength(1);
+    expect(modifiee.validated).toHaveLength(0);
   });
 });

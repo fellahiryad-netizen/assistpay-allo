@@ -14,11 +14,51 @@ export interface HrAnomalyEntry extends HrEntryLike {
 
 /** Anomalie : indication à vérifier, jamais bloquante. */
 export interface HrAnomaly {
+  /** Clé stable (voir `anomalyKey`) : sert à valider ou rétablir l'anomalie. */
+  key: string;
   kind: HrAnomalyKind;
   /** Pour un doublon : certain ou probable. */
   level: HrDuplicateLevel | null;
   entryIds: string[];
   message: string;
+}
+
+/** Hachage djb2 court (base 36) d'un texte. */
+export function shortHash(text: string): string {
+  let hash = 5381;
+  for (let index = 0; index < text.length; index += 1) hash = (Math.imul(hash, 33) + text.charCodeAt(index)) >>> 0;
+  return hash.toString(36);
+}
+
+/**
+ * Clé stable d'une anomalie : `type:identifiants triés joints par +:hachage du message`.
+ * Le message cite date, montant, bénéficiaire, libellé et chèque : une écriture modifiée change la clé, et l'anomalie validée réapparaît.
+ */
+export function anomalyKey(anomaly: { kind: HrAnomalyKind; entryIds: readonly string[]; message: string }): string {
+  return `${anomaly.kind}:${[...anomaly.entryIds].sort().join("+")}:${shortHash(anomaly.message)}`;
+}
+
+/** Validation d'une anomalie (« j'ai vérifié, c'est normal »). */
+export interface HrAnomalyValidation {
+  key: string;
+  motif: string;
+  par: string;
+  parId: string;
+  /** Horodatage ISO. */
+  le: string;
+}
+
+/** Sépare les anomalies à traiter de celles déjà validées (avec leur validation). Une validation sans anomalie correspondante est ignorée. */
+export function partitionAnomalies(anomalies: readonly HrAnomaly[], validations: readonly HrAnomalyValidation[]): { open: HrAnomaly[]; validated: Array<{ anomaly: HrAnomaly; validation: HrAnomalyValidation }> } {
+  const byKey = new Map(validations.map((validation) => [validation.key, validation]));
+  const open: HrAnomaly[] = [];
+  const validated: Array<{ anomaly: HrAnomaly; validation: HrAnomalyValidation }> = [];
+  for (const anomaly of anomalies) {
+    const validation = byKey.get(anomaly.key);
+    if (validation) validated.push({ anomaly, validation });
+    else open.push(anomaly);
+  }
+  return { open, validated };
 }
 
 const monthName = (key: string): string => `${(MONTHS_FR[Number(key.slice(5, 7)) - 1] ?? "").toLowerCase()} ${key.slice(0, 4)}`;
@@ -34,6 +74,8 @@ export function inconsistentBeneficiary(entry: Pick<HrEntryLike, "nature" | "ben
   return null;
 }
 
+const withKey = (anomaly: Omit<HrAnomaly, "key">): HrAnomaly => ({ ...anomaly, key: anomalyKey(anomaly) });
+
 /**
  * Anomalies d'une liste d'écritures : doublons suspects entre écritures, bénéficiaires incohérents avec la nature,
  * mois de rattachement différent de la période citée dans le libellé (simple indication, seulement pour G50 / IRG / IBS).
@@ -47,13 +89,13 @@ export function detectHrAnomalies(entries: readonly HrAnomalyEntry[]): HrAnomaly
       const b = entries[j];
       if (!b) continue;
       const found = compareHrEntries(a, b);
-      if (found) out.push({ kind: "doublon", level: found.level, entryIds: [a.id, b.id], message: `${found.level === "certain" ? "Doublon" : "Doublon probable"} (${found.reason}) : ${describeHrEntry(a)} et ${describeHrEntry(b)}.` });
+      if (found) out.push(withKey({ kind: "doublon", level: found.level, entryIds: [a.id, b.id], message: `${found.level === "certain" ? "Doublon" : "Doublon probable"} (${found.reason}) : ${describeHrEntry(a)} et ${describeHrEntry(b)}.` }));
     }
     const wrong = inconsistentBeneficiary(a);
-    if (wrong) out.push({ kind: "beneficiaire", level: null, entryIds: [a.id], message: `Bénéficiaire incohérent : ${wrong}.` });
+    if (wrong) out.push(withKey({ kind: "beneficiaire", level: null, entryIds: [a.id], message: `Bénéficiaire incohérent : ${wrong}.` }));
     const cited = isPeriodNature(a.nature) ? citedPeriods(a.libelle, a.date?.slice(0, 7) || a.mois) : [];
     if (cited.length && a.monthKey && !cited.includes(a.monthKey)) {
-      out.push({ kind: "periode", level: null, entryIds: [a.id], message: `Rattachée à ${monthName(a.monthKey)} alors que le libellé cite ${cited.map(monthName).join(", ")} : ${describeHrEntry(a)}.` });
+      out.push(withKey({ kind: "periode", level: null, entryIds: [a.id], message: `Rattachée à ${monthName(a.monthKey)} alors que le libellé cite ${cited.map(monthName).join(", ")} : ${describeHrEntry(a)}.` }));
     }
   }
   const rank = (anomaly: HrAnomaly): number => (anomaly.kind === "doublon" ? (anomaly.level === "certain" ? 0 : 1) : anomaly.kind === "beneficiaire" ? 2 : 3);

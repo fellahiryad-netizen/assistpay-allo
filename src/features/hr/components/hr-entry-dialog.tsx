@@ -19,11 +19,12 @@ export interface HrEntryDialogProps {
   entry?: HrEntryDTO;
   beneficiaries: string[];
   today: string;
-
+  /** Texte du bouton d'ouverture d'une écriture existante (« Modifier » par défaut). */
+  triggerLabel?: string;
 }
 
 /** Nouvelle saisie ou modification d'une écriture RH (salaire, CNAS, G50, avance…). */
-export function HrEntryDialog({ entry, beneficiaries, today }: Readonly<HrEntryDialogProps>): React.JSX.Element {
+export function HrEntryDialog({ entry, beneficiaries, today, triggerLabel = "Modifier" }: Readonly<HrEntryDialogProps>): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState(entry?.mode ?? "VIRMT");
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +95,7 @@ export function HrEntryDialog({ entry, beneficiaries, today }: Readonly<HrEntryD
     <Dialog open={open} onOpenChange={setOpen}>
       {entry ? (
         <button type="button" onClick={show} className="text-xs font-medium text-primary hover:underline">
-          Modifier
+          {triggerLabel}
         </button>
       ) : (
         <Button type="button" onClick={show}>
