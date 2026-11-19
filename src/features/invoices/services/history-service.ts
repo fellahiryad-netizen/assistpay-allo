@@ -74,7 +74,7 @@ export async function getHistory(actor: AuthUser, query: HistoryQuery): Promise<
     return ok({
       years,
       pending: pendingRows.map((row) => ({ label: row.categorie || "Sans catégorie", amount: decimalToNumber(row._sum.montant) ?? 0, count: row._count._all })).filter((row) => row.amount > 0),
-      items: rows.map(toInvoiceDTO),
+      items: rows.map((row) => toInvoiceDTO(row)),
       total,
       sum: decimalToNumber(sum._sum.montant) ?? 0,
       page: query.page,

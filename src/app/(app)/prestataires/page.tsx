@@ -1,37 +1,62 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/features/access/services/access-rules";
-import { DonutChart } from "@/components/common/donut-chart";
 import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AutoSubmitSwitch } from "@/features/invoices/components/auto-submit-switch";
 import { InvoiceImportDialog } from "@/features/invoices/components/invoice-import-dialog";
+import { ProviderActivityKpi } from "@/features/invoices/components/provider-activity-kpi";
+import { ProviderActivitySection } from "@/features/invoices/components/provider-activity-section";
+import { ACTIVITIES, ACTIVITY_LABELS, parseActivity, type Activity } from "@/features/invoices/lib/activity";
 import { providerBalances } from "@/features/invoices/services/provider-service";
-import { formatDA, formatDate } from "@/utils/format";
+import { formatDA } from "@/utils/format";
 
 export const metadata: Metadata = { title: "Prestataires" };
 
-/** Prestataires : factures reçues, soldes, impayés et accès aux demandes de paiement. */
+const DESCRIPTIONS: Readonly<Record<Activity, string>> = {
+  assistance: "Prestataires d'assistance routière : dépannage et remorquage.",
+  bdg: "Prestataires de bris de glace.",
+  autre: "Autres fournisseurs : TVA, TPA, IT et divers.",
+};
+
+/** Prestataires : soldes et impayés séparés par activité (assistance, BDG, autre), avec accès aux demandes de paiement. */
 export default async function ProvidersPage({ searchParams }: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>): Promise<React.JSX.Element> {
   const user = await requireUser();
   const raw = await searchParams;
   const one = (value: string | string[] | undefined): string | undefined => (Array.isArray(value) ? value[0] : value) || undefined;
   const year = Number(one(raw.annee)) || undefined;
-  const result = await providerBalances(user, { q: one(raw.q), year });
+  const q = one(raw.q);
+  const activity = parseActivity(one(raw.activite));
+  const showSettled = one(raw.soldes) === "1";
+  const result = await providerBalances(user, { q, year });
   if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="Prestataires indisponibles" message={result.error} />;
   const data = result.data;
-  const slices = data.items.filter((item) => item.due > 0).map((item) => ({ label: item.tiers, amount: item.due, count: item.pending }));
+  const { assistance, bdg, autre } = data.activities;
+
+  /** Lien d'une carte : choisit l'activité, ou revient à toutes si elle est déjà choisie ; recherche, année et soldés sont conservés. */
+  const kpiHref = (target: Activity): string => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (year) params.set("annee", String(year));
+    if (showSettled) params.set("soldes", "1");
+    if (activity !== target) params.set("activite", target);
+    const search = params.toString();
+    return search ? `/prestataires?${search}` : "/prestataires";
+  };
+  const section = (target: Activity): React.JSX.Element => <ProviderActivitySection group={data.activities[target]} showSettled={showSettled} canEdit={data.canEdit} year={year} description={DESCRIPTIONS[target]} />;
+  const mainSections = ACTIVITIES.filter((target) => target !== "autre" && (!activity || activity === target));
+  const showOther = !activity || activity === "autre";
+
   return (
     <>
       <PageHeader
         title="Prestataires"
-        description={`Factures des prestataires, soldes et impayés : ${formatDA(data.due)} restant à payer sur ${data.pending} facture(s).`}
+        description={`À payer : Assistance ${formatDA(assistance.due)} · BDG ${formatDA(bdg.due)} · Autre ${formatDA(autre.due)}, soit ${formatDA(data.due)} sur ${data.pending} facture(s) impayée(s).`}
         actions={
           data.canEdit ? (
             <>
@@ -44,8 +69,13 @@ export default async function ProvidersPage({ searchParams }: Readonly<{ searchP
           ) : undefined
         }
       />
-      <form method="get" className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-4" role="search">
-        <Input name="q" defaultValue={one(raw.q) ?? ""} placeholder="Nom du prestataire…" aria-label="Recherche" className="sm:col-span-2" />
+      <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+        {ACTIVITIES.map((target) => (
+          <ProviderActivityKpi key={target} group={data.activities[target]} href={kpiHref(target)} active={activity === target} />
+        ))}
+      </div>
+      <form method="get" className="mb-5 grid grid-cols-1 items-center gap-2 sm:grid-cols-6" role="search">
+        <Input name="q" defaultValue={q ?? ""} placeholder="Nom du prestataire…" aria-label="Recherche" className="sm:col-span-2" />
         <NativeSelect name="annee" defaultValue={year ? String(year) : ""} aria-label="Année">
           <option value="">Toutes les années</option>
           {data.years.map((value) => (
@@ -54,59 +84,35 @@ export default async function ProvidersPage({ searchParams }: Readonly<{ searchP
             </option>
           ))}
         </NativeSelect>
+        <NativeSelect name="activite" defaultValue={activity ?? ""} aria-label="Activité">
+          <option value="">Toutes les activités</option>
+          {ACTIVITIES.map((value) => (
+            <option key={value} value={value}>
+              {ACTIVITY_LABELS[value]}
+            </option>
+          ))}
+        </NativeSelect>
+        <AutoSubmitSwitch name="soldes" label="Afficher les soldés" defaultChecked={showSettled} />
         <Button type="submit">Filtrer</Button>
       </form>
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Reste à payer par prestataire</CardTitle>
-            <CardDescription>Factures impayées</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <DonutChart slices={slices} centerLabel="À payer" />
-          </CardContent>
-        </Card>
-        <div className="overflow-x-auto rounded-lg border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Prestataire</TableHead>
-                <TableHead className="text-right">Facturé</TableHead>
-                <TableHead className="text-right">Réglé</TableHead>
-                <TableHead className="text-right">Reste à payer</TableHead>
-                <TableHead className="text-right">Impayées</TableHead>
-                <TableHead>Dernier règlement</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.items.slice(0, 300).map((item) => (
-                <TableRow key={item.tiers}>
-                  <TableCell className="max-w-64 truncate font-medium">{item.tiers}</TableCell>
-                  <TableCell className="whitespace-nowrap text-right tabular-nums">{formatDA(item.invoiced)}</TableCell>
-                  <TableCell className="whitespace-nowrap text-right tabular-nums">{formatDA(item.paid)}</TableCell>
-                  <TableCell className={`whitespace-nowrap text-right font-semibold tabular-nums ${item.due > 0 ? "text-destructive" : ""}`}>{formatDA(item.due)}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {item.pending || "—"}
-                    {item.oldestDays ? <span className="block text-xs text-muted-foreground">{item.oldestDays} j</span> : null}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap tabular-nums">{formatDate(item.lastPaid)}</TableCell>
-                  <TableCell className="text-right">
-                    <Link href={`/factures?sens=DEBIT&q=${encodeURIComponent(item.tiers)}`} className={buttonVariants({ size: "sm", variant: "outline" })}>
-                      Factures
-                    </Link>
-                    {item.due > 0 ? (
-                      <Link href="/demandes" className={`${buttonVariants({ size: "sm", variant: "ghost" })} ml-1`}>
-                        Payer
-                      </Link>
-                    ) : null}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+      <div className={mainSections.length > 1 ? "grid grid-cols-1 items-start gap-5 xl:grid-cols-2" : "grid grid-cols-1 gap-5"}>
+        {mainSections.map((target) => (
+          <div key={target} className="min-w-0">
+            {section(target)}
+          </div>
+        ))}
       </div>
+      {showOther ? (
+        <details className="group mt-6 rounded-lg border bg-card/50" open={activity === "autre"}>
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg p-4 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <span>
+              Autre <span className="ml-2 text-sm font-normal text-muted-foreground">{formatDA(autre.due)} à payer · {autre.providers} prestataire(s) en attente</span>
+            </span>
+            <ChevronDown aria-hidden className="size-4 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="p-4 pt-0">{section("autre")}</div>
+        </details>
+      ) : null}
     </>
   );
 }

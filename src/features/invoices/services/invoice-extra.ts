@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Prisma } from "@/generated/prisma/client";
+import { mergeActivityIntoExtra, type Activity } from "@/features/invoices/lib/activity";
 
 const loose = <T extends z.ZodTypeAny>(schema: T) => schema.optional().catch(undefined);
 
@@ -37,6 +38,8 @@ export const invoiceExtraSchema = z
     refPaiement: loose(z.string()),
     dblOk: loose(z.boolean()),
     dblOkWith: loose(z.array(z.string())),
+    /** Activité d'une facture fournisseur : assistance, bdg ou autre (voir `activityOf`). */
+    activite: loose(z.string()),
   })
   .passthrough();
 
@@ -61,4 +64,9 @@ export function authorOf(extra: Record<string, unknown>): string {
     if (value && typeof value === "object" && typeof (value as { nom?: unknown }).nom === "string") return (value as { nom: string }).nom;
   }
   return "";
+}
+
+/** `extra` à écrire pour fixer l'activité : fusionne avec l'extra existant (aucune autre clé n'est perdue). */
+export function extraWithActivity(current: Prisma.JsonValue, activity: Activity): Prisma.InputJsonObject {
+  return JSON.parse(JSON.stringify(mergeActivityIntoExtra(current, activity))) as Prisma.InputJsonObject;
 }

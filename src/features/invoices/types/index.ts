@@ -1,4 +1,5 @@
 import type { AvoirBadgeDTO } from "@/features/avoirs/types";
+import type { Activity } from "@/features/invoices/lib/activity";
 /** Sens comptable : crédit = facture partenaire (encaissement), débit = facture fournisseur (décaissement). */
 export const SENS_KEYS = ["CREDIT", "DEBIT"] as const;
 export type SensKey = (typeof SENS_KEYS)[number];
@@ -49,6 +50,10 @@ export interface InvoiceDTO {
   debours: number | null;
   frais: number | null;
   origine: string;
+  /** Activité d'une facture fournisseur (explicite ou déduite) ; `null` pour une facture partenaire. */
+  activite: Activity | null;
+  /** L'activité est-elle écrite sur la facture (et non déduite de la catégorie) ? */
+  activiteExplicite: boolean;
   /** Dernière personne ayant saisi ou modifié la facture. */
   par: string;
   /** Règlement partiel en cours (acomptes reçus, facture encore en attente). */

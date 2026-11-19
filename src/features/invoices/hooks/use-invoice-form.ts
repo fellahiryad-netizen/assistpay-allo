@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { createInvoiceAction, updateInvoiceAction } from "@/app/actions/invoice-actions";
+import { suggestActivity, type Activity } from "@/features/invoices/lib/activity";
 import { invoiceInputSchema } from "@/features/invoices/schemas";
 import type { InvoiceDTO, InvoiceStatusKey, PaymentModeKey, SensKey } from "@/features/invoices/types";
 
@@ -23,6 +24,8 @@ export interface InvoiceFormValues {
   nature: string;
   succursale: string;
   periode: string;
+  /** Activité (facture fournisseur) ; vide tant qu'elle n'est pas choisie ni suggérée. */
+  activite: Activity | "";
 }
 
 /** Erreurs par champ. */
@@ -56,6 +59,7 @@ export function initialInvoiceValues(invoice: InvoiceDTO | null, sens: SensKey |
       nature: "",
       succursale: "",
       periode: "",
+      activite: "",
     };
   }
   return {
@@ -74,6 +78,7 @@ export function initialInvoiceValues(invoice: InvoiceDTO | null, sens: SensKey |
     nature: invoice.nature,
     succursale: invoice.succursale,
     periode: invoice.periode,
+    activite: invoice.activite ?? "",
   };
 }
 
@@ -81,19 +86,26 @@ export function initialInvoiceValues(invoice: InvoiceDTO | null, sens: SensKey |
  * Logique du formulaire de facture : validation Zod côté navigateur (messages par champ),
  * puis enregistrement par server action et retour sur la fiche.
  */
-export function useInvoiceForm(initial: InvoiceFormValues, invoiceId: string | null): UseInvoiceForm {
+export function useInvoiceForm(initial: InvoiceFormValues, invoiceId: string | null, activityChosen = false): UseInvoiceForm {
   const router = useRouter();
   const [values, setValues] = useState<InvoiceFormValues>(initial);
   const [errors, setErrors] = useState<InvoiceFormErrors>({});
   const [pending, startTransition] = useTransition();
+  // Tant que l'utilisateur n'a pas choisi lui-même l'activité, elle suit la catégorie saisie.
+  const activityTouched = useRef(activityChosen);
 
   function setValue<K extends keyof InvoiceFormValues>(key: K, value: InvoiceFormValues[K]): void {
-    setValues((current) => ({ ...current, [key]: value }));
+    if (key === "activite") activityTouched.current = true;
+    setValues((current) => {
+      const next = { ...current, [key]: value } as InvoiceFormValues;
+      if (key === "categorie" && !activityTouched.current) next.activite = suggestActivity(String(value)) ?? "";
+      return next;
+    });
     setErrors((current) => ({ ...current, [key]: undefined, form: undefined }));
   }
 
   function submit(): void {
-    const payload = { ...values, montant: values.montant.replace(/\s/g, "").replace(",", ".") };
+    const payload = { ...values, montant: values.montant.replace(/\s/g, "").replace(",", "."), activite: values.sens === "DEBIT" && values.activite ? values.activite : undefined };
     const parsed = invoiceInputSchema.safeParse(payload);
     if (!parsed.success) {
       const next: InvoiceFormErrors = {};

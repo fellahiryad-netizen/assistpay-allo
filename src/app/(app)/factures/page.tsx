@@ -36,6 +36,7 @@ function exportHref(query: InvoiceQuery, format?: "suivi"): string {
   if (query.status) params.set("status", query.status);
   if (query.annee) params.set("annee", String(query.annee));
   if (query.categorie) params.set("categorie", query.categorie);
+  if (query.activite) params.set("activite", query.activite);
   if (query.q) params.set("q", query.q);
   if (query.m) params.set("m", query.m);
   if (query.succursale) params.set("succursale", query.succursale);
@@ -51,6 +52,7 @@ function toSearch(query: InvoiceQuery, page: number): string {
   if (query.status) params.set("status", query.status);
   if (query.annee) params.set("annee", String(query.annee));
   if (query.categorie) params.set("categorie", query.categorie);
+  if (query.activite) params.set("activite", query.activite);
   if (query.q) params.set("q", query.q);
   if (query.m) params.set("m", query.m);
   if (query.succursale) params.set("succursale", query.succursale);
@@ -69,6 +71,7 @@ function hiddenFields(query: InvoiceQuery, omit: "p" | "mois"): Record<string, s
     status: query.status,
     annee: query.annee ? String(query.annee) : undefined,
     categorie: query.categorie,
+    activite: query.activite,
     succursale: query.succursale,
     q: query.q,
     d: query.d,
@@ -105,6 +108,7 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
     succursale: first(raw.succursale),
     annee: first(raw.annee),
     categorie: first(raw.categorie),
+    activite: first(raw.activite),
     q: first(raw.q),
     m: first(raw.m),
     d: first(raw.d),
@@ -119,7 +123,7 @@ export default async function InvoicesPage({ searchParams }: Readonly<{ searchPa
   const classified = Boolean(parsed.sens) && !parsed.m;
   // Le mois courant est proposé seulement à l'arrivée sur la vue : dès qu'une recherche ou un filtre est posé, on cherche partout.
   // L'onglet « À régler » ne reçoit jamais de mois par défaut (il masquerait des impayés) ; `!parsed.status` l'exclut déjà.
-  const fresh = !parsed.mois && !parsed.p && !parsed.q && !parsed.d && !parsed.annee && !parsed.categorie && !parsed.succursale && !parsed.status;
+  const fresh = !parsed.mois && !parsed.p && !parsed.q && !parsed.d && !parsed.annee && !parsed.categorie && !parsed.activite && !parsed.succursale && !parsed.status;
   const classification = classified ? await getInvoiceClassification(user, parsed, fresh) : null;
   const flat = { ...parsed, p: undefined, mois: undefined };
   const query: InvoiceQuery = classification?.success ? { ...parsed, p: classification.data.p || undefined, mois: classification.data.mois } : classified ? parsed : flat;

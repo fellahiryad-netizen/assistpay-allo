@@ -5,7 +5,7 @@ import { Printer } from "lucide-react";
 import { useState, useTransition } from "react";
 import { markInvoicePaidAction } from "@/app/actions/invoice-actions";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { SensBadge, StatusBadge } from "@/features/invoices/components/invoice-badges";
+import { ActivityBadge, SensBadge, StatusBadge } from "@/features/invoices/components/invoice-badges";
 import { InvoiceBulkBar } from "@/features/invoices/components/invoice-bulk-bar";
 import { MarkPaidDialog } from "@/features/invoices/components/mark-paid-dialog";
 import { useOptimisticInvoices } from "@/features/invoices/hooks/use-optimistic-invoices";
@@ -162,6 +162,7 @@ export function InvoiceTable({ items, canEdit, today, showSens, printable = {}, 
               </Link>
               <div className="flex flex-col items-end gap-1">
                 <StatusBadge status={invoice.status} />
+                {invoice.activite ? <ActivityBadge activity={invoice.activite} /> : null}
                 {cumulBadge(invoice.id)}
                 {avoirBadge(invoice.id)}
               </div>
@@ -224,6 +225,7 @@ export function InvoiceTable({ items, canEdit, today, showSens, printable = {}, 
                   <TableCell className="whitespace-nowrap">{invoice.numero || "—"}</TableCell>
                   <TableCell className="max-w-44 text-sm">
                     <span className="block truncate">{invoice.categorie || "Sans catégorie"}</span>
+                    {invoice.activite ? <ActivityBadge activity={invoice.activite} /> : null}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-right font-semibold tabular-nums">{formatDA(invoice.montant)}</TableCell>
                   <TableCell className="whitespace-nowrap tabular-nums">

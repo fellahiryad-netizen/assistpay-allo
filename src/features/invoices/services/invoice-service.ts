@@ -9,6 +9,9 @@ import type { Invoice, Prisma } from "@/generated/prisma/client";
 import { can, requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import type { InvoiceInput, InvoiceQuery, MarkPaidInput, SetStatusInput } from "@/features/invoices/schemas";
+import { activityOf, activityToStore, explicitActivityOf, ACTIVITY_LABELS, type Activity } from "@/features/invoices/lib/activity";
+import { activityHintsFor, loadActivityHints } from "@/features/invoices/services/activity-hints";
+import { extraWithActivity } from "@/features/invoices/services/invoice-extra";
 import { toInvoiceDTO, decimalToNumber } from "@/features/invoices/services/invoice-mapper";
 import { canOnInvoice, invoiceYear, isPayrollInvoice, moduleForSens, visibleSens } from "@/features/invoices/services/invoice-rules";
 import {
@@ -125,11 +128,28 @@ async function branchInvoiceIds(actor: AuthUser, label: string): Promise<string[
   return rows.filter((row) => branchLabel(row) === label).map((row) => row.id);
 }
 
-/** Comme `buildInvoiceWhere`, en résolvant aussi le filtre par succursale. */
+/** Identifiants des factures fournisseurs visibles dont l'activité (explicite ou déduite, voir `activityOf`) est celle demandée. */
+async function activityInvoiceIds(actor: AuthUser, activity: Activity): Promise<string[] | null> {
+  const visibility = visibilityWhere(actor);
+  if (!visibility) return null;
+  const rows = await db.invoice.findMany({
+    where: { AND: [visibility, { sens: "DEBIT" }] },
+    select: { id: true, categorie: true, extra: true, nature: true, tiers: true, libelle: true },
+  });
+  const hints = await loadActivityHints();
+  return rows.filter((row) => activityOf(row, hints) === activity).map((row) => row.id);
+}
+
+/** Comme `buildInvoiceWhere`, en résolvant aussi les filtres par succursale et par activité. */
 export async function buildInvoiceWhereWithBranch(actor: AuthUser, query: Omit<InvoiceQuery, "page">): Promise<Prisma.InvoiceWhereInput | null> {
-  const ids = query.succursale ? await branchInvoiceIds(actor, query.succursale) : undefined;
+  let ids = query.succursale ? ((await branchInvoiceIds(actor, query.succursale)) ?? undefined) : undefined;
+  if (query.activite) {
+    const byActivity = (await activityInvoiceIds(actor, query.activite)) ?? [];
+    const allowed = new Set(byActivity);
+    ids = ids ? ids.filter((id) => allowed.has(id)) : byActivity;
+  }
   const suppliers = query.sens === "DEBIT" && query.p ? await supplierValuesFor(actor, query.p) : undefined;
-  return buildInvoiceWhere(actor, query, ids ?? undefined, suppliers);
+  return buildInvoiceWhere(actor, query, ids, suppliers);
 }
 
 /**
@@ -221,13 +241,14 @@ export async function listInvoices(actor: AuthUser, query: InvoiceQuery): Promis
         take: PAGE_SIZE,
       }),
     ]);
+    const hints = await activityHintsFor(rows);
     const printable = await printableIds(actor, rows);
     const cumulInfos = await cumulForInvoices(rows.filter((row) => row.status === "REGLE").map((row) => row.legacyId));
     const cumulPaid = Object.fromEntries(rows.flatMap((row) => { const info = cumulInfos.get(row.legacyId); return info ? [[row.id, { date: info.date, montant: info.montant, nb: info.parts.length }] as const] : []; }));
     const badges = await listAvoirBadges(actor, rows.map((row) => row.legacyId));
     const avoirs = Object.fromEntries(rows.flatMap((row) => { const info = badges.success ? badges.data[row.legacyId] : undefined; return info ? [[row.id, info] as const] : []; }));
     return ok({
-      items: rows.map(toInvoiceDTO),
+      items: rows.map((row) => toInvoiceDTO(row, hints)),
       printable,
       total,
       page: query.page,
@@ -273,7 +294,7 @@ export async function getInvoice(actor: AuthUser, id: string): Promise<ActionRes
     const row = await db.invoice.findUnique({ where: { id } });
     if (!row) return fail("Facture introuvable.", "NOT_FOUND");
     if (!canOnInvoice(actor, row, "VIEW")) return fail("Vous n'avez pas accès à cette facture.", "FORBIDDEN");
-    return ok({ invoice: toInvoiceDTO(row), canEdit: canOnInvoice(actor, row, "EDIT") });
+    return ok({ invoice: toInvoiceDTO(row, await activityHintsFor([row])), canEdit: canOnInvoice(actor, row, "EDIT") });
   } catch (error) {
     console.error("[invoices] lecture impossible :", error);
     return fail("La facture n'a pas pu être chargée.", "DATABASE");
@@ -332,11 +353,12 @@ export async function createInvoice(actor: AuthUser, input: InvoiceInput): Promi
     }
     const single = await checkSingleAdvance(input);
     if (!single.success) return single;
+    const extra = input.sens === "DEBIT" && input.activite ? { extra: extraWithActivity({}, input.activite) } : {};
     const row = await db.invoice.create({
-      data: { ...data, legacyId: `n-${crypto.randomUUID()}`, origine: "saisie", createdById: actor.id, updatedById: actor.id },
+      data: { ...data, ...extra, legacyId: `n-${crypto.randomUUID()}`, origine: "saisie", createdById: actor.id, updatedById: actor.id },
     });
     const dto = toInvoiceDTO(row);
-    await logAction(actor, "Ajout facture", describe(dto));
+    await logAction(actor, "Ajout facture", `${describe(dto)}${dto.activite ? ` – activité ${ACTIVITY_LABELS[dto.activite]}` : ""}`);
     // Une facture fournisseur génère tout de suite sa demande de paiement.
     await autoRequestForInvoice(actor, row.id);
     return ok(dto);
@@ -372,6 +394,13 @@ function snapshot(row: { status: string; montant: { toNumber(): number }; debour
   };
 }
 
+/** Activité d'une facture fournisseur pour le journal (vide pour une facture partenaire). */
+function activitySnapshot(row: Pick<Invoice, "sens" | "categorie" | "extra" | "nature" | "tiers" | "libelle">): Record<string, string> {
+  if (row.sens !== "DEBIT") return {};
+  const activity: Activity = activityOf(row);
+  return { activité: ACTIVITY_LABELS[activity] };
+}
+
 /**
  * Report la nouvelle date de facture sur la facture établie (celle qui s'imprime) quand la date est changée au suivi.
  * Ne touche ni aux montants ni aux numéros.
@@ -400,11 +429,16 @@ export async function updateInvoice(actor: AuthUser, id: string, input: InvoiceI
     if (data.payroll && !can(actor, "RH", "EDIT")) return fail("Les lignes de paie sont réservées à l'accès RH.", "FORBIDDEN");
     const single = await checkSingleAdvance(input, id);
     if (!single.success) return single;
-    const row = await guardedUpdate(current, { ...data, classe: current.classe ?? data.classe, updatedById: actor.id });
+    // L'activité est fusionnée avec l'extra existant : les autres clés (paiements partiels, groupes…) sont conservées.
+    // On n'écrit pas une activité simplement déduite (elle resterait figée si la catégorie change) : seulement un choix explicite ou différent.
+    const deduced = activityOf({ categorie: input.categorie, nature: input.nature, tiers: input.tiers, libelle: input.libelle }, await loadActivityHints());
+    const toStore = input.sens === "DEBIT" && input.activite ? activityToStore(input.activite, explicitActivityOf(current.extra) !== null, deduced) : null;
+    const extra = toStore ? { extra: extraWithActivity(current.extra, toStore) } : {};
+    const row = await guardedUpdate(current, { ...data, ...extra, classe: current.classe ?? data.classe, updatedById: actor.id });
     if (!row) return fail(CONCURRENT_MESSAGE, "CONFLICT");
     await syncIssuedDate(current, row);
     const dto = toInvoiceDTO(row);
-    await logAction(actor, "Modification facture", describe(dto), false, { entity: "Invoice", entityId: row.legacyId, avant: snapshot(current), apres: snapshot(row) });
+    await logAction(actor, "Modification facture", describe(dto), false, { entity: "Invoice", entityId: row.legacyId, avant: { ...snapshot(current), ...activitySnapshot(current) }, apres: { ...snapshot(row), ...activitySnapshot(row) } });
     // Le montant corrigé est reporté sur la demande de paiement et sur la demande de facture prestataire.
     if (row.sens === "DEBIT" && !row.montant.equals(current.montant)) {
       const changes = await syncRequestsAmount(actor, row);

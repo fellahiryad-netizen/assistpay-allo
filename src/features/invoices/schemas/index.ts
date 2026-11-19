@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ACTIVITIES } from "@/features/invoices/lib/activity";
 import { INVOICE_STATUS_KEYS, PAYMENT_MODE_KEYS, SENS_KEYS } from "@/features/invoices/types";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date invalide (AAAA-MM-JJ).");
@@ -25,6 +26,8 @@ export const invoiceQuerySchema = z.object({
   succursale: z.string().trim().max(120).optional().catch(undefined),
   /** Date de règlement exacte (AAAA-MM-JJ) : date de réception du virement ou du chèque. */
   d: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().catch(undefined),
+  /** Activité d'une facture fournisseur (assistance, bdg, autre). */
+  activite: z.enum(ACTIVITIES).optional().catch(undefined),
   /** Classement simple : partenaire (crédit) ou fournisseur (débit). */
   p: z.string().trim().max(200).optional().catch(undefined),
   /** Classement simple : mois `AAAA-MM`, `sans-date` ou `tous`. */
@@ -58,8 +61,13 @@ export const invoiceInputSchema = z
     nature: text(120),
     succursale: text(120),
     periode: text(80),
+    /** Activité d'une facture fournisseur : enregistrée dans `extra.activite` (sans objet pour une facture partenaire). */
+    activite: z.enum(ACTIVITIES, { errorMap: () => ({ message: "Choisissez l'activité : Assistance, BDG ou Autre." }) }).optional(),
   })
   .superRefine((value, ctx) => {
+    if (value.sens === "DEBIT" && !value.activite) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["activite"], message: "Choisissez l'activité : Assistance, BDG ou Autre." });
+    }
     if (value.status === "REGLE" && !value.dateOperation) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["dateOperation"], message: "Date de règlement requise pour une facture réglée." });
     }
@@ -102,3 +110,17 @@ export const bulkDeleteSchema = z.object({
   motif: z.string().trim().max(300).default(""),
 });
 export type BulkDeleteInput = z.input<typeof bulkDeleteSchema>;
+
+/** Changement d'activité de toutes les factures impayées d'un prestataire (de l'activité d'origine vers une autre). */
+export const changeProviderActivitySchema = z
+  .object({
+    tiers: z.string().trim().min(1, "Prestataire requis.").max(200),
+    from: z.enum(ACTIVITIES),
+    to: z.enum(ACTIVITIES),
+    /** Année du filtre affiché (même périmètre que le tableau) ; absent = toutes les années. */
+    year: z.number().int().min(2000).max(2100).optional(),
+    /** Nombre de factures annoncé dans la confirmation : l'opération est refusée si le nombre réel a changé. */
+    expected: z.number().int().min(1).max(10_000),
+  })
+  .refine((value) => value.from !== value.to, { path: ["to"], message: "Choisissez une autre activité." });
+export type ChangeProviderActivityInput = z.infer<typeof changeProviderActivitySchema>;

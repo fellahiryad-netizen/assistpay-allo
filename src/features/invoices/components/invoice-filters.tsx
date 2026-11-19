@@ -2,6 +2,7 @@ import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { ACTIVITIES, ACTIVITY_LABELS } from "@/features/invoices/lib/activity";
 import type { InvoiceQuery } from "@/features/invoices/schemas";
 import { INVOICE_STATUS_KEYS, SENS_LABELS, STATUS_LABELS, type InvoiceFilterOptions } from "@/features/invoices/types";
 
@@ -62,6 +63,16 @@ export function InvoiceFilters({ query, options }: Readonly<InvoiceFiltersProps>
           </option>
         ))}
       </NativeSelect>
+      {query.sens === "DEBIT" ? (
+        <NativeSelect name="activite" defaultValue={query.activite ?? ""} aria-label="Activité">
+          <option value="">Toutes les activités</option>
+          {ACTIVITIES.map((activity) => (
+            <option key={activity} value={activity}>
+              {ACTIVITY_LABELS[activity]}
+            </option>
+          ))}
+        </NativeSelect>
+      ) : null}
       {options.branches.length > 0 ? (
         <NativeSelect name="succursale" defaultValue={query.succursale ?? ""} aria-label="Succursale">
           <option value="">Toutes les succursales</option>

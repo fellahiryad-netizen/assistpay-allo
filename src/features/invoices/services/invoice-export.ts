@@ -4,6 +4,8 @@ import { writeWorkbook } from "@/lib/spreadsheet";
 import { requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { isSplit, paidSum, remaining, toPayable, type PayableInvoice } from "@/features/invoices/services/invoice-balance";
+import { activityOf, ACTIVITY_LABELS } from "@/features/invoices/lib/activity";
+import { activityHintsFor } from "@/features/invoices/services/activity-hints";
 import { authorOf } from "@/features/invoices/services/invoice-extra";
 import { branchLabel } from "@/features/invoices/services/branch";
 import { buildInvoiceWhereWithBranch } from "@/features/invoices/services/invoice-service";
@@ -58,9 +60,9 @@ function yearOf(row: Invoice): number | "" {
 
 const LIST_HEADERS = [
   "Année", "Débit ou Crédit", "Client / catégorie", "Succursale", "Tiers", "Détail", "N° facture", "Date de dépôt facture", "Montant", "Débours", "Frais de gestion",
-  "Reste à encaisser / payer", "État", "Date de règlement", "Mode", "N° de chèque", "Banque", "Paiement global", "Demande de paiement", "Nature", "Classe", "Saisi / modifié par",
+  "Reste à encaisser / payer", "État", "Date de règlement", "Mode", "N° de chèque", "Banque", "Paiement global", "Demande de paiement", "Nature", "Classe", "Saisi / modifié par", "Activité",
 ];
-const LIST_WIDTHS = [6, 9, 22, 16, 26, 40, 18, 12, 14, 14, 14, 14, 10, 12, 10, 14, 10, 30, 14, 18, 6, 18];
+const LIST_WIDTHS = [6, 9, 22, 16, 26, 40, 18, 12, 14, 14, 14, 14, 10, 12, 10, 14, 10, 30, 14, 18, 6, 18, 12];
 
 const SUIVI_HEADERS = [
   "Année", "BANQUE", "TYPE", "MONTANT", "N° facture", "N° DE CHEQUE", "Libellé", "Détail", "DATE DE REGLEMENT", "Débit ou Crédit", "Etat de la demande", "Débours", "Débours réglés le",
@@ -93,6 +95,7 @@ export async function exportInvoiceList(actor: AuthUser, query: ExportQuery): Pr
   const loaded = await loadRows(actor, query);
   if (!loaded.success) return loaded;
   if (loaded.data.length === 0) return fail("Rien à exporter avec ces filtres.", "NOT_FOUND");
+  const hints = await activityHintsFor(loaded.data);
   const rows = loaded.data.map((row) => {
     const invoice = toPayable(row);
     const split = isSplit(invoice);
@@ -120,6 +123,7 @@ export async function exportInvoiceList(actor: AuthUser, query: ExportQuery): Pr
       row.nature,
       row.classe ?? "",
       authorOf(extra),
+      row.sens === "DEBIT" ? ACTIVITY_LABELS[activityOf(row, hints)] : "",
     ];
   });
   const bytes = writeWorkbook([{ name: "Factures", rows: [LIST_HEADERS, ...rows], widths: LIST_WIDTHS }]);

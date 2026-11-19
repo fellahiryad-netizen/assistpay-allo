@@ -8,6 +8,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { ActivityChoice } from "@/features/invoices/components/activity-choice";
+import { ACTIVITY_LABELS, suggestActivity } from "@/features/invoices/lib/activity";
 import { SensChoice } from "@/features/invoices/components/sens-choice";
 import { initialInvoiceValues, useInvoiceForm, type InvoiceFormValues } from "@/features/invoices/hooks/use-invoice-form";
 import {
@@ -35,7 +37,7 @@ function isStatus(value: string): value is InvoiceStatusKey {
   return (INVOICE_STATUS_KEYS as readonly string[]).includes(value);
 }
 
-type TextKey = Exclude<keyof InvoiceFormValues, "sens" | "status" | "mode">;
+type TextKey = Exclude<keyof InvoiceFormValues, "sens" | "status" | "mode" | "activite">;
 
 function isMode(value: string): value is PaymentModeKey | "" {
   return value === "" || (PAYMENT_MODE_KEYS as readonly string[]).includes(value);
@@ -43,7 +45,8 @@ function isMode(value: string): value is PaymentModeKey | "" {
 
 /** Formulaire d'ajout ou de modification d'une facture partenaire / fournisseur. */
 export function InvoiceForm({ invoice, defaultSens, allowedSens, categories, today, cancelHref }: Readonly<InvoiceFormProps>): React.JSX.Element {
-  const { values, errors, pending, setValue, submit } = useInvoiceForm(initialInvoiceValues(invoice, defaultSens, today), invoice?.id ?? null);
+  const { values, errors, pending, setValue, submit } = useInvoiceForm(initialInvoiceValues(invoice, defaultSens, today), invoice?.id ?? null, invoice?.activiteExplicite ?? false);
+  const suggested = suggestActivity(values.categorie);
 
   function onSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -70,6 +73,16 @@ export function InvoiceForm({ invoice, defaultSens, allowedSens, categories, tod
           <div className="sm:col-span-2 lg:col-span-3">
             <SensChoice value={values.sens} allowed={allowedSens} onChange={(sens) => setValue("sens", sens)} error={errors.sens} />
           </div>
+          {values.sens === "DEBIT" ? (
+            <div className="sm:col-span-2 lg:col-span-3">
+              <ActivityChoice
+                value={values.activite}
+                onChange={(activite) => setValue("activite", activite)}
+                error={errors.activite}
+                hint={suggested ? `Suggérée par la catégorie : ${ACTIVITY_LABELS[suggested]}.` : "Obligatoire : choisissez l'activité de ce fournisseur."}
+              />
+            </div>
+          ) : null}
           {text("tiers", "Tiers (partenaire ou fournisseur)")}
           {text("numero", "N° de facture")}
           {text("montant", "Montant (DA)", { inputMode: "decimal", placeholder: "0,00" })}

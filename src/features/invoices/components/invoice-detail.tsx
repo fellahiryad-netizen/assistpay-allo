@@ -6,9 +6,11 @@ import { AvoirsOfInvoice } from "@/features/avoirs/components/avoirs-of-invoice"
 import { InvoiceDpActions, type InvoiceDpItem } from "@/features/payment-requests/components/invoice-dp-actions";
 import { InvoiceStatusActions } from "@/features/invoices/components/invoice-status-actions";
 import {
+  ActivityBadge,
   SensBadge,
   StatusBadge,
 } from "@/features/invoices/components/invoice-badges";
+import { ACTIVITY_LABELS } from "@/features/invoices/lib/activity";
 import { MODE_LABELS, type InvoiceDTO } from "@/features/invoices/types";
 import { formatDA, formatDate, formatDateTime } from "@/utils/format";
 
@@ -38,6 +40,7 @@ export function InvoiceDetail({
     ["Tiers", invoice.tiers || "—"],
     ["N° de facture", invoice.numero || "—"],
     ["Catégorie", invoice.categorie || "—"],
+    ...(invoice.activite ? [["Activité", `${ACTIVITY_LABELS[invoice.activite]}${invoice.activiteExplicite ? "" : " (déduite de la catégorie)"}`] as [string, string]] : []),
     ["Nature", invoice.nature || "—"],
     ["Libellé", invoice.libelle || "—"],
     ["Date de facture", formatDate(invoice.dateFacture) || "—"],
@@ -64,6 +67,7 @@ export function InvoiceDetail({
           <div className="flex flex-wrap items-center gap-2">
             <SensBadge sens={invoice.sens} />
             <StatusBadge status={invoice.status} />
+            {invoice.activite ? <ActivityBadge activity={invoice.activite} /> : null}
             {invoice.archived ? (
               <span className="text-xs text-muted-foreground">
                 reprise des archives
