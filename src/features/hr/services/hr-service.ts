@@ -170,7 +170,7 @@ export async function syncHrAggregates(): Promise<void> {
     const mk = monthKey(row);
     const credit = row.sens === "RETOUR";
     const id = `rhagg-${annee}-${mk ? mk.slice(5) : "nd"}-${credit ? "c" : "d"}-${row.classe ?? "x"}`;
-    const group = groups.get(id) ?? { annee, mk, credit, classe: row.classe, montant: 0, dates: [] };
+    const group = groups.get(id) ?? { annee, mk, credit, classe: row.classe, montant: 0, dates: [] as string[] };
     group.montant = round2(group.montant + Number(row.montant));
     const date = toIsoDate(row.date);
     if (date) group.dates.push(date);
