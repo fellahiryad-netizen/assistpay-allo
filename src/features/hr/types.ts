@@ -25,13 +25,14 @@ export interface HrBankInfo {
   detail: string;
 }
 
-/** Anomalie affichée dans l'encadré de la page RH, avec les écritures concernées (pour les corriger ou supprimer). */
+/** Anomalie affichée dans l'encadré de la page RH, (les écritures concernées sont dans un dictionnaire à part). */
 export interface HrAnomalyDTO {
   key: string;
   kind: "doublon" | "beneficiaire" | "periode";
   level: "certain" | "probable" | null;
   message: string;
-  entries: HrEntryDTO[];
+  /** Identifiants des écritures concernées (voir le dictionnaire `anomalyEntries` de la liste). */
+  entryIds: string[];
 }
 
 /** Anomalie validée (« vérifiée, c'est normal »), rétablissable. */

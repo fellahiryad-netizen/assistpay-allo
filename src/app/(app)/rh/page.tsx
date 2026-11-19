@@ -85,9 +85,12 @@ export default async function HrPage({
       </div>
       <HrAnomalies
         anomalies={data.anomalies}
+        entries={data.anomalyEntries}
+        keysByKind={data.openKeysByKind}
         validated={data.validatedAnomalies}
         total={data.anomalyCount}
         showAllHref={query.anomalies === "tout" || data.anomalyCount <= data.anomalies.length ? null : link({ anomalies: "tout" })}
+        showLessHref={query.anomalies === "tout" && data.anomalyCount > 60 ? link({ anomalies: undefined }) : null}
         canEdit={data.canEdit}
         beneficiaries={data.beneficiaries}
         today={today}

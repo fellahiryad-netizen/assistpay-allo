@@ -41,8 +41,11 @@ export const hrDeleteSchema = z.object({ id: z.string().min(1).max(64) });
 
 /** Validation d'une anomalie RH : clé stable et motif facultatif. */
 export const hrAnomalyValidateSchema = z.object({ key: z.string().min(1).max(400), motif: z.string().trim().max(200).default("") });
-/** Validation d'anomalie reçue par le service. */
-export type HrAnomalyValidateInput = z.infer<typeof hrAnomalyValidateSchema>;
 
 /** Rétablissement d'une anomalie validée. */
 export const hrAnomalyRestoreSchema = z.object({ key: z.string().min(1).max(400) });
+
+/** Validation en bloc d'anomalies RH : clés stables et un seul motif facultatif. */
+export const hrAnomaliesValidateSchema = z.object({ keys: z.array(z.string().min(1).max(400)).min(1).max(500), motif: z.string().trim().max(200).default("") });
+/** Validation en bloc reçue par le service. */
+export type HrAnomaliesValidateInput = z.infer<typeof hrAnomaliesValidateSchema>;

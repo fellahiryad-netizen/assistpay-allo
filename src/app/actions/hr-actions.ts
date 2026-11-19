@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { runAction } from "@/app/actions/action-helpers";
-import { hrAnomalyRestoreSchema, hrAnomalyValidateSchema, hrDeleteSchema, hrEntrySchema, type HrEntryInput } from "@/features/hr/schemas";
-import { deleteHrEntry, restoreHrAnomaly, saveHrEntry, validateHrAnomaly } from "@/features/hr/services/hr-service";
+import { hrAnomaliesValidateSchema, hrAnomalyRestoreSchema, hrAnomalyValidateSchema, hrDeleteSchema, hrEntrySchema, type HrEntryInput } from "@/features/hr/schemas";
+import { deleteHrEntry, restoreHrAnomaly, saveHrEntry, validateHrAnomalies } from "@/features/hr/services/hr-service";
 import type { ActionResult } from "@/types";
 
 function refresh(): void {
@@ -27,8 +27,15 @@ export async function deleteHrEntryAction(input: { id: string }): Promise<Action
 }
 
 /** Validation d'une anomalie RH (« j'ai vérifié, c'est normal »), avec un motif facultatif. */
-export async function validateHrAnomalyAction(input: { key: string; motif?: string }): Promise<ActionResult<{ key: string }>> {
-  const result = await runAction(hrAnomalyValidateSchema, input, validateHrAnomaly);
+export async function validateHrAnomalyAction(input: { key: string; motif?: string }): Promise<ActionResult<{ done: number }>> {
+  const result = await runAction(hrAnomalyValidateSchema, input, (actor, value) => validateHrAnomalies(actor, { keys: [value.key], motif: value.motif }));
+  if (result.success) refresh();
+  return result;
+}
+
+/** Validation en bloc d'anomalies RH : un seul motif, une seule écriture du réglage, une seule ligne de journal. */
+export async function validateHrAnomaliesAction(input: { keys: string[]; motif?: string }): Promise<ActionResult<{ done: number }>> {
+  const result = await runAction(hrAnomaliesValidateSchema, input, validateHrAnomalies);
   if (result.success) refresh();
   return result;
 }

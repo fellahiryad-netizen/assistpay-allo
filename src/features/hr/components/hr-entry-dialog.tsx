@@ -21,10 +21,12 @@ export interface HrEntryDialogProps {
   today: string;
   /** Texte du bouton d'ouverture d'une écriture existante (« Modifier » par défaut). */
   triggerLabel?: string;
+  /** Libellé accessible du bouton d'ouverture (lecteurs d'écran). */
+  triggerAriaLabel?: string;
 }
 
 /** Nouvelle saisie ou modification d'une écriture RH (salaire, CNAS, G50, avance…). */
-export function HrEntryDialog({ entry, beneficiaries, today, triggerLabel = "Modifier" }: Readonly<HrEntryDialogProps>): React.JSX.Element {
+export function HrEntryDialog({ entry, beneficiaries, today, triggerLabel = "Modifier", triggerAriaLabel }: Readonly<HrEntryDialogProps>): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState(entry?.mode ?? "VIRMT");
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +96,7 @@ export function HrEntryDialog({ entry, beneficiaries, today, triggerLabel = "Mod
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {entry ? (
-        <button type="button" onClick={show} className="text-xs font-medium text-primary hover:underline">
+        <button type="button" onClick={show} aria-label={triggerAriaLabel} className="text-xs font-medium text-primary hover:underline">
           {triggerLabel}
         </button>
       ) : (
