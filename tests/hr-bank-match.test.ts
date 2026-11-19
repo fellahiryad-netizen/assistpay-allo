@@ -49,6 +49,12 @@ describe("rapprochement RH et relevé", () => {
     expect(matches.get("b")).toMatchObject({ lineId: "lb", level: "fort" });
   });
 
+  it("une ligne déjà affectée à une facture n'est pas proposée en moyen ou faible, mais le fort reste possible", () => {
+    const affectee = line({ refs: ["inv-1:tout"], libelle: "VIREMENT" });
+    expect(matchHrToBank([entry({ mode: "VIRMT" })], [affectee]).size).toBe(0);
+    expect(matchHrToBank([entry({ cheque: "7064740" })], [{ ...affectee, libelle: "CHEQUE TL-7064740" }]).get("e1")?.level).toBe("fort");
+  });
+
   it("une ligne ne sert qu'à une seule écriture", () => {
     const matches = matchHrToBank([entry({ id: "a", mode: "VIRMT" }), entry({ id: "b", mode: "VIRMT" })], [line({})]);
     expect(matches.size).toBe(1);
@@ -79,6 +85,11 @@ describe("anomalies", () => {
     expect(inconsistentBeneficiary({ nature: "G50", beneficiaire: "G50 SEPTEMBRE" })).not.toBeNull();
     expect(inconsistentBeneficiary({ nature: "G50", beneficiaire: "Receveur des impôts" })).toBeNull();
     expect(inconsistentBeneficiary({ nature: "Salaire", beneficiaire: "Salaires du personnel" })).toBeNull();
+  });
+
+  it("l'écart de période n'est signalé que pour G50, IRG et IBS", () => {
+    const list = detectHrAnomalies([{ ...base, id: "1", nature: "CNAS", beneficiaire: "CNAS", montant: 5, libelle: "CNAS septembre", monthKey: "2026-10" }]);
+    expect(list.filter((a) => a.kind === "periode")).toHaveLength(0);
   });
 
   it("liste doublon, bénéficiaire et période", () => {

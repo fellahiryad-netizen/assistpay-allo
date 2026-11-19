@@ -57,9 +57,16 @@ export function HrEntryDialog({ entry, beneficiaries, today }: Readonly<HrEntryD
       else {
         setError(result.error);
         // La case n'apparaît qu'après un refus « doublon probable » ; un doublon certain ne se confirme jamais.
+        setConfirmDuplicate(false);
         setProbableDuplicate(result.code === "CONFLICT" && isProbableDuplicateMessage(result.error));
       }
     });
+  }
+
+  /** Toute modification d'un champ annule la confirmation du doublon : elle ne vaut que pour la saisie qui a été refusée. */
+  function resetConfirmation(event: FormEvent<HTMLFormElement>): void {
+    if (event.target instanceof HTMLInputElement && event.target.name === "confirmerDoublon") return;
+    setConfirmDuplicate(false);
   }
 
   function remove(): void {
@@ -100,7 +107,7 @@ export function HrEntryDialog({ entry, beneficiaries, today }: Readonly<HrEntryD
           <DialogTitle>{entry ? "Modifier la saisie RH" : "Nouvelle saisie RH"}</DialogTitle>
           <DialogDescription>Le total du mois est reporté automatiquement dans le suivi (Charges de personnel, agrégé).</DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <form onSubmit={submit} onChange={resetConfirmation} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field id="rh-nature" label="Nature">
             <NativeSelect id="rh-nature" name="nature" defaultValue={entry?.nature ?? "Salaire"}>
               {HR_NATURES.map((nature) => (
@@ -156,7 +163,7 @@ export function HrEntryDialog({ entry, beneficiaries, today }: Readonly<HrEntryD
           ) : null}
           {probableDuplicate ? (
             <label className="flex items-start gap-2 text-sm sm:col-span-2">
-              <Checkbox checked={confirmDuplicate} onChange={(event) => setConfirmDuplicate(event.target.checked)} className="mt-0.5" />
+              <Checkbox name="confirmerDoublon" checked={confirmDuplicate} onChange={(event) => setConfirmDuplicate(event.target.checked)} className="mt-0.5" />
               <span>Ce n'est pas un doublon : enregistrer quand même ce paiement distinct.</span>
             </label>
           ) : null}

@@ -222,7 +222,8 @@ async function analyseParsed(actor: AuthUser, all: ParsedLine[]): Promise<Action
       const entry = entryId ? hrCheques.find((row) => row.id === entryId) : undefined;
       if (!entry) continue;
       usedHr.add(entry.id);
-      hrRecorded.push({ line, labels: [`RH : ${entry.nature} ${entry.beneficiaire} (chèque ${entry.cheque})`.replace(/\s+/g, " ").trim()] });
+      // Le détail de la paie n'est montré qu'à l'accès RH.
+      hrRecorded.push({ line, labels: [can(actor, "RH") ? `RH : ${entry.nature} ${entry.beneficiaire} (chèque ${entry.cheque})`.replace(/\s+/g, " ").trim() : "Déjà enregistré (paie)"] });
       await upsertLine(line, "DEJA", [`rh:${entry.legacyId}`], actor);
     }
     for (const line of payrollLines) {

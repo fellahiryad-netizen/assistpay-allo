@@ -170,7 +170,7 @@ export default async function HrPage({
         </NativeSelect>
         <NativeSelect name="releve" defaultValue={query.releve ?? ""} aria-label="Rapprochement avec le relevé" className="w-60">
           <option value="">Toutes (relevé)</option>
-          <option value="non">Non rapprochées ({data.unmatchedCount})</option>
+          <option value="verifier">À vérifier ({data.notFoundCount} non trouvée(s), {data.probableCount} probable(s))</option>
         </NativeSelect>
         <button type="submit" className={buttonVariants({ variant: "outline" })}>
           Filtrer

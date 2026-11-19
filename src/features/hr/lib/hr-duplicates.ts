@@ -1,3 +1,4 @@
+import { validPeriod } from "@/features/hr/lib/hr-period";
 import { dayGap } from "@/utils/dates";
 import { formatDA, formatDate } from "@/utils/format";
 import { upperPlain } from "@/utils/text";
@@ -9,7 +10,7 @@ export const HR_PROBABLE_PREFIX = "Doublon probable";
 export const HR_PROBABLE_WINDOW_DAYS = 45;
 
 /** Nombre minimal de chiffres d'un numéro de chèque retenu pour la comparaison. */
-const MIN_CHEQUE_DIGITS = 4;
+const MIN_CHEQUE_DIGITS = 5;
 
 /** Écriture RH réduite aux champs utiles à la détection. */
 export interface HrEntryLike {
@@ -43,12 +44,13 @@ export function toCents(value: number): number {
 
 /**
  * Numéros de chèque normalisés d'une saisie : on retire les lettres (« TL- », « AGB », « CHQ »…), les espaces et les
- * séparateurs, puis les zéros de tête. Plusieurs chèques peuvent être séparés par « / », « & », « + », « , » ou « ; ».
- * Les numéros de moins de 4 chiffres sont ignorés.
+ * séparateurs, puis les zéros de tête. Plusieurs chèques peuvent être séparés par « / », « & », « + », « , », « ; » ou « - ».
+ * Les numéros de moins de 5 chiffres sont ignorés.
+ * Les tirets séparent deux numéros (« 7064740-7064741 » donne deux chèques, « TL-7064740 » un seul) ; les espaces à l'intérieur d'un numéro sont ignorés.
  */
 export function chequeKeys(raw: string): string[] {
   const keys: string[] = [];
-  for (const part of upperPlain(raw).split(/[/&+,;]/)) {
+  for (const part of upperPlain(raw).split(/[/&+,;-]/)) {
     const digits = part.replace(/\D/g, "").replace(/^0+/, "");
     if (digits.length >= MIN_CHEQUE_DIGITS && !keys.includes(digits)) keys.push(digits);
   }
@@ -89,6 +91,20 @@ const MONTH_WORDS: ReadonlyArray<readonly [number, string]> = [
 
 const pad = (month: number): string => String(month).padStart(2, "0");
 
+/** Année d'un mois cité sans année : celle qui place le mois le plus près du mois de référence (décembre cité en janvier = année précédente, janvier cité en décembre = année suivante). */
+function nearestYear(month: number, refYear: number, refMonth: number): number {
+  let best = refYear;
+  let bestGap = Number.POSITIVE_INFINITY;
+  for (const year of [refYear, refYear - 1, refYear + 1]) {
+    const gap = Math.abs((year - refYear) * 12 + month - refMonth);
+    if (gap < bestGap) {
+      best = year;
+      bestGap = gap;
+    }
+  }
+  return best;
+}
+
 /**
  * Périodes (`AAAA-MM`) citées dans un libellé : « G50 09-2026 », « 2026/09 », « septembre », « aout »…
  * Un mois sans année est rattaché à l'année de `reference` (mois ou date de l'écriture) ; s'il est postérieur au mois de
@@ -107,7 +123,7 @@ export function citedPeriods(libelle: string, reference: string): string[] {
   for (const [month, word] of MONTH_WORDS) {
     const hit = text.match(new RegExp(`\\b${word}\\b(?:\\s*(20\\d{2}))?`));
     if (!hit) continue;
-    add(`${hit[1] ?? (month <= refMonth ? refYear : refYear - 1)}-${pad(month)}`);
+    add(`${hit[1] ?? nearestYear(month, refYear, refMonth)}-${pad(month)}`);
   }
   return found;
 }
@@ -140,9 +156,10 @@ function sameCheque(a: HrEntryLike, b: HrEntryLike): boolean {
 /**
  * Compare deux écritures. Renvoie le niveau du doublon, ou null.
  *
- * Certain : même chèque normalisé et même montant ; ou même nature, même montant, même bénéficiaire normalisé et même date.
+ * Certain : même chèque normalisé et même montant ; ou même nature, même montant, même bénéficiaire normalisé et même date
+ * (sauf si les deux écritures portent chacune un chèque et que ces chèques sont différents).
  * Probable (sens identique, même montant au centime) :
- * - même nature à moins de 45 jours ;
+ * - même nature à moins de 45 jours (sauf si les mois saisis sont valides et différents et qu'aucun libellé ne cite de période) ;
  * - ou même groupe de nature dont la période (libellé, sinon mois) coïncide.
  * Pour les natures individuelles (salaire, avance, prime…), le bénéficiaire doit aussi être le même (deux salaires identiques
  * de deux employés ne sont pas un doublon) et la période doit coïncider (le salaire d'un employé est souvent identique d'un mois à l'autre).
@@ -154,7 +171,9 @@ export function compareHrEntries(candidate: HrEntryLike, other: HrEntryLike): Hr
   const sameNature = upperPlain(candidate.nature) === upperPlain(other.nature);
   if (sameCheque(candidate, other)) return { level: "certain", entry: other, reason: "même chèque et même montant" };
   const sameBeneficiary = normalizeBeneficiary(candidate.beneficiaire) !== "" && normalizeBeneficiary(candidate.beneficiaire) === normalizeBeneficiary(other.beneficiaire);
-  if (sameNature && sameBeneficiary && candidate.date && candidate.date === other.date) return { level: "certain", entry: other, reason: "même nature, même montant, même bénéficiaire et même date" };
+  // Deux chèques différents, tous deux renseignés : deux paiements distincts, pas un doublon certain.
+  const chequesDisjoint = chequeKeys(candidate.cheque).length > 0 && chequeKeys(other.cheque).length > 0;
+  if (sameNature && sameBeneficiary && candidate.date && candidate.date === other.date && !chequesDisjoint) return { level: "certain", entry: other, reason: "même nature, même montant, même bénéficiaire et même date" };
 
   const organism = isOrganismNature(candidate.nature) && isOrganismNature(other.nature);
   if (!organism && !sameBeneficiary) return null;
@@ -162,7 +181,10 @@ export function compareHrEntries(candidate: HrEntryLike, other: HrEntryLike): Hr
   const explicitB = explicitPeriods(other);
   if (explicitA.length && explicitB.length && !intersects(explicitA, explicitB)) return null;
   const periodsMatch = intersects(entryPeriods(candidate), entryPeriods(other));
-  if (organism && sameNature && candidate.date && other.date && dayGap(candidate.date, other.date) <= HR_PROBABLE_WINDOW_DAYS) {
+  // Mois saisis valides et différents, sans période citée dans les libellés : deux périodes distinctes (G50 de septembre et G50 d'octobre).
+  const otherMonths = validPeriod(candidate.mois) !== "" && validPeriod(other.mois) !== "" && candidate.mois !== other.mois;
+  const windowAllowed = !(otherMonths && explicitA.length === 0 && explicitB.length === 0);
+  if (organism && sameNature && windowAllowed && candidate.date && other.date && dayGap(candidate.date, other.date) <= HR_PROBABLE_WINDOW_DAYS) {
     return { level: "probable", entry: other, reason: `même nature et même montant à ${dayGap(candidate.date, other.date)} jour(s) d'écart` };
   }
   if ((organism ? isSameGroup(candidate.nature, other.nature) : sameNature) && periodsMatch) {
@@ -176,21 +198,41 @@ function isSameGroup(a: string, b: string): boolean {
   return group(a) === group(b);
 }
 
-/** Cherche, parmi les écritures existantes, le doublon le plus fort (certain avant probable, puis date la plus proche). `excludeId` écarte l'écriture modifiée. */
-export function findHrDuplicate(candidate: HrEntryLike, existing: readonly HrEntryLike[], excludeId?: string): HrDuplicate | null {
-  let best: HrDuplicate | null = null;
-  let bestGap = Number.POSITIVE_INFINITY;
+const RANK: Readonly<Record<HrDuplicateLevel, number>> = { certain: 2, probable: 1 };
+
+/** Tous les doublons d'une écriture parmi les existantes, du plus fort au plus faible (certain avant probable, puis date la plus proche). `excludeId` écarte l'écriture modifiée. */
+export function findAllHrDuplicates(candidate: HrEntryLike, existing: readonly HrEntryLike[], excludeId?: string): HrDuplicate[] {
+  const found: Array<{ duplicate: HrDuplicate; gap: number }> = [];
   for (const entry of existing) {
     if (excludeId && entry.id === excludeId) continue;
-    const found = compareHrEntries(candidate, entry);
-    if (!found) continue;
-    const gap = candidate.date && entry.date ? dayGap(candidate.date, entry.date) : 9999;
-    if (!best || (found.level === "certain" && best.level === "probable") || (found.level === best.level && gap < bestGap)) {
-      best = found;
-      bestGap = gap;
-    }
+    const duplicate = compareHrEntries(candidate, entry);
+    if (duplicate) found.push({ duplicate, gap: candidate.date && entry.date ? dayGap(candidate.date, entry.date) : 9999 });
   }
-  return best;
+  return found.sort((a, b) => RANK[b.duplicate.level] - RANK[a.duplicate.level] || a.gap - b.gap).map((item) => item.duplicate);
+}
+
+/** Le doublon le plus fort parmi les écritures existantes, ou null. */
+export function findHrDuplicate(candidate: HrEntryLike, existing: readonly HrEntryLike[], excludeId?: string): HrDuplicate | null {
+  return findAllHrDuplicates(candidate, existing, excludeId)[0] ?? null;
+}
+
+/** Décision du garde-fou : autorisé (éventuellement avec un doublon probable confirmé) ou refusé avec le doublon en cause. */
+export type HrDuplicateDecision = { allowed: true; confirmed: HrDuplicate | null } | { allowed: false; duplicate: HrDuplicate };
+
+/**
+ * Décide si une écriture peut être enregistrée.
+ * - Un doublon certain refuse toujours ; un doublon probable refuse sauf `confirm`.
+ * - En modification (`previous` = version enregistrée), les doublons qui existaient déjà avant la modification (mêmes écritures voisines,
+ *   même niveau ou plus fort) ne bloquent pas : on doit pouvoir corriger une des lignes avant de supprimer l'autre. Seuls les doublons nouveaux sont jugés.
+ */
+export function evaluateDuplicate(candidate: HrEntryLike, previous: HrEntryLike | undefined, existing: readonly HrEntryLike[], confirm: boolean): HrDuplicateDecision {
+  const after = findAllHrDuplicates(candidate, existing, candidate.id);
+  const before = previous ? findAllHrDuplicates(previous, existing, candidate.id) : [];
+  const fresh = after.filter((item) => !before.some((old) => old.entry.id === item.entry.id && RANK[old.level] >= RANK[item.level]));
+  const worst = fresh[0];
+  if (!worst) return { allowed: true, confirmed: null };
+  if (worst.level === "probable" && confirm) return { allowed: true, confirmed: worst };
+  return { allowed: false, duplicate: worst };
 }
 
 /** Décrit une écriture existante pour un message : date, libellé, chèque, montant. */

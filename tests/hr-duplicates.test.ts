@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { citedPeriods, compareHrEntries, duplicateMessage, findHrDuplicate, isProbableDuplicateMessage, normalizeCheque, type HrEntryLike } from "@/features/hr/lib/hr-duplicates";
+import { chequeKeys, citedPeriods, compareHrEntries, duplicateMessage, evaluateDuplicate, findHrDuplicate, isProbableDuplicateMessage, normalizeCheque, type HrEntryLike } from "@/features/hr/lib/hr-duplicates";
 
 const entry = (patch: Partial<HrEntryLike>): HrEntryLike => ({
   id: "x",
@@ -124,5 +124,76 @@ describe("modification et sens", () => {
     const probable = entry({ id: "p", date: "2026-10-01", cheque: "" });
     const certain = entry({ id: "c", date: "2026-10-19", cheque: "TL-7064740" });
     expect(findHrDuplicate(entry({ cheque: "7064740" }), [probable, certain])?.entry.id).toBe("c");
+  });
+});
+
+describe("chèques : seuil et séparateurs", () => {
+  it("ignore moins de 5 chiffres et sépare deux chèques par un tiret", () => {
+    expect(chequeKeys("1234")).toEqual([]);
+    expect(chequeKeys("TL-7064740")).toEqual(["7064740"]);
+    expect(chequeKeys("7064740-7064741")).toEqual(["7064740", "7064741"]);
+    expect(chequeKeys("7064740 / 7064741")).toEqual(["7064740", "7064741"]);
+  });
+});
+
+describe("corrections du relecteur", () => {
+  it("1. mêmes nature, bénéficiaire, montant et date mais deux chèques différents : pas un doublon certain", () => {
+    const a = entry({ id: "1", cheque: "7064740", libelle: "G50 09-2026" });
+    const b = entry({ id: "2", cheque: "7064741", libelle: "G50 09-2026" });
+    expect(compareHrEntries(b, a)?.level).not.toBe("certain");
+    // Un seul chèque renseigné : la règle « même date » reste certaine.
+    expect(compareHrEntries(entry({ id: "3", cheque: "" }), a)?.level).toBe("certain");
+  });
+
+  it("2. G50 de septembre payé le 20/10 et G50 d'octobre payé le 20/11 (mois saisis différents, sans période citée) : pas de doublon", () => {
+    const sept = entry({ id: "1", mois: "2026-09", date: "2026-10-20", beneficiaire: "Receveur des impôts" });
+    const oct = entry({ id: "2", mois: "2026-10", date: "2026-11-20", beneficiaire: "DGI" });
+    expect(compareHrEntries(oct, sept)).toBeNull();
+    // Même mois saisi, ou mois vide : la fenêtre de 45 jours s'applique.
+    expect(compareHrEntries({ ...oct, mois: "2026-09" }, sept)?.level).toBe("probable");
+    expect(compareHrEntries({ ...oct, mois: "" }, sept)?.level).toBe("probable");
+  });
+
+  it("3. mois cité sans année à cheval sur décembre et janvier", () => {
+    expect(citedPeriods("G50 décembre", "2027-01")).toEqual(["2026-12"]);
+    expect(citedPeriods("G50 janvier", "2026-12")).toEqual(["2027-01"]);
+    expect(citedPeriods("G50 janvier", "2027-01")).toEqual(["2027-01"]);
+    const a = entry({ id: "1", mois: "2026-12", date: "2027-01-10", libelle: "G50 12-2026" });
+    const b = entry({ id: "2", mois: "2027-01", date: "2027-01-20", libelle: "G50 décembre" });
+    expect(compareHrEntries(b, a)?.level).toBe("probable");
+  });
+});
+
+describe("garde-fou : exemption en modification et confirmation", () => {
+  const voisine = entry({ id: "v", libelle: "G50 09-2026", cheque: "7064740" });
+  const stockee = entry({ id: "m", libelle: "G50 09-2026", cheque: "TL-7064740", beneficiaire: "G50 SEPTEMBRE" });
+
+  it("un doublon déjà présent avant la correction ne bloque pas la correction d'un autre champ", () => {
+    const corrigee = { ...stockee, beneficiaire: "Receveur des impôts" };
+    expect(evaluateDuplicate(corrigee, stockee, [voisine, stockee], false)).toEqual({ allowed: true, confirmed: null });
+  });
+
+  it("une nouvelle écriture identique est refusée (certain, jamais confirmable)", () => {
+    const decision = evaluateDuplicate({ ...stockee, id: undefined }, undefined, [voisine], true);
+    expect(decision.allowed).toBe(false);
+  });
+
+  it("l'exemption compare des ensembles : un second doublon apparu à la modification bloque", () => {
+    const autre = entry({ id: "w", cheque: "9999999", libelle: "G50 09-2026", date: "2026-10-25", beneficiaire: "Autre" });
+    const base = entry({ id: "m", cheque: "", libelle: "G50 09-2026", date: "2026-11-30", mois: "2026-09", montant: 13_916_005 });
+    // Avant et après : les deux voisines sont déjà des doublons probables, donc la correction passe ; un doublon devenu certain bloque.
+    const decision = evaluateDuplicate(base, base, [voisine, autre], false);
+    expect(decision.allowed).toBe(true);
+    const nouveau = { ...base, cheque: "7064740" };
+    const refus = evaluateDuplicate(nouveau, base, [voisine, autre], true);
+    expect(refus.allowed).toBe(false);
+  });
+
+  it("un doublon probable est confirmable et renvoie l'écriture voisine", () => {
+    const premiere = entry({ id: "1", date: "2026-10-19", libelle: "G50 09-2026" });
+    const seconde = entry({ id: "2", date: "2026-11-04", mois: "2026-11", libelle: "G50 SEPTEMBRE", beneficiaire: "G50 SEPTEMBRE", cheque: "TL-7064740" });
+    expect(evaluateDuplicate({ ...seconde, id: undefined }, undefined, [premiere], false).allowed).toBe(false);
+    const decision = evaluateDuplicate({ ...seconde, id: undefined }, undefined, [premiere], true);
+    expect(decision).toMatchObject({ allowed: true, confirmed: { level: "probable" } });
   });
 });

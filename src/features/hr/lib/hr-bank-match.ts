@@ -72,6 +72,8 @@ export function levelOf(entry: HrBankEntry, line: HrBankLine): { level: HrBankLe
   if (!sameAmount) return null;
   const numbers = bankChequeNumbers(line.libelle, line.numero);
   if (chequeKeys(entry.cheque).some((key) => key.length >= MIN_BANK_CHEQUE_DIGITS && numbers.includes(key))) return { level: "fort", dateGap };
+  // Ligne déjà affectée à autre chose (facture non RH, autre écriture RH) : jamais proposée en rapprochement moyen ou faible.
+  if ((line.refs ?? []).length > 0 && !linked) return null;
   if (dateGap !== null && dateGap <= HR_BANK_NEAR_DAYS) return { level: "moyen", dateGap };
   if (dateGap === null || dateGap <= HR_BANK_WEAK_MAX_DAYS) return { level: "faible", dateGap };
   return null;
@@ -81,6 +83,7 @@ export function levelOf(entry: HrBankEntry, line: HrBankLine): { level: HrBankLe
  * Rapproche chaque écriture RH (paiement par chèque ou virement) d'une ligne DEBIT du relevé.
  * Fort : numéro de chèque normalisé présent dans le libellé bancaire et montant identique (ou lien « rh: » déjà posé).
  * Moyen : montant identique et date à ±5 jours. Faible : montant identique seul (au plus 90 jours d'écart).
+ * Les lignes déjà affectées (références autres que « rh:<cette écriture> ») ne sont candidates qu'en rapprochement fort.
  * Appariement glouton : les couples sont pris par force décroissante puis par écart de dates croissant ; une ligne ne sert qu'à une seule écriture.
  * Lecture seule : aucune écriture en base.
  */

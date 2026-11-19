@@ -1,4 +1,5 @@
 import { citedPeriods, compareHrEntries, describeHrEntry, isOrganismNature, normalizeBeneficiary, type HrDuplicateLevel, type HrEntryLike } from "@/features/hr/lib/hr-duplicates";
+import { isPeriodNature } from "@/features/hr/lib/hr-period";
 import { MONTHS_FR } from "@/utils/dates";
 import { upperPlain } from "@/utils/text";
 
@@ -35,7 +36,7 @@ export function inconsistentBeneficiary(entry: Pick<HrEntryLike, "nature" | "ben
 
 /**
  * Anomalies d'une liste d'écritures : doublons suspects entre écritures, bénéficiaires incohérents avec la nature,
- * mois de rattachement différent de la période citée dans le libellé (simple indication).
+ * mois de rattachement différent de la période citée dans le libellé (simple indication, seulement pour G50 / IRG / IBS).
  */
 export function detectHrAnomalies(entries: readonly HrAnomalyEntry[]): HrAnomaly[] {
   const out: HrAnomaly[] = [];
@@ -50,7 +51,7 @@ export function detectHrAnomalies(entries: readonly HrAnomalyEntry[]): HrAnomaly
     }
     const wrong = inconsistentBeneficiary(a);
     if (wrong) out.push({ kind: "beneficiaire", level: null, entryIds: [a.id], message: `Bénéficiaire incohérent : ${wrong}.` });
-    const cited = citedPeriods(a.libelle, a.date?.slice(0, 7) || a.mois);
+    const cited = isPeriodNature(a.nature) ? citedPeriods(a.libelle, a.date?.slice(0, 7) || a.mois) : [];
     if (cited.length && a.monthKey && !cited.includes(a.monthKey)) {
       out.push({ kind: "periode", level: null, entryIds: [a.id], message: `Rattachée à ${monthName(a.monthKey)} alors que le libellé cite ${cited.map(monthName).join(", ")} : ${describeHrEntry(a)}.` });
     }

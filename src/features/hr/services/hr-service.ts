@@ -1,4 +1,4 @@
-import { isPeriodNature, validPeriod } from "@/features/hr/lib/hr-period";
+import { aggregateDate, monthKeyOfEntry, storedYear, yearOfEntry } from "@/features/hr/lib/hr-period";
 import { db } from "@/lib/db";
 import { writeWorkbook } from "@/lib/spreadsheet";
 import type { HrEntry, Prisma } from "@/generated/prisma/client";
@@ -9,7 +9,7 @@ import { normalizeText } from "@/utils/text";
 import { HR_GROUP_LABELS, hrGroup, type HrAnomalyDTO, type HrBankInfo, type HrEntryDTO, type HrGroup, type HrTotals } from "@/features/hr/types";
 import { detectHrAnomalies } from "@/features/hr/lib/hr-anomalies";
 import { isBankEntry, matchHrToBank, type HrBankEntry, type HrBankLine, type HrBankMatch } from "@/features/hr/lib/hr-bank-match";
-import { duplicateMessage, findHrDuplicate, type HrEntryLike } from "@/features/hr/lib/hr-duplicates";
+import { describeHrEntry, duplicateMessage, evaluateDuplicate, type HrDuplicate, type HrEntryLike } from "@/features/hr/lib/hr-duplicates";
 import { logAction } from "@/features/journal/services/journal-service";
 import { fail, ok, type ActionResult } from "@/types";
 import { round2 } from "@/utils/amounts";
@@ -20,27 +20,13 @@ function obj(value: Prisma.JsonValue): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
-/** Année de rattachement : pour un G50 / IRG / IBS, celle de la période couverte ; sinon l'année saisie, à défaut celle du mois ou de la date. */
-const yearOf = (row: HrEntry): number => {
-  const period = isPeriodNature(row.nature) ? validPeriod(row.mois) : "";
-  if (period) return Number(period.slice(0, 4));
-  return row.annee ?? (Number((row.mois || toIsoDate(row.date) || "").slice(0, 4)) || 0);
-};
+const periodFields = (row: HrEntry): { nature: string; mois: string; annee: number | null; date: string | null } => ({ nature: row.nature, mois: row.mois, annee: row.annee, date: toIsoDate(row.date) });
 
-/**
- * Mois de rattachement. G50, IRG et IBS : le mois de la période couverte (« G50 d'octobre » payé en novembre reste en octobre).
- * Autres natures (repris de l'ancienne version) : mois de la date si elle est dans l'année, sinon le mois saisi.
- */
-function monthKey(row: HrEntry): string {
-  if (isPeriodNature(row.nature)) {
-    const period = validPeriod(row.mois);
-    if (period) return period;
-  }
-  const year = String(yearOf(row));
-  const date = toIsoDate(row.date) ?? "";
-  if (date.slice(0, 4) === year) return date.slice(0, 7);
-  return row.mois.slice(0, 4) === year ? row.mois : "";
-}
+/** Année de rattachement (voir `yearOfEntry`). */
+const yearOf = (row: HrEntry): number => yearOfEntry(periodFields(row));
+
+/** Mois de rattachement (voir `monthKeyOfEntry`) : G50, IRG, IBS dans le mois de la période couverte, les autres natures selon la date de paiement. */
+const monthKey = (row: HrEntry): string => monthKeyOfEntry(periodFields(row));
 
 const signed = (row: HrEntry): number => (row.sens === "RETOUR" ? -1 : 1) * Number(row.montant);
 
@@ -73,21 +59,13 @@ function toLike(row: HrEntry): HrEntryLike {
 }
 
 /**
- * Garde-fou anti-doublon. Refuse (CONFLICT) un doublon certain ; refuse aussi un doublon probable sauf `confirm`.
- * En modification, l'écriture elle-même est exclue, et un doublon déjà présent avant la modification (même écriture, même niveau)
- * ne bloque pas la correction (on doit pouvoir réparer une des deux lignes avant de supprimer l'autre).
+ * Garde-fou anti-doublon (règles dans `evaluateDuplicate`). Refus CONFLICT ; renvoie le doublon probable confirmé, le cas échéant.
  */
-async function checkHrDuplicate(candidate: HrEntryLike, options: { confirm: boolean; canConfirm?: boolean; previous?: HrEntry }): Promise<ActionResult<true>> {
+async function checkHrDuplicate(candidate: HrEntryLike, options: { confirm: boolean; canConfirm?: boolean; previous?: HrEntry }): Promise<ActionResult<{ confirmed: HrDuplicate | null }>> {
   const rows = await db.hrEntry.findMany({ where: { montant: round2(candidate.montant) } });
-  const existing = rows.map(toLike);
-  const found = findHrDuplicate(candidate, existing, candidate.id);
-  if (!found) return ok(true);
-  if (options.previous) {
-    const before = findHrDuplicate(toLike(options.previous), existing, candidate.id);
-    if (before && before.entry.id === found.entry.id && before.level === found.level) return ok(true);
-  }
-  if (found.level === "probable" && options.confirm) return ok(true);
-  return fail(duplicateMessage(found, options.canConfirm ?? true), "CONFLICT");
+  const decision = evaluateDuplicate(candidate, options.previous ? toLike(options.previous) : undefined, rows.map(toLike), options.confirm);
+  if (!decision.allowed) return fail(duplicateMessage(decision.duplicate, options.canConfirm ?? true), "CONFLICT");
+  return ok({ confirmed: decision.confirmed });
 }
 
 /** Lignes DEBIT du relevé proches des dates des écritures (lecture seule). */
@@ -125,7 +103,7 @@ const emptyTotals = (): HrTotals => ({ sal: 0, cnas: 0, g50: 0, autre: 0 });
 export async function listHr(
   actor: AuthUser,
   query: HrQuery,
-): Promise<ActionResult<{ entries: HrEntryDTO[]; totalCount: number; totalAmount: number; years: number[]; year: number | "all"; totals: HrTotals; months: Array<{ key: string; totals: HrTotals }>; natures: string[]; beneficiaries: string[]; canEdit: boolean; anomalies: HrAnomalyDTO[]; anomalyCount: number; unmatchedCount: number }>> {
+): Promise<ActionResult<{ entries: HrEntryDTO[]; totalCount: number; totalAmount: number; years: number[]; year: number | "all"; totals: HrTotals; months: Array<{ key: string; totals: HrTotals }>; natures: string[]; beneficiaries: string[]; canEdit: boolean; anomalies: HrAnomalyDTO[]; anomalyCount: number; notFoundCount: number; probableCount: number }>> {
   const guard = requireAccess(actor, "RH");
   if (!guard.success) return guard;
   const rows = await db.hrEntry.findMany({ orderBy: [{ date: "desc" }, { ordre: "desc" }] });
@@ -166,7 +144,8 @@ export async function listHr(
     entries: filtered.slice(0, 400).map((row) => toDTO(row, bankInfo.get(row.id))),
     anomalies: anomalies.slice(0, 60).map(({ kind, level, message }) => ({ kind, level, message })),
     anomalyCount: anomalies.length,
-    unmatchedCount: inYear.filter(unmatched).length,
+    notFoundCount: inYear.filter((row) => bankInfo.get(row.id)?.status === "non_trouve").length,
+    probableCount: inYear.filter((row) => bankInfo.get(row.id)?.status === "probable").length,
     totalCount: filtered.length,
     totalAmount: round2(filtered.reduce((sum, row) => sum + signed(row), 0)),
     years,
@@ -185,16 +164,16 @@ export async function listHr(
  */
 export async function syncHrAggregates(): Promise<void> {
   const rows = await db.hrEntry.findMany();
-  const groups = new Map<string, { annee: number; mk: string; credit: boolean; classe: number | null; montant: number; date: string }>();
+  const groups = new Map<string, { annee: number; mk: string; credit: boolean; classe: number | null; montant: number; dates: string[] }>();
   for (const row of rows) {
     const annee = yearOf(row);
     const mk = monthKey(row);
     const credit = row.sens === "RETOUR";
     const id = `rhagg-${annee}-${mk ? mk.slice(5) : "nd"}-${credit ? "c" : "d"}-${row.classe ?? "x"}`;
-    const group = groups.get(id) ?? { annee, mk, credit, classe: row.classe, montant: 0, date: "" };
+    const group = groups.get(id) ?? { annee, mk, credit, classe: row.classe, montant: 0, dates: [] };
     group.montant = round2(group.montant + Number(row.montant));
-    const date = toIsoDate(row.date) ?? "";
-    if (date.slice(0, 4) === String(annee) && date > group.date) group.date = date;
+    const date = toIsoDate(row.date);
+    if (date) group.dates.push(date);
     groups.set(id, group);
   }
   const existing = await db.invoice.findMany({ where: { legacyId: { startsWith: "rhagg-" } }, select: { id: true, legacyId: true } });
@@ -208,7 +187,7 @@ export async function syncHrAggregates(): Promise<void> {
         tiers: "Charges de personnel",
         libelle,
         montant: group.montant,
-        dateOperation: fromIsoDate(group.date || null),
+        dateOperation: fromIsoDate(aggregateDate(group.mk, group.annee, group.dates) || null),
         annee: group.annee,
         nature: group.classe === 6 ? "Charge" : "",
         classe: group.classe,
@@ -237,7 +216,7 @@ async function persistHrEntry(actor: AuthUser, input: HrEntryInput, canConfirm: 
     beneficiaire: input.beneficiaire,
     mois: input.mois,
     date: fromIsoDate(input.date || null),
-    annee: Number((input.date || input.mois).slice(0, 4)),
+    annee: storedYear(input.nature, input.mois, input.date || null),
     montant: input.montant,
     mode: input.mode,
     cheque: input.mode === "CHEQUE" ? input.cheque : "",
@@ -252,6 +231,7 @@ async function persistHrEntry(actor: AuthUser, input: HrEntryInput, canConfirm: 
     { confirm: input.confirmerDoublon, canConfirm, previous: current ?? undefined },
   );
   if (!duplicate.success) return duplicate;
+  const confirmed = duplicate.data.confirmed;
   if (input.id && current) {
     await db.hrEntry.update({ where: { id: input.id }, data: { ...data, extra: { ...obj(current.extra), maj: stamp } as Prisma.InputJsonObject } });
     id = input.id;
@@ -260,7 +240,7 @@ async function persistHrEntry(actor: AuthUser, input: HrEntryInput, canConfirm: 
     id = created.id;
   }
   await syncHrAggregates();
-  await logAction(actor, input.id ? "Modification saisie RH" : "Saisie RH", `${input.nature} – ${input.beneficiaire} – ${formatDA(input.montant)}`);
+  await logAction(actor, input.id ? "Modification saisie RH" : "Saisie RH", `${input.nature} – ${input.beneficiaire} – ${formatDA(input.montant)}${confirmed ? ` – doublon probable confirmé (écriture voisine : ${describeHrEntry(confirmed.entry)})` : ""}`);
   return ok({ id });
 }
 

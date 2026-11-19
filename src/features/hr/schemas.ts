@@ -7,8 +7,8 @@ export const hrQuerySchema = z.object({
   mois: z.string().regex(/^\d{4}-\d{2}$/).optional().catch(undefined),
   nature: z.string().max(60).optional().catch(undefined),
   q: z.string().trim().max(100).optional().catch(undefined),
-  /** « non » : seulement les paiements par chèque ou virement sans ligne de relevé rapprochée. */
-  releve: z.literal("non").optional().catch(undefined),
+  /** « verifier » : seulement les paiements par chèque ou virement non rapprochés avec certitude du relevé (probables ou non trouvés). */
+  releve: z.literal("verifier").optional().catch(undefined),
 });
 /** Filtres validés. */
 export type HrQuery = z.infer<typeof hrQuerySchema>;
