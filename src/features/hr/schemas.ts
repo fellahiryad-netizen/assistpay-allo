@@ -7,6 +7,8 @@ export const hrQuerySchema = z.object({
   mois: z.string().regex(/^\d{4}-\d{2}$/).optional().catch(undefined),
   nature: z.string().max(60).optional().catch(undefined),
   q: z.string().trim().max(100).optional().catch(undefined),
+  /** « non » : seulement les paiements par chèque ou virement sans ligne de relevé rapprochée. */
+  releve: z.literal("non").optional().catch(undefined),
 });
 /** Filtres validés. */
 export type HrQuery = z.infer<typeof hrQuerySchema>;
@@ -25,6 +27,8 @@ export const hrEntrySchema = z
     cheque: z.string().trim().max(40),
     banque: z.string().trim().max(60),
     libelle: z.string().trim().max(300),
+    /** Passe outre un doublon PROBABLE (jamais un doublon certain). */
+    confirmerDoublon: z.boolean().default(false),
   })
   .refine((value) => value.mode !== "CHEQUE" || value.cheque.length > 0, { message: "Saisissez le numéro du chèque.", path: ["cheque"] });
 /** Écriture RH validée. */

@@ -12,6 +12,26 @@ export function hrGroup(nature: string): HrGroup {
   return /^Salaire/.test(nature) ? "sal" : /CNAS|CASNOS/.test(nature) ? "cnas" : /G50|IRG|IBS/.test(nature) ? "g50" : "autre";
 }
 
+/** Statut d'une écriture face au relevé bancaire : rapprochée, probable, non trouvée, ou sans objet (retour, autre mode). */
+export type HrBankStatus = "rapproche" | "probable" | "non_trouve" | "na";
+
+/** Rapprochement d'une écriture RH avec le relevé (lecture seule). */
+export interface HrBankInfo {
+  status: HrBankStatus;
+  /** Date et libellé de la ligne du relevé (vides si le profil n'a pas accès au relevé). */
+  date: string | null;
+  libelle: string;
+  /** « montant seul » pour un rapprochement faible. */
+  detail: string;
+}
+
+/** Anomalie affichée dans l'encadré de la page RH. */
+export interface HrAnomalyDTO {
+  kind: "doublon" | "beneficiaire" | "periode";
+  level: "certain" | "probable" | null;
+  message: string;
+}
+
 /** Saisie RH. */
 export interface HrEntryDTO {
   id: string;
@@ -28,6 +48,7 @@ export interface HrEntryDTO {
   cheque: string;
   banque: string;
   par: string;
+  releve: HrBankInfo;
 }
 
 /** Totaux par groupe. */

@@ -5,11 +5,14 @@ import { can, requireAccess, requireAdmin } from "@/features/access/services/acc
 import type { AuthUser } from "@/features/access/types";
 import type { HrEntryInput, HrQuery } from "@/features/hr/schemas";
 import { normalizeText } from "@/utils/text";
-import { HR_GROUP_LABELS, hrGroup, type HrEntryDTO, type HrGroup, type HrTotals } from "@/features/hr/types";
+import { HR_GROUP_LABELS, hrGroup, type HrAnomalyDTO, type HrBankInfo, type HrEntryDTO, type HrGroup, type HrTotals } from "@/features/hr/types";
+import { detectHrAnomalies } from "@/features/hr/lib/hr-anomalies";
+import { isBankEntry, matchHrToBank, type HrBankEntry, type HrBankLine, type HrBankMatch } from "@/features/hr/lib/hr-bank-match";
+import { duplicateMessage, findHrDuplicate, type HrEntryLike } from "@/features/hr/lib/hr-duplicates";
 import { logAction } from "@/features/journal/services/journal-service";
 import { fail, ok, type ActionResult } from "@/types";
 import { round2 } from "@/utils/amounts";
-import { MONTHS_FR, fromIsoDate, toIsoDate, todayIso } from "@/utils/dates";
+import { MONTHS_FR, fromIsoDate, shiftIsoDate, toIsoDate, todayIso } from "@/utils/dates";
 import { formatDA } from "@/utils/format";
 
 function obj(value: Prisma.JsonValue): Record<string, unknown> {
@@ -28,7 +31,9 @@ function monthKey(row: HrEntry): string {
 
 const signed = (row: HrEntry): number => (row.sens === "RETOUR" ? -1 : 1) * Number(row.montant);
 
-function toDTO(row: HrEntry): HrEntryDTO {
+const NO_BANK: HrBankInfo = { status: "na", date: null, libelle: "", detail: "" };
+
+function toDTO(row: HrEntry, releve: HrBankInfo = NO_BANK): HrEntryDTO {
   const extra = obj(row.extra);
   const maj = obj((extra.maj ?? extra.cree ?? null) as Prisma.JsonValue);
   return {
@@ -46,6 +51,58 @@ function toDTO(row: HrEntry): HrEntryDTO {
     cheque: row.cheque,
     banque: row.banque,
     par: String(maj.nom ?? maj.label ?? ""),
+    releve,
+  };
+}
+
+function toLike(row: HrEntry): HrEntryLike {
+  return { id: row.id, nature: row.nature, sens: row.sens, beneficiaire: row.beneficiaire, mois: row.mois, date: toIsoDate(row.date), montant: Number(row.montant), cheque: row.cheque, libelle: row.libelle };
+}
+
+/**
+ * Garde-fou anti-doublon. Refuse (CONFLICT) un doublon certain ; refuse aussi un doublon probable sauf `confirm`.
+ * En modification, l'écriture elle-même est exclue, et un doublon déjà présent avant la modification (même écriture, même niveau)
+ * ne bloque pas la correction (on doit pouvoir réparer une des deux lignes avant de supprimer l'autre).
+ */
+async function checkHrDuplicate(candidate: HrEntryLike, options: { confirm: boolean; canConfirm?: boolean; previous?: HrEntry }): Promise<ActionResult<true>> {
+  const rows = await db.hrEntry.findMany({ where: { montant: round2(candidate.montant) } });
+  const existing = rows.map(toLike);
+  const found = findHrDuplicate(candidate, existing, candidate.id);
+  if (!found) return ok(true);
+  if (options.previous) {
+    const before = findHrDuplicate(toLike(options.previous), existing, candidate.id);
+    if (before && before.entry.id === found.entry.id && before.level === found.level) return ok(true);
+  }
+  if (found.level === "probable" && options.confirm) return ok(true);
+  return fail(duplicateMessage(found, options.canConfirm ?? true), "CONFLICT");
+}
+
+/** Lignes DEBIT du relevé proches des dates des écritures (lecture seule). */
+async function loadBankLines(rows: HrEntry[]): Promise<HrBankLine[]> {
+  const dates = rows.map((row) => toIsoDate(row.date)).filter((value): value is string => Boolean(value)).sort();
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  if (!first || !last) return [];
+  const lines = await db.bankStatementLine.findMany({
+    where: { sens: "DEBIT", date: { gte: fromIsoDate(shiftIsoDate(first, -95)) ?? undefined, lte: fromIsoDate(shiftIsoDate(last, 95)) ?? undefined } },
+    select: { id: true, date: true, libelle: true, numero: true, montant: true, sens: true, invoiceRefs: true },
+  });
+  return lines.map((line) => ({ id: line.id, date: toIsoDate(line.date) ?? "", libelle: line.libelle, numero: line.numero, montant: Number(line.montant), sens: line.sens, refs: line.invoiceRefs }));
+}
+
+function toBankEntry(row: HrEntry): HrBankEntry {
+  return { id: row.id, legacyId: row.legacyId, sens: row.sens, mode: row.mode, cheque: row.cheque, montant: Number(row.montant), date: toIsoDate(row.date) };
+}
+
+function bankInfoOf(row: HrEntry, match: HrBankMatch | undefined, lines: Map<string, HrBankLine>, showBank: boolean): HrBankInfo {
+  if (!isBankEntry(toBankEntry(row))) return NO_BANK;
+  const line = match ? lines.get(match.lineId) : undefined;
+  if (!match || !line) return { status: "non_trouve", date: null, libelle: "", detail: "" };
+  return {
+    status: match.level === "fort" ? "rapproche" : "probable",
+    date: showBank ? line.date : null,
+    libelle: showBank ? line.libelle : "",
+    detail: match.level === "faible" ? "montant seul" : match.level === "moyen" ? "montant et date" : "",
   };
 }
 
@@ -55,7 +112,7 @@ const emptyTotals = (): HrTotals => ({ sal: 0, cnas: 0, g50: 0, autre: 0 });
 export async function listHr(
   actor: AuthUser,
   query: HrQuery,
-): Promise<ActionResult<{ entries: HrEntryDTO[]; totalCount: number; totalAmount: number; years: number[]; year: number | "all"; totals: HrTotals; months: Array<{ key: string; totals: HrTotals }>; natures: string[]; beneficiaries: string[]; canEdit: boolean }>> {
+): Promise<ActionResult<{ entries: HrEntryDTO[]; totalCount: number; totalAmount: number; years: number[]; year: number | "all"; totals: HrTotals; months: Array<{ key: string; totals: HrTotals }>; natures: string[]; beneficiaries: string[]; canEdit: boolean; anomalies: HrAnomalyDTO[]; anomalyCount: number; unmatchedCount: number }>> {
   const guard = requireAccess(actor, "RH");
   if (!guard.success) return guard;
   const rows = await db.hrEntry.findMany({ orderBy: [{ date: "desc" }, { ordre: "desc" }] });
@@ -74,9 +131,29 @@ export async function listHr(
     byMonth.set(key, month);
   }
   const q = (query.q ?? "").toLowerCase();
-  const filtered = inYear.filter((row) => (!query.nature || row.nature === query.nature) && (!query.mois || monthKey(row) === query.mois) && (!q || [row.beneficiaire, row.libelle, row.nature, row.cheque].join(" ").toLowerCase().includes(q)));
+  // Rapprochement avec le relevé et anomalies : lecture seule, sur toute l'année affichée (pas seulement la page).
+  const bankLines = await loadBankLines(inYear);
+  const lineById = new Map(bankLines.map((line) => [line.id, line]));
+  const matches = matchHrToBank(inYear.map(toBankEntry), bankLines);
+  const showBank = can(actor, "RELEVE");
+  const bankInfo = new Map<string, HrBankInfo>(inYear.map((row): [string, HrBankInfo] => [row.id, bankInfoOf(row, matches.get(row.id), lineById, showBank)]));
+  const unmatched = (row: HrEntry): boolean => {
+    const status = bankInfo.get(row.id)?.status;
+    return status === "non_trouve" || status === "probable";
+  };
+  const anomalies = detectHrAnomalies(inYear.map((row) => ({ ...toLike(row), id: row.id, monthKey: monthKey(row) })));
+  const filtered = inYear.filter(
+    (row) =>
+      (!query.nature || row.nature === query.nature) &&
+      (!query.mois || monthKey(row) === query.mois) &&
+      (!query.releve || unmatched(row)) &&
+      (!q || [row.beneficiaire, row.libelle, row.nature, row.cheque].join(" ").toLowerCase().includes(q)),
+  );
   return ok({
-    entries: filtered.slice(0, 400).map(toDTO),
+    entries: filtered.slice(0, 400).map((row) => toDTO(row, bankInfo.get(row.id))),
+    anomalies: anomalies.slice(0, 60).map(({ kind, level, message }) => ({ kind, level, message })),
+    anomalyCount: anomalies.length,
+    unmatchedCount: inYear.filter(unmatched).length,
     totalCount: filtered.length,
     totalAmount: round2(filtered.reduce((sum, row) => sum + signed(row), 0)),
     years,
@@ -134,6 +211,10 @@ export async function syncHrAggregates(): Promise<void> {
 
 /** Création ou modification d'une écriture RH ; les totaux mensuels du suivi sont mis à jour. */
 export async function saveHrEntry(actor: AuthUser, input: HrEntryInput): Promise<ActionResult<{ id: string }>> {
+  return persistHrEntry(actor, input, true);
+}
+
+async function persistHrEntry(actor: AuthUser, input: HrEntryInput, canConfirm: boolean): Promise<ActionResult<{ id: string }>> {
   const guard = requireAccess(actor, "RH", "EDIT");
   if (!guard.success) return guard;
   const stamp = { le: new Date().toISOString(), nom: actor.name, par: actor.id };
@@ -151,9 +232,14 @@ export async function saveHrEntry(actor: AuthUser, input: HrEntryInput): Promise
     libelle: input.libelle,
   };
   let id: string;
-  if (input.id) {
-    const current = await db.hrEntry.findUnique({ where: { id: input.id } });
-    if (!current) return fail("Saisie introuvable.", "NOT_FOUND");
+  const current = input.id ? await db.hrEntry.findUnique({ where: { id: input.id } }) : null;
+  if (input.id && !current) return fail("Saisie introuvable.", "NOT_FOUND");
+  const duplicate = await checkHrDuplicate(
+    { id: input.id, nature: input.nature, sens: input.sens, beneficiaire: input.beneficiaire, mois: input.mois, date: input.date || null, montant: input.montant, cheque: data.cheque, libelle: input.libelle },
+    { confirm: input.confirmerDoublon, canConfirm, previous: current ?? undefined },
+  );
+  if (!duplicate.success) return duplicate;
+  if (input.id && current) {
     await db.hrEntry.update({ where: { id: input.id }, data: { ...data, extra: { ...obj(current.extra), maj: stamp } as Prisma.InputJsonObject } });
     id = input.id;
   } else {
@@ -235,6 +321,14 @@ export async function transferInvoicesToHr(actor: AuthUser, ids: string[]): Prom
       const date = row.dateOperation ?? row.dateFacture;
       const iso = toIsoDate(date) ?? "";
       const nature = hrNatureOf(`${row.categorie} ${row.tiers} ${row.libelle} ${row.nature}`);
+      const duplicate = await checkHrDuplicate(
+        { nature, sens: row.sens === "CREDIT" ? "RETOUR" : "PAIEMENT", beneficiaire: row.tiers, mois: iso.slice(0, 7), date: iso || null, montant: Number(row.montant), cheque: row.cheque, libelle: row.libelle },
+        { confirm: false, canConfirm: false },
+      );
+      if (!duplicate.success) {
+        failures.push(`${label} : ${duplicate.error} La facture n'a pas été transférée.`);
+        continue;
+      }
       await db.hrEntry.create({
         data: {
           legacyId: `rh-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -277,7 +371,7 @@ export async function recordPayrollInHr(
   input: { sens: "CREDIT" | "DEBIT"; categorie: string; tiers: string; libelle: string; nature: string; montant: number; dateFacture: string | null; dateOperation: string | null; mode: string | null; cheque: string; banque: string },
 ): Promise<ActionResult<{ id: string }>> {
   const date = input.dateOperation ?? input.dateFacture ?? todayIso();
-  return saveHrEntry(actor, {
+  return persistHrEntry(actor, {
     nature: hrNatureOf(`${input.categorie} ${input.tiers} ${input.libelle} ${input.nature}`) as HrEntryInput["nature"],
     sens: input.sens === "CREDIT" ? "RETOUR" : "PAIEMENT",
     beneficiaire: input.tiers || input.categorie,
@@ -288,5 +382,6 @@ export async function recordPayrollInHr(
     cheque: input.mode === "CHEQUE" ? input.cheque : "",
     banque: input.banque,
     libelle: input.libelle,
-  });
+    confirmerDoublon: false,
+  }, false);
 }

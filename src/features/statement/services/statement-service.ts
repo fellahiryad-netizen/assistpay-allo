@@ -11,6 +11,7 @@ import { ensureCaatAdvance } from "@/features/invoices/services/caat-advances";
 import { cumulForLines, cumulLineIds } from "@/features/statement/services/cumul";
 import { logAction } from "@/features/journal/services/journal-service";
 import { IGNORE_MOTIFS, type ApplyProposalsInput, type AssignCaatInput, type AssignCaatMonthsInput, type IgnoreLineInput, AssignLineInput, AssignSearchInput, CreateFromLineInput, StatementQuery } from "@/features/statement/schemas";
+import { strongHrMatches, type HrBankEntry } from "@/features/hr/lib/hr-bank-match";
 import { analyseLines, bankBranch, branchCompat, inFamily, paidEntries } from "@/features/statement/services/statement-matching";
 import {
   BANK_FEE_PATTERN,
@@ -176,15 +177,19 @@ async function analyseParsed(actor: AuthUser, all: ParsedLine[]): Promise<Action
     const alreadyImported = kept.length - fresh.length;
     const transfers = await loadTransfers();
     const withoutBatch = fresh.filter((line) => !transferForLine(line, transfers, []));
-    const salaryWords = withoutBatch.filter((line) => SALARY_WORD.test(upperPlain(line.libelle)) && !PAYROLL_PATTERN.test(upperPlain(line.libelle)));
+    // Chèques déjà saisis dans l'onglet RH : n° de chèque lu dans le libellé bancaire et montant identique (règle forte).
+    const hrCheques = await db.hrEntry.findMany({ where: { sens: "PAIEMENT", cheque: { not: "" } } });
+    const hrChequeEntries: HrBankEntry[] = hrCheques.map((entry) => ({ id: entry.id, legacyId: entry.legacyId, sens: entry.sens, mode: "CHEQUE", cheque: entry.cheque, montant: decimalToNumber(entry.montant), date: toIsoDate(entry.date) }));
+    const chequeMatches = strongHrMatches(withoutBatch.map((line) => ({ id: line.key, date: line.date, libelle: line.libelle, numero: line.numero, montant: line.montant, sens: line.sens })), hrChequeEntries);
+    const salaryWords = withoutBatch.filter((line) => !chequeMatches.has(line.key) && SALARY_WORD.test(upperPlain(line.libelle)) && !PAYROLL_PATTERN.test(upperPlain(line.libelle)));
     // « VIRT DE SALAIRES » : paie seulement si une écriture RH de même montant existe ; sinon c'est un virement de prestataire.
     const salaryHr = salaryWords.length
       ? await db.hrEntry.findMany({ where: { date: { gte: fromIsoDate(shiftIsoDate(salaryWords.map((l) => l.date).sort()[0] ?? "2000-01-01", -10)) ?? undefined } } })
       : [];
     const isSalaryEntry = (line: ParsedLine): boolean =>
       salaryHr.some((entry) => Math.abs(decimalToNumber(entry.montant) - line.montant) <= 0.5 && entry.date !== null && dayGap(toIsoDate(entry.date) ?? line.date, line.date) <= 10);
-    const payrollLines = withoutBatch.filter((line) => PAYROLL_PATTERN.test(upperPlain(line.libelle)) || (salaryWords.includes(line) && isSalaryEntry(line)));
-    const business = fresh.filter((line) => !payrollLines.includes(line));
+    const payrollLines = withoutBatch.filter((line) => !chequeMatches.has(line.key) && (PAYROLL_PATTERN.test(upperPlain(line.libelle)) || (salaryWords.includes(line) && isSalaryEntry(line))));
+    const business = fresh.filter((line) => !payrollLines.includes(line) && !chequeMatches.has(line.key));
 
     const dates = business.map((line) => line.date).sort();
     const from = shiftIsoDate(dates[0] ?? "2000-01-01", -75);
@@ -211,6 +216,15 @@ async function analyseParsed(actor: AuthUser, all: ParsedLine[]): Promise<Action
     const usedHr = new Set<string>();
     const hrRecorded: StatementAnalysis["recorded"] = [];
     const hrTodo: ParsedLine[] = [];
+    // Débits déjà saisis dans l'onglet RH (même chèque, même montant) : « déjà enregistré », rien à créer.
+    for (const line of withoutBatch) {
+      const entryId = chequeMatches.get(line.key);
+      const entry = entryId ? hrCheques.find((row) => row.id === entryId) : undefined;
+      if (!entry) continue;
+      usedHr.add(entry.id);
+      hrRecorded.push({ line, labels: [`RH : ${entry.nature} ${entry.beneficiaire} (chèque ${entry.cheque})`.replace(/\s+/g, " ").trim()] });
+      await upsertLine(line, "DEJA", [`rh:${entry.legacyId}`], actor);
+    }
     for (const line of payrollLines) {
       const match = hrRows.find(
         (entry) =>
@@ -654,6 +668,14 @@ export async function createInvoiceFromLine(actor: AuthUser, input: CreateFromLi
   if (!access.success) return access;
   const payroll = isPayrollInvoice(input.categorie, input.nature);
   if (payroll && !can(actor, "RH", "EDIT")) return fail("Les lignes de paie sont réservées à l'accès RH.", "FORBIDDEN");
+  if (payroll && row.sens === "DEBIT") {
+    // Garde-fou : un chèque déjà saisi dans l'onglet RH (même n°, même montant) ne doit pas être enregistré une seconde fois.
+    const hrRows = await db.hrEntry.findMany({ where: { sens: "PAIEMENT", cheque: { not: "" } } });
+    const entries: HrBankEntry[] = hrRows.map((entry) => ({ id: entry.id, legacyId: entry.legacyId, sens: entry.sens, mode: "CHEQUE", cheque: entry.cheque, montant: decimalToNumber(entry.montant), date: toIsoDate(entry.date) }));
+    const hit = strongHrMatches([{ id: row.id, date: toIsoDate(row.date) ?? "", libelle: row.libelle, numero: row.numero, montant: decimalToNumber(row.montant), sens: row.sens }], entries).get(row.id);
+    const existing = hrRows.find((entry) => entry.id === hit);
+    if (existing) return fail(`Ce paiement est déjà enregistré dans l'onglet RH : ${existing.nature} ${existing.beneficiaire}, chèque ${existing.cheque}, ${formatDA(decimalToNumber(existing.montant))}. Relancez la revérification du relevé : la ligne sera classée « déjà enregistrée ».`, "CONFLICT");
+  }
   try {
     const legacyId = `rv-${crypto.randomUUID()}`;
     const invoice = await db.$transaction(async (tx) => {

@@ -5,10 +5,12 @@ import { Plus } from "lucide-react";
 import { deleteHrEntryAction, saveHrEntryAction } from "@/app/actions/hr-actions";
 import { Notice } from "@/components/common/notice";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { isProbableDuplicateMessage } from "@/features/hr/lib/hr-duplicates";
 import { HR_NATURES, type HrEntryDTO } from "@/features/hr/types";
 import { parseLooseAmount } from "@/utils/amounts";
 
@@ -26,6 +28,8 @@ export function HrEntryDialog({ entry, beneficiaries, today }: Readonly<HrEntryD
   const [mode, setMode] = useState(entry?.mode ?? "VIRMT");
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [probableDuplicate, setProbableDuplicate] = useState(false);
+  const [confirmDuplicate, setConfirmDuplicate] = useState(false);
   const [pending, startTransition] = useTransition();
   const listId = `rh-benef-${entry?.id ?? "new"}`;
 
@@ -47,9 +51,14 @@ export function HrEntryDialog({ entry, beneficiaries, today }: Readonly<HrEntryD
         cheque: String(form.get("cheque") ?? ""),
         banque: String(form.get("banque") ?? ""),
         libelle: String(form.get("libelle") ?? ""),
+        confirmerDoublon: probableDuplicate && confirmDuplicate,
       });
       if (result.success) setOpen(false);
-      else setError(result.error);
+      else {
+        setError(result.error);
+        // La case n'apparaît qu'après un refus « doublon probable » ; un doublon certain ne se confirme jamais.
+        setProbableDuplicate(result.code === "CONFLICT" && isProbableDuplicateMessage(result.error));
+      }
     });
   }
 
@@ -69,6 +78,8 @@ export function HrEntryDialog({ entry, beneficiaries, today }: Readonly<HrEntryD
   const show = (): void => {
     setError(null);
     setConfirmDelete(false);
+    setProbableDuplicate(false);
+    setConfirmDuplicate(false);
     setOpen(true);
   };
 
@@ -142,6 +153,12 @@ export function HrEntryDialog({ entry, beneficiaries, today }: Readonly<HrEntryD
             <Notice tone="error" className="sm:col-span-2">
               {error}
             </Notice>
+          ) : null}
+          {probableDuplicate ? (
+            <label className="flex items-start gap-2 text-sm sm:col-span-2">
+              <Checkbox checked={confirmDuplicate} onChange={(event) => setConfirmDuplicate(event.target.checked)} className="mt-0.5" />
+              <span>Ce n'est pas un doublon : enregistrer quand même ce paiement distinct.</span>
+            </label>
           ) : null}
           <DialogFooter className="sm:col-span-2">
             {entry ? (
