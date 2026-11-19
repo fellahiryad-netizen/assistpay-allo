@@ -1,3 +1,4 @@
+import { isPeriodNature, validPeriod } from "@/features/hr/lib/hr-period";
 import { db } from "@/lib/db";
 import { writeWorkbook } from "@/lib/spreadsheet";
 import type { HrEntry, Prisma } from "@/generated/prisma/client";
@@ -19,10 +20,22 @@ function obj(value: Prisma.JsonValue): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
-const yearOf = (row: HrEntry): number => row.annee ?? (Number((row.mois || toIsoDate(row.date) || "").slice(0, 4)) || 0);
+/** Année de rattachement : pour un G50 / IRG / IBS, celle de la période couverte ; sinon l'année saisie, à défaut celle du mois ou de la date. */
+const yearOf = (row: HrEntry): number => {
+  const period = isPeriodNature(row.nature) ? validPeriod(row.mois) : "";
+  if (period) return Number(period.slice(0, 4));
+  return row.annee ?? (Number((row.mois || toIsoDate(row.date) || "").slice(0, 4)) || 0);
+};
 
-/** Mois de rattachement (repris de l'ancienne version) : mois de la date si elle est dans l'année, sinon le mois saisi. */
+/**
+ * Mois de rattachement. G50, IRG et IBS : le mois de la période couverte (« G50 d'octobre » payé en novembre reste en octobre).
+ * Autres natures (repris de l'ancienne version) : mois de la date si elle est dans l'année, sinon le mois saisi.
+ */
 function monthKey(row: HrEntry): string {
+  if (isPeriodNature(row.nature)) {
+    const period = validPeriod(row.mois);
+    if (period) return period;
+  }
   const year = String(yearOf(row));
   const date = toIsoDate(row.date) ?? "";
   if (date.slice(0, 4) === year) return date.slice(0, 7);
