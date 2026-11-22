@@ -78,7 +78,7 @@ export interface TreasuryView {
   today: string;
   /** Horodatage ISO du calcul. */
   generatedAt: string;
-  permissions: { simulate: boolean; settings: boolean };
+  permissions: { simulate: boolean; settings: boolean; /** Peut importer un relevé (droit de modifier le module Relevé bancaire). */ importStatement: boolean };
   settings: TreasurySettings;
   balance: BalanceView | null;
   rejection: BalanceRejection | null;

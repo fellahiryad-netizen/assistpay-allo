@@ -84,6 +84,10 @@ export interface StatementAnalysis {
   alreadyImported: number;
   bankFees: { count: number; amount: number };
   payrollLines: number;
+  /** Lignes jamais vues (clés distinctes absentes de la base) et lignes identiques regroupées sous une même clé (même date, sens, montant et libellé). */
+  freshness?: { brandNew: number; grouped: number };
+  /** Trésorerie : issue de l'enregistrement du solde « Solde FIN AU » de ce fichier (absente pour un relevé revérifié sans fichier). */
+  balance?: { status: "enregistre" | "ignore" | "refuse"; reason: "structure" | "ancien" | "compte" | "incoherent" | null; message: string; amount: number | null; date: string | null; rows: number | null };
 }
 
 /** Ligne de relevé enregistrée. */

@@ -11,7 +11,13 @@ import { formatDA, formatDate } from "@/utils/format";
 /** Issue de l'enregistrement du solde d'un relevé. */
 export interface BalanceRecordOutcome {
   status: "enregistre" | "ignore" | "refuse";
+  /** Motif quand le solde n'a pas été enregistré : fichier sans « Solde FIN AU », relevé plus ancien, compte différent, relevé incohérent. */
+  reason: "structure" | "ancien" | "compte" | "incoherent" | null;
   message: string;
+  /** Solde lu, date du solde et nombre d'opérations (renseignés si le solde a été lu et enregistré). */
+  amount: number | null;
+  date: string | null;
+  rows: number | null;
 }
 
 /**
@@ -24,7 +30,7 @@ export async function recordStatementBalance(actor: AuthUser, rows: SheetCell[][
   try {
     const parsed = parseStatementBalance(rows);
     const now = new Date().toISOString();
-    if (parsed.kind === "refused" && parsed.reason === "structure") return ok({ status: "ignore", message: parsed.message });
+    if (parsed.kind === "refused" && parsed.reason === "structure") return ok({ status: "ignore", reason: "structure", message: parsed.message, amount: null, date: null, rows: null });
     let decision: ImportDecision | null = null;
     const saved = await updateState(KEY_SOLDE, parseSolde, (state) => {
       if (parsed.kind === "refused") return { ok: true, state: applyRefusedImport(state, { reason: parsed.reason, message: parsed.message, fileName, at: now }) };
@@ -34,15 +40,15 @@ export async function recordStatementBalance(actor: AuthUser, rows: SheetCell[][
     if (!saved.success) return fail(saved.error, saved.code);
     if (parsed.kind === "refused") {
       await logAction(actor, "Solde de trésorerie refusé", `${fileName} : ${parsed.message}`, true);
-      return ok({ status: "refuse", message: parsed.message });
+      return ok({ status: "refuse", reason: parsed.reason === "compte" ? "compte" : "incoherent", message: parsed.message, amount: null, date: null, rows: null });
     }
     const outcome = decision as ImportDecision | null;
     if (outcome && outcome.action === "ignored") {
       await logAction(actor, "Solde de trésorerie non remplacé", outcome.message, true);
-      return ok({ status: "ignore", message: outcome.message });
+      return ok({ status: "ignore", reason: "ancien", message: outcome.message, amount: parsed.balance.balance, date: parsed.balance.balanceDate, rows: parsed.balance.rowCount });
     }
     await logAction(actor, "Solde de trésorerie mis à jour", `${fileName} : solde ${formatDA(parsed.balance.balance)} au ${formatDate(parsed.balance.balanceDate)}, ${parsed.balance.rowCount} opérations`, true);
-    return ok({ status: "enregistre", message: `Solde ${formatDA(parsed.balance.balance)} au ${formatDate(parsed.balance.balanceDate)}.` });
+    return ok({ status: "enregistre", reason: null, message: `Solde ${formatDA(parsed.balance.balance)} au ${formatDate(parsed.balance.balanceDate)}.`, amount: parsed.balance.balance, date: parsed.balance.balanceDate, rows: parsed.balance.rowCount });
   } catch (error) {
     console.error("[tresorerie] enregistrement du solde :", error);
     return fail("Le solde de trésorerie n'a pas pu être enregistré.", "DATABASE");

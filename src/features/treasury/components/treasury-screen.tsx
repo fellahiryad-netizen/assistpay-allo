@@ -5,6 +5,7 @@ import { StateMessage } from "@/components/common/state-message";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BalanceChart } from "@/features/treasury/components/balance-chart";
+import { StatementImport } from "@/features/treasury/components/statement-import";
 import { SimulationPanel } from "@/features/treasury/components/simulation-panel";
 import { BalanceCard, Kpis } from "@/features/treasury/components/treasury-cards";
 import { DuplicatesBanner, FreshnessBanner, RejectionBanner, SimulationBanner, VerdictCard } from "@/features/treasury/components/treasury-banners";
@@ -49,7 +50,8 @@ export function TreasuryScreen({ view }: Readonly<{ view: TreasuryView }>): Reac
       <div className="space-y-4">
         <PageHeader title="Trésorerie" description="Solde du compte AGB, paiements à venir et risque de découvert. Confidentiel." />
         {view.rejection ? <RejectionBanner rejection={view.rejection} /> : null}
-        <StateMessage kind="empty" title="Aucun solde disponible" message="Importez un relevé AGB dans « Relevé bancaire » : le solde est lu dans la ligne « Solde FIN AU ». À défaut, l'administrateur peut saisir un solde de secours ci-dessous." />
+        <StateMessage kind="empty" title="Aucun solde disponible" message="Importez un relevé AGB ci-dessous : le solde est lu dans la ligne « Solde FIN AU ». À défaut, l'administrateur peut saisir un solde de secours." />
+        <StatementImport mode="zone" canImport={view.permissions.importStatement} />
         {view.permissions.settings ? <TreasurySettingsPanel coussinJours={view.settings.coussinJours} encaissementsAttendus={view.settings.encaissementsAttendus} hasManual={view.manual.has} manualAllowed={view.manual.allowed} today={view.today} /> : null}
         <FooterMention />
       </div>
@@ -71,6 +73,7 @@ export function TreasuryScreen({ view }: Readonly<{ view: TreasuryView }>): Reac
       {view.active ? <SimulationBanner name={view.active.nom} by={view.active.creePar} createdAt={view.active.creeLe} lines={view.active.lignes.length} /> : null}
       {view.duplicates ? <DuplicatesBanner duplicates={view.duplicates} /> : null}
       <FreshnessBanner balance={balance} />
+      <StatementImport mode="bouton" canImport={view.permissions.importStatement} />
       {view.rejection ? <RejectionBanner rejection={view.rejection} /> : null}
       <BalanceCard balance={balance} computation={computation} cheques={view.cheques} />
       <VerdictCard verdict={computation.verdict} />

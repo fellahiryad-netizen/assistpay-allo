@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { can } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { remaining, toPayable } from "@/features/invoices/services/invoice-balance";
 import { logAction } from "@/features/journal/services/journal-service";
@@ -59,7 +60,7 @@ export async function getTreasuryView(actor: AuthUser, query: TreasuryQuery, cha
     const base = {
       today,
       generatedAt: new Date().toISOString(),
-      permissions: { simulate: true, settings: requireTreasury(actor, "settings").success },
+      permissions: { simulate: true, settings: requireTreasury(actor, "settings").success, importStatement: can(actor, "RELEVE", "EDIT") },
       settings,
       rejection: solde.rejection,
       manual: { has: solde.manual !== null, allowed: solde.current === null || solde.rejection !== null },

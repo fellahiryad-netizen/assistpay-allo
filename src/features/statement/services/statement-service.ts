@@ -160,11 +160,14 @@ export async function analyseStatement(actor: AuthUser, file: UploadedFile, mapp
   if (!guard.success) return guard;
   const sheet = firstSheetRows(file);
   if (!sheet.success) return sheet;
+  // Trésorerie : le solde « Solde FIN AU » du relevé est enregistré dès que le fichier est lu, avant le rapprochement des lignes :
+  // un relevé sans aucune ligne nouvelle (tout est déjà connu) met donc le solde à jour, et une lenteur ou une erreur du rapprochement ne le fait pas perdre.
+  // N'altère ni ne bloque l'import (fichier non AGB : rien n'est écrit ; refus : tracé, import inchangé).
+  const balance = await recordStatementBalance(actor, sheet.data.rows, file.name);
   const all = readStatementLines(sheet.data.rows, detectHeaderRow(sheet.data.rows), mapping);
   if (all.length === 0) return fail("Aucune ligne avec une date et un montant n'a été trouvée. Vérifiez les colonnes choisies.", "VALIDATION");
   const analysed = await analyseParsed(actor, all);
-  // Trésorerie : le solde « Solde FIN AU » du relevé est enregistré après un import réussi. N'altère ni ne bloque l'import (fichier non AGB : rien n'est écrit).
-  if (analysed.success) await recordStatementBalance(actor, sheet.data.rows, file.name);
+  if (analysed.success && balance.success) analysed.data.balance = balance.data;
   return analysed;
 }
 
@@ -179,6 +182,8 @@ async function analyseParsed(actor: AuthUser, all: ParsedLine[]): Promise<Action
       return !status || status === "A_TRAITER";
     });
     const alreadyImported = kept.length - fresh.length;
+    const distinctKeys = new Set(kept.map((line) => line.key));
+    const brandNew = [...distinctKeys].filter((key) => !knownStatus.has(key)).length;
     const transfers = await loadTransfers();
     const withoutBatch = fresh.filter((line) => !transferForLine(line, transfers, []));
     // Chèques déjà saisis dans l'onglet RH : n° de chèque lu dans le libellé bancaire et montant identique (règle forte).
@@ -267,6 +272,7 @@ async function analyseParsed(actor: AuthUser, all: ParsedLine[]): Promise<Action
       alreadyImported,
       bankFees: { count: fees.length, amount: round2(fees.reduce((sum, line) => sum + line.montant, 0)) },
       payrollLines: payrollLines.length,
+      freshness: { brandNew, grouped: kept.length - distinctKeys.size },
     });
   } catch (error) {
     console.error("[releve] analyse :", error);

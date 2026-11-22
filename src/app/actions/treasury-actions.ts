@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { runAction } from "@/app/actions/action-helpers";
+import { runAction, runUploadAction } from "@/app/actions/action-helpers";
 import type { AuthUser } from "@/features/access/types";
 import {
   lineDecisionSchema,
@@ -37,6 +37,7 @@ import {
   removeSimulationLine,
   updateSimulationLine,
 } from "@/features/treasury/services/treasury-scenarios";
+import { importStatementFromTreasury, type TreasuryImportResult } from "@/features/treasury/services/treasury-statement-upload";
 import { clearManualBalance, saveManualBalance, saveTreasurySettings } from "@/features/treasury/services/treasury-service";
 import type { ActionResult } from "@/types";
 
@@ -108,4 +109,19 @@ export async function saveManualBalanceAction(input: ManualBalanceInput): Promis
 /** Retire le solde saisi à la main. */
 export async function clearManualBalanceAction(): Promise<ActionResult<true>> {
   return run(z.object({}), {}, (actor) => clearManualBalance(actor));
+}
+
+/**
+ * Importe un relevé AGB (.xls, .xlsx, .csv) depuis l'onglet Trésorerie, par le flux d'import du relevé bancaire.
+ * Les lignes rapprochées touchent aussi les pages Relevé et Factures : elles sont rafraîchies avec la trésorerie.
+ */
+export async function importStatementFromTreasuryAction(formData: FormData): Promise<ActionResult<TreasuryImportResult>> {
+  const result = await runUploadAction(formData, importStatementFromTreasury);
+  revalidatePath("/tresorerie");
+  if (result.success) {
+    revalidatePath("/releve", "layout");
+    revalidatePath("/factures");
+    revalidatePath("/");
+  }
+  return result;
 }
