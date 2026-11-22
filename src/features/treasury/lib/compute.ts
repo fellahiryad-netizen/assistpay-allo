@@ -101,12 +101,12 @@ export function computeTreasury(input: ComputeInput): TreasuryComputation {
   const totalToPay = round2(invoicesTotal + simulationTotal + requestsTotal);
   const balanceAfter = round2(available - totalToPay);
 
-  const reference = spendingReference(input.monthly, start);
+  const reference = spendingReference(input.monthly, start, input.daily[0]?.d ?? null);
   const cushion = cushionAmount(reference, input.settings.coussinJours);
   const useExpected = input.settings.encaissementsAttendus;
   const timeline = buildTimeline(start, available, payables.map((item) => ({ date: item.date, montant: item.montant })), useExpected ? input.collections.flows : null);
   const perDay = reference?.perDay ?? 0;
-  const verdict = buildVerdict({ balanceAfter, cushion, lowest: timeline.lowest.balance, overdraftDate: timeline.overdraftDate, perDay, cushionDays: input.settings.coussinJours, lowestDate: timeline.lowest.date });
+  const verdict = buildVerdict({ historyKnown: reference !== null, balanceAfter, cushion, lowest: timeline.lowest.balance, overdraftDate: timeline.overdraftDate, perDay, cushionDays: input.settings.coussinJours, lowestDate: timeline.lowest.date });
 
   let running = available;
   const schedule: ScheduleRow[] = priorityOrder(payables)

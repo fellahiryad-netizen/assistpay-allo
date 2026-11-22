@@ -46,17 +46,37 @@ export interface ChequeCheck {
   matchedBy: "numero" | "montant" | null;
 }
 
-/** Cherche le débit d'un chèque : libellé « … TL-<numéro> », sinon débit de même montant à ± 10 jours. */
-export function findChequeDebit(cheque: IssuedCheque, debits: readonly BankDebit[]): { debit: BankDebit; by: "numero" | "montant" } | null {
+const CHEQUE_LABEL = /\b(CHQ|CHEQUE|CHEQ)\b/i;
+
+/** Numéro de chèque cité dans le libellé ou la référence d'un débit (« PAIEMENT CHEQUE N° TL-7064745 »), chiffres seuls ; vide si aucun. */
+export function debitChequeDigits(debit: BankDebit): string {
+  const fromRef = chequeDigits(debit.numero);
+  if (fromRef) return fromRef;
+  const match = debit.libelle.match(/(?:CHQ|CHEQUE|CHEQ)[^A-Za-z0-9]*(?:N[^A-Za-z0-9]*)?(?:[A-Za-z]{1,4}-?)?(\d{4,})/i);
+  return match?.[1] ?? "";
+}
+
+/**
+ * Cherche le débit d'un chèque parmi les débits encore libres (`used` contient ceux qui servent déjà à un autre chèque).
+ * 1. Libellé ou référence portant le numéro du chèque.
+ * 2. Repli : débit de libellé de type chèque, sans autre numéro de chèque, de même montant, daté de l'émission à 10 jours après (jamais avant l'émission).
+ * Un « Virement divers » du même montant ne masque donc jamais un chèque.
+ */
+export function findChequeDebit(cheque: IssuedCheque, debits: readonly BankDebit[], used: ReadonlySet<BankDebit> = new Set()): { debit: BankDebit; by: "numero" | "montant" } | null {
   const digits = chequeDigits(cheque.numero);
   if (digits) {
     const pattern = new RegExp(`(?<!\\d)${digits}(?!\\d)`);
-    const byNumber = debits.find((debit) => pattern.test(`${debit.libelle} ${debit.numero}`));
+    const byNumber = debits.find((debit) => !used.has(debit) && pattern.test(`${debit.libelle} ${debit.numero}`));
     if (byNumber) return { debit: byNumber, by: "numero" };
   }
   if (cheque.date) {
     const issued = cheque.date;
-    const byAmount = debits.find((debit) => Math.abs(debit.montant - cheque.montant) <= 0.01 && dayGap(debit.date, issued) <= CHEQUE_AMOUNT_WINDOW_DAYS);
+    const byAmount = debits.find((debit) => {
+      if (used.has(debit) || !CHEQUE_LABEL.test(debit.libelle)) return false;
+      const other = debitChequeDigits(debit);
+      if (other && other !== digits) return false;
+      return Math.abs(debit.montant - cheque.montant) <= 0.01 && debit.date >= issued && dayGap(debit.date, issued) <= CHEQUE_AMOUNT_WINDOW_DAYS;
+    });
     if (byAmount) return { debit: byAmount, by: "montant" };
   }
   return null;
@@ -102,14 +122,29 @@ export interface ChequeReport {
 /**
  * Chèques émis non débités : pour chaque chèque, le relevé est cherché par numéro puis par montant à ± 10 jours.
  * Trouvé : déjà dans le solde. Sinon : en circulation (à déduire) s'il est daté dans la période couverte par le relevé et depuis moins de 90 jours ;
- * sinon « à vérifier » (non déduit, signalé aux contrôles).
- * `coverageStart` : première date du relevé disponible dans le CRM ; un chèque antérieur ne peut pas être contrôlé.
+ * sans date ou trop ancien : « à vérifier » (non déduit, signalé aux contrôles) ; antérieur au relevé du CRM : ignoré (non contrôlable).
+ * `coverageStart` : première date du relevé disponible dans le CRM.
  */
 export function chequesInCirculation(issued: readonly IssuedCheque[], debits: readonly BankDebit[], today: string, coverageStart: string | null): ChequeReport {
-  const checks: ChequeCheck[] = mergeCheques(issued).map((cheque) => {
-    const found = findChequeDebit(cheque, debits);
-    if (found) return { cheque, status: "debite" as const, debitDate: found.debit.date, matchedBy: found.by };
-    if (!cheque.date || !coverageStart || cheque.date < coverageStart) return { cheque, status: "a_verifier" as const, debitDate: null, matchedBy: null };
+  const cheques = mergeCheques(issued);
+  const used = new Set<BankDebit>();
+  const found = new Map<IssuedCheque, { debit: BankDebit; by: "numero" | "montant" }>();
+  // Passe 1 : appariement par numéro ; passe 2 : repli au montant sur les débits restants. Un débit ne sert qu'à un chèque.
+  for (const pass of ["numero", "montant"] as const) {
+    for (const cheque of [...cheques].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""))) {
+      if (found.has(cheque)) continue;
+      const hit = findChequeDebit(cheque, debits, used);
+      if (hit && hit.by === pass) {
+        found.set(cheque, hit);
+        used.add(hit.debit);
+      }
+    }
+  }
+  const checks: ChequeCheck[] = cheques.map((cheque) => {
+    const hit = found.get(cheque);
+    if (hit) return { cheque, status: "debite" as const, debitDate: hit.debit.date, matchedBy: hit.by };
+    if (!cheque.date) return { cheque, status: "a_verifier" as const, debitDate: null, matchedBy: null };
+    if (!coverageStart || cheque.date < coverageStart) return { cheque, status: "hors_releve" as const, debitDate: null, matchedBy: null };
     if (daysBetween(cheque.date, today) > CHEQUE_STALE_DAYS) return { cheque, status: "a_verifier" as const, debitDate: null, matchedBy: null };
     return { cheque, status: "circulation" as const, debitDate: null, matchedBy: null };
   });

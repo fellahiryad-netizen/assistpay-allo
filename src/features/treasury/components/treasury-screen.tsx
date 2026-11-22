@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { BalanceChart } from "@/features/treasury/components/balance-chart";
 import { SimulationPanel } from "@/features/treasury/components/simulation-panel";
 import { BalanceCard, Kpis } from "@/features/treasury/components/treasury-cards";
-import { FreshnessBanner, RejectionBanner, SimulationBanner, VerdictCard } from "@/features/treasury/components/treasury-banners";
+import { DuplicatesBanner, FreshnessBanner, RejectionBanner, SimulationBanner, VerdictCard } from "@/features/treasury/components/treasury-banners";
 import { ControlsBlock, FooterMention, HypothesesBlock } from "@/features/treasury/components/treasury-notes";
 import { TreasurySettingsPanel } from "@/features/treasury/components/treasury-settings";
 import { ExpectedTable, PriorityBlock, ScheduleTable } from "@/features/treasury/components/treasury-tables";
@@ -65,6 +65,7 @@ export function TreasuryScreen({ view }: Readonly<{ view: TreasuryView }>): Reac
     <div className="space-y-4">
       <PageHeader title="Trésorerie" description="Solde du compte AGB, paiements à venir et risque de découvert. Confidentiel : Administrateur, Direction et Comptable." actions={actions} />
       {view.active ? <SimulationBanner name={view.active.nom} by={view.active.creePar} createdAt={view.active.creeLe} lines={view.active.lignes.length} /> : null}
+      {view.duplicates ? <DuplicatesBanner duplicates={view.duplicates} /> : null}
       <FreshnessBanner balance={balance} />
       {view.rejection ? <RejectionBanner rejection={view.rejection} /> : null}
       <BalanceCard balance={balance} computation={computation} cheques={view.cheques} />
@@ -81,7 +82,7 @@ export function TreasuryScreen({ view }: Readonly<{ view: TreasuryView }>): Reac
           <CardDescription>Historique du relevé (trait plein), puis projection sans encaissement (pointillé).</CardDescription>
         </CardHeader>
         <CardContent>
-          <BalanceChart history={view.history} projection={computation.timeline.points} cushion={computation.cushion} lowest={computation.timeline.lowest} overdraftDate={computation.timeline.overdraftDate} />
+          <BalanceChart bank={computation.bank} history={view.history} projection={computation.timeline.points} cushion={computation.cushion} lowest={computation.timeline.lowest} overdraftDate={computation.timeline.overdraftDate} />
         </CardContent>
       </Card>
       <ScheduleTable computation={computation} requestsIncluded={view.includeRequests} />

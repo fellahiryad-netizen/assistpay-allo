@@ -23,7 +23,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import type { Suggestion } from "@/features/treasury/lib/duplicates";
 import { MAX_LINES_PER_SCENARIO, SIM_CERTAINTIES, SIM_MODES, SIM_MODE_LABELS, SIM_TYPES, SIM_TYPE_LABELS, SIM_CONFIRM_AMOUNT, type SimCertainty, type SimMode, type SimType } from "@/features/treasury/types";
 import type { ActiveScenarioView, ScenarioSummary } from "@/features/treasury/types/view";
-import { parseLooseAmount } from "@/utils/amounts";
+import { parseTypedAmount } from "@/features/treasury/lib/amount-input";
 import { formatDA, formatDate, formatDateTime } from "@/utils/format";
 
 /** Propriétés du panneau de simulation de la comptable (données sérialisables). */
@@ -71,7 +71,8 @@ export function SimulationPanel({ scenarios, active, suggestions, balanceDate }:
     });
   }
 
-  const amount = parseLooseAmount(form.montant);
+  const typed = parseTypedAmount(form.montant);
+  const amount = typed.ok ? typed.value : Number.NaN;
   const suggestion = suggestions[form.type];
   const reset = (): void => {
     setForm(emptyForm(balanceDate));
@@ -80,8 +81,8 @@ export function SimulationPanel({ scenarios, active, suggestions, balanceDate }:
 
   function submit(): void {
     if (!active) return;
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setMessage({ kind: "error", text: "Indiquez un montant supérieur à zéro." });
+    if (!typed.ok) {
+      setMessage({ kind: "error", text: typed.error });
       return;
     }
     const payload = { scenarioId: active.id, type: form.type, libelle: form.libelle, periode: form.periode, montant: amount, date: form.date, mode: form.mode, certitude: form.certitude, confirmer: form.confirmer };
@@ -208,7 +209,7 @@ export function SimulationPanel({ scenarios, active, suggestions, balanceDate }:
                 <Field id="tr-periode" label="Période concernée">
                   <Input id="tr-periode" type="month" value={form.periode} onChange={(event) => setForm({ ...form, periode: event.target.value })} />
                 </Field>
-                <Field id="tr-montant" label="Montant (DA)">
+                <Field id="tr-montant" label="Montant (DA)" error={form.montant.trim() !== "" && !typed.ok ? typed.error : undefined} hint={typed.ok ? `= ${formatDA(typed.value)}` : undefined}>
                   <Input id="tr-montant" inputMode="decimal" value={form.montant} onChange={(event) => setForm({ ...form, montant: event.target.value })} placeholder="0,00" />
                 </Field>
                 <Field id="tr-date" label="Date prévue" hint={`Au plus tôt le ${formatDate(balanceDate)}`}>

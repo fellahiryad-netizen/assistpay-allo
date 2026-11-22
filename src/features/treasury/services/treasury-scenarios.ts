@@ -2,8 +2,8 @@ import type { AuthUser } from "@/features/access/types";
 import { logAction } from "@/features/journal/services/journal-service";
 import { resolveBalance } from "@/features/treasury/lib/balance-state";
 import { findDuplicates } from "@/features/treasury/lib/duplicates";
-import { activateScenario, addLine, clearScenario, createScenario, decideLine, deleteScenario, duplicateScenario, removeLine, updateLine, type ScenarioUpdate } from "@/features/treasury/lib/scenario-state";
-import { parseScenarios, parseSolde } from "@/features/treasury/lib/store-parse";
+import { addLine, canActivate, clearScenario, createScenario, decideLine, deleteScenario, duplicateScenario, removeLine, updateLine, type ScenarioUpdate } from "@/features/treasury/lib/scenario-state";
+import { parseActive, parseScenarios, parseSolde } from "@/features/treasury/lib/store-parse";
 import type {
   LineDecisionInput,
   LineIdInput,
@@ -15,8 +15,8 @@ import type {
   SimLineUpdateInput,
 } from "@/features/treasury/schemas";
 import { requireTreasury } from "@/features/treasury/services/treasury-access";
-import { loadDuplicateSources } from "@/features/treasury/services/treasury-service";
-import { KEY_SCENARIOS, KEY_SOLDE, readState, updateState } from "@/features/treasury/services/treasury-store";
+import { loadDuplicateSources } from "@/features/treasury/services/treasury-sources";
+import { KEY_SCENARIOS, KEY_SOLDE, keyActive, readState, updateState } from "@/features/treasury/services/treasury-store";
 import { SIM_CONFIRM_AMOUNT, SIM_TYPE_LABELS, type ScenariosState, type SimLine } from "@/features/treasury/types";
 import { fail, ok, type ActionResult } from "@/types";
 import { round2 } from "@/utils/amounts";
@@ -61,15 +61,25 @@ export async function duplicateScenarioEntry(actor: AuthUser, input: ScenarioDup
   return result.success ? ok({ id }) : result;
 }
 
-/** Active un scénario (mode simulation) ou revient à la situation réelle. */
+/**
+ * Active un scénario pour l'utilisateur qui le demande, ou le ramène à la situation réelle. L'activation est personnelle (clé `tresorerie:actif:<utilisateur>`) :
+ * elle ne change rien à ce que voient les autres, la Direction par exemple ne voit jamais un scénario activé par la comptable.
+ */
 export async function activateScenarioEntry(actor: AuthUser, input: ScenarioActivateInput): Promise<ActionResult<true>> {
-  const result = await changeScenarios(
-    actor,
-    input.scenarioId ? "Scénario de trésorerie activé" : "Retour à la situation réelle",
-    (state) => (state.actif ? nameOf(state, state.actif) : "situation réelle"),
-    (state) => activateScenario(state, input.scenarioId),
-  );
-  return result.success ? ok(true) : result;
+  const guard = requireTreasury(actor, "simulate");
+  if (!guard.success) return guard;
+  try {
+    const scenarios = await readState(KEY_SCENARIOS, parseScenarios);
+    const check = canActivate(scenarios, input.scenarioId);
+    if (!check.ok) return fail(check.error, check.code);
+    const saved = await updateState(keyActive(actor.id), parseActive, () => ({ ok: true, state: { scenarioId: input.scenarioId } }));
+    if (!saved.success) return saved;
+    await logAction(actor, input.scenarioId ? "Scénario de trésorerie activé" : "Retour à la situation réelle", input.scenarioId ? nameOf(scenarios, input.scenarioId) : "situation réelle", true);
+    return ok(true);
+  } catch (error) {
+    console.error("[tresorerie] activation :", error);
+    return fail("Le scénario n'a pas pu être activé.", "DATABASE");
+  }
 }
 
 /** Supprime un scénario. */
@@ -108,7 +118,9 @@ export async function addSimulationLine(actor: AuthUser, input: SimLineInput): P
   const line = toLine(lineId, input, null);
   const result = await changeScenarios(actor, "Ligne de simulation ajoutée", `${SIM_TYPE_LABELS[input.type]} ${input.libelle} : ${formatDA(input.montant)} le ${formatDate(input.date)}`, (state) => addLine(state, input.scenarioId, line));
   if (!result.success) return result;
-  const sources = await loadDuplicateSources();
+  const loaded = await loadDuplicateSources(actor);
+  if (!loaded.success) return loaded;
+  const sources = loaded.data;
   return ok({ lineId, warnings: findDuplicates(line, sources.hr, sources.debits, balanceDate ?? input.date).map((hit) => hit.message) });
 }
 
@@ -129,7 +141,9 @@ export async function updateSimulationLine(actor: AuthUser, input: SimLineUpdate
   if (!result.success) return result;
   const finalLine = result.data.scenarios.find((scenario) => scenario.id === input.scenarioId)?.lignes.find((item) => item.id === input.lineId) ?? kept;
   if (finalLine.decision !== null) return ok({ warnings: [] });
-  const sources = await loadDuplicateSources();
+  const loaded = await loadDuplicateSources(actor);
+  if (!loaded.success) return loaded;
+  const sources = loaded.data;
   return ok({ warnings: findDuplicates(finalLine, sources.hr, sources.debits, balanceDate ?? input.date).map((hit) => hit.message) });
 }
 

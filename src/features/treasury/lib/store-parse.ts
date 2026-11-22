@@ -1,6 +1,7 @@
 import { round2 } from "@/utils/amounts";
 import {
   CUSHION_CHOICES,
+  type ActiveState,
   MAX_LINES_PER_SCENARIO,
   MAX_SCENARIOS,
   SIM_CERTAINTIES,
@@ -126,4 +127,9 @@ export function parseScenarios(value: unknown): ScenariosState {
   }
   const actif = typeof value.actif === "string" && scenarios.some((scenario) => scenario.id === value.actif) ? value.actif : null;
   return { actif, scenarios };
+}
+
+/** Lecture tolérante du scénario actif d'un utilisateur. */
+export function parseActive(value: unknown): ActiveState {
+  return { scenarioId: isRecord(value) && typeof value.scenarioId === "string" && value.scenarioId !== "" ? value.scenarioId : null };
 }

@@ -6,6 +6,7 @@ import { NATURE_LABELS } from "@/features/treasury/lib/payables";
 import type { TreasuryQuery } from "@/features/treasury/schemas";
 import { requireTreasury } from "@/features/treasury/services/treasury-access";
 import { getTreasuryView } from "@/features/treasury/services/treasury-service";
+import { duplicatesSentence } from "@/features/treasury/lib/duplicates-notice";
 import { DECISION_AID_MENTION } from "@/features/treasury/lib/hypotheses";
 import { fail, ok, type ActionResult } from "@/types";
 import { formatDate } from "@/utils/format";
@@ -19,7 +20,7 @@ const SOURCE_LABELS = { facture: "Facture", simulation: "Simulation", demande: "
 export async function exportTreasury(actor: AuthUser, query: TreasuryQuery): Promise<ActionResult<{ name: string; bytes: Uint8Array }>> {
   const guard = requireTreasury(actor, "view");
   if (!guard.success) return guard;
-  const view = await getTreasuryView(actor, query);
+  const view = await getTreasuryView(actor, query, "export");
   if (!view.success) return view;
   const { computation, balance } = view.data;
   if (!computation || !balance) return fail("Aucun solde n'est disponible : importez d'abord un relevé AGB.", "NOT_FOUND");
@@ -39,12 +40,23 @@ export async function exportTreasury(actor: AuthUser, query: TreasuryQuery): Pro
       ["Demandes sans facture liée comptées", computation.requestsTotal, view.data.includeRequests ? "incluses à la demande" : "non comptées par défaut"],
       ["Solde après paiements", computation.balanceAfter, computation.verdict.title],
       ["Taux de couverture", computation.coverageRatio === null ? "sans objet" : Math.round(computation.coverageRatio * 100) / 100, ""],
-      ["Jours de couverture", computation.coverageDays === null ? "sans objet" : Math.round(computation.coverageDays * 10) / 10, ""],
+      [
+        "Jours de couverture",
+        computation.coverageDays === null ? "sans objet" : Math.max(0, Math.round(computation.coverageDays * 10) / 10),
+        computation.coverageDays === null ? "historique insuffisant" : computation.coverageDays < 0 ? "0 : le solde après paiements est négatif, la couverture est épuisée" : "solde après paiements ÷ décaissement moyen journalier",
+      ],
       [`Réserve conseillée (${computation.cushionDays} jours)`, computation.cushion, computation.reference ? `moyenne mensuelle ${Math.round(computation.reference.perMonth)} DA sur ${computation.reference.months.length} mois complets` : "historique insuffisant"],
       ["Point bas de la chronologie", computation.timeline.lowest.balance, formatDate(computation.timeline.lowest.date)],
       ["Premier découvert", computation.timeline.overdraftDate ? formatDate(computation.timeline.overdraftDate) : "aucun", ""],
       ["Dont déjà dans des virements préparés", computation.preparedTotal, `${computation.preparedCount} lot(s) en attente, non additionnés`],
       [],
+      ...(view.data.duplicates
+        ? [
+            ["ATTENTION — doublons possibles", duplicatesSentence(view.data.duplicates.count), `Impact : ${view.data.duplicates.total} DA dans le reste à payer ; solde après paiements sans ces lignes : ${view.data.duplicates.balanceAfterWithout} DA`],
+            ...view.data.duplicates.lines.map((line) => [`   ${line.libelle}`, line.montant, `${formatDate(line.date)} : ${line.messages.join(" ")}`]),
+            [],
+          ]
+        : []),
       ["Verdict", computation.verdict.sentence],
       [],
       [DECISION_AID_MENTION],
@@ -54,6 +66,7 @@ export async function exportTreasury(actor: AuthUser, query: TreasuryQuery): Pro
     name: "Échéancier",
     widths: [12, 34, 44, 30, 18, 24, 20],
     rows: [
+      ...(view.data.active ? [[`${simulated} — les paiements simulés de ce scénario sont mêlés aux factures.`], []] : []),
       ["Date prévue", "Bénéficiaire", "Libellé", "Nature", "Montant", "Source", "Solde après paiement"],
       ...computation.schedule.map((row) => [formatDate(row.date), row.beneficiaire, row.libelle, NATURE_LABELS[row.nature], row.montant, `${SOURCE_LABELS[row.source]}${row.source === "simulation" ? (row.certain ? " (montant certain)" : " (estimation)") : ""}`, row.balanceAfter]),
       [],

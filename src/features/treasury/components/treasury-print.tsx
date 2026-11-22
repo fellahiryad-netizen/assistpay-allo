@@ -1,12 +1,13 @@
 import { BalanceChart } from "@/features/treasury/components/balance-chart";
 import { buildHypotheses, DECISION_AID_MENTION, FOOTER_MENTION } from "@/features/treasury/lib/hypotheses";
 import { NATURE_LABELS } from "@/features/treasury/lib/payables";
+import { duplicatesSentence } from "@/features/treasury/lib/duplicates-notice";
 import { millions } from "@/features/treasury/lib/format";
 import type { TreasuryView } from "@/features/treasury/types/view";
 import { formatDA, formatDate } from "@/utils/format";
 
 const SOURCES = { facture: "Facture", simulation: "Simulation", demande: "Demande (à confirmer)" } as const;
-const WORDS = { vert: "VERT", orange: "ORANGE", rouge: "ROUGE" } as const;
+const WORDS = { vert: "VERT", orange: "ORANGE", rouge: "ROUGE", indetermine: "INDÉTERMINÉ" } as const;
 
 /**
  * Version imprimable de la trésorerie : noir et blanc, tout en gras, aucun fond coloré (le niveau de risque est écrit en toutes lettres).
@@ -20,6 +21,33 @@ export function TreasuryPrint({ view }: Readonly<{ view: TreasuryView }>): React
     <article className="tr-sheet">
       <h1>Trésorerie du compte AGB — {formatDate(view.today)}</h1>
       {view.active ? <p className="tr-box">MODE SIMULATION — scénario « {view.active.nom} » : ces chiffres ne sont pas la situation réelle.</p> : null}
+      {view.duplicates ? (
+        <div className="tr-box">
+          <p>{duplicatesSentence(view.duplicates.count)}</p>
+          <p>
+            Impact : {formatDA(view.duplicates.total)} dans le reste à payer ; si elles étaient écartées, le solde après paiements serait de {formatDA(view.duplicates.balanceAfterWithout)}.
+          </p>
+          <ul>
+            {view.duplicates.lines.map((line) => (
+              <li key={line.id}>
+                {line.libelle} — {formatDA(line.montant)} le {formatDate(line.date)} : {line.messages.join(" ")}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {balance.source === "manuel" || balance.freshness !== "ok" ? (
+        <p className="tr-box">
+          {balance.source === "manuel"
+            ? "ATTENTION : solde saisi à la main, à remplacer par un relevé AGB importé."
+            : `ATTENTION : ${balance.freshness === "rouge" ? "relevé très ancien" : "relevé ancien"}, ${balance.workingDays} jours ouvrés depuis la date du solde. Ne pas se fier à ces chiffres sans relevé plus récent.`}
+        </p>
+      ) : null}
+      {view.rejection ? (
+        <p className="tr-box">
+          Dernier relevé refusé ({view.rejection.fileName}) : {view.rejection.message} Le solde précédent est conservé.
+        </p>
+      ) : null}
       <p>
         Solde arrêté au {formatDate(balance.date)}
         {balance.lastOperationDate ? `, dernière opération du ${formatDate(balance.lastOperationDate)}` : ""}. Source : {balance.sourceLabel}.{balance.source === "manuel" ? " SOLDE SAISI À LA MAIN." : ""}
@@ -67,8 +95,34 @@ export function TreasuryPrint({ view }: Readonly<{ view: TreasuryView }>): React
       <p className="tr-box">
         NIVEAU {WORDS[computation.verdict.level]} — {computation.verdict.title}. {computation.verdict.sentence}
       </p>
+      {view.controls.chequesToVerify.length > 0 ? (
+        <>
+          <h2>Chèques à vérifier (non déduits du solde)</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>N° du chèque</th>
+                <th>Bénéficiaire</th>
+                <th>Date</th>
+                <th className="num">Montant</th>
+              </tr>
+            </thead>
+            <tbody>
+              {view.controls.chequesToVerify.map((cheque) => (
+                <tr key={`${cheque.source}-${cheque.id}`}>
+                  <td>{cheque.numero}</td>
+                  <td>{cheque.beneficiaire}</td>
+                  <td>{cheque.date ? formatDate(cheque.date) : "sans date"}</td>
+                  <td className="num">{formatDA(cheque.montant)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p>Aucun débit retrouvé dans le relevé, mais chèque sans date ou trop ancien : à vérifier avec la banque.</p>
+        </>
+      ) : null}
       <h2>Évolution prévue du solde</h2>
-      <BalanceChart history={view.history} projection={computation.timeline.points} cushion={computation.cushion} lowest={computation.timeline.lowest} overdraftDate={computation.timeline.overdraftDate} mono />
+      <BalanceChart bank={computation.bank} history={view.history} projection={computation.timeline.points} cushion={computation.cushion} lowest={computation.timeline.lowest} overdraftDate={computation.timeline.overdraftDate} mono />
       <h2>Paiements à venir ({computation.schedule.length})</h2>
       <table>
         <thead>

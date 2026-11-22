@@ -10,7 +10,8 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { CUSHION_CHOICES, type CushionDays } from "@/features/treasury/types";
-import { parseLooseAmount } from "@/utils/amounts";
+import { parseTypedAmount } from "@/features/treasury/lib/amount-input";
+import { formatDA } from "@/utils/format";
 
 /** Propriétés du panneau de réglages (données sérialisables). */
 export interface TreasurySettingsPanelProps {
@@ -79,7 +80,7 @@ export function TreasurySettingsPanel({ coussinJours, encaissementsAttendus, has
           <p className="text-sm text-muted-foreground">Le solde vient toujours du dernier relevé importé. La saisie manuelle n&apos;est possible que si aucun relevé valide n&apos;est enregistré ou si le dernier relevé a été refusé ; elle disparaît dès qu&apos;un relevé valide plus récent est importé.</p>
           {manualAllowed ? (
             <div className="grid gap-3 sm:grid-cols-4">
-              <Field id="tr-man-balance" label="Solde (DA)">
+              <Field id="tr-man-balance" label="Solde (DA)" hint={parseTypedAmount(balance, true).ok ? `= ${formatDA((parseTypedAmount(balance, true) as { value: number }).value)}` : undefined}>
                 <Input id="tr-man-balance" inputMode="decimal" value={balance} onChange={(event) => setBalance(event.target.value)} placeholder="0,00" />
               </Field>
               <Field id="tr-man-date" label="Date du solde">
@@ -94,9 +95,9 @@ export function TreasurySettingsPanel({ coussinJours, encaissementsAttendus, has
                   variant="violet"
                   disabled={pending}
                   onClick={() => {
-                    const value = parseLooseAmount(balance);
-                    if (!Number.isFinite(value)) setMessage({ kind: "error", text: "Indiquez le solde." });
-                    else run(() => saveManualBalanceAction({ balance: value, date, source }), "Solde saisi à la main enregistré.");
+                    const typed = parseTypedAmount(balance, true);
+                    if (!typed.ok) setMessage({ kind: "error", text: typed.error });
+                    else run(() => saveManualBalanceAction({ balance: typed.value, date, source }), "Solde saisi à la main enregistré.");
                   }}
                 >
                   Enregistrer le solde

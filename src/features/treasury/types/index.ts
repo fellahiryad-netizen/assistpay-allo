@@ -171,7 +171,10 @@ export interface Scenario {
 
 /** Contenu de la clé `tresorerie:scenarios`. */
 export interface ScenariosState {
-  /** Identifiant du scénario actif, ou null (situation réelle). */
+  /**
+   * Ancien champ de la première version, où le scénario actif était partagé entre tous les utilisateurs : conservé tel quel dans la donnée mais jamais lu.
+   * Le scénario actif est désormais propre à chaque utilisateur (voir `ActiveState`).
+   */
   actif: string | null;
   scenarios: Scenario[];
 }
@@ -191,3 +194,8 @@ export const MAX_SCENARIOS = 20;
 export const MAX_LINES_PER_SCENARIO = 50;
 /** Montant à partir duquel une ligne demande une confirmation explicite (DA). */
 export const SIM_CONFIRM_AMOUNT = 100_000_000;
+
+/** Contenu de la clé `tresorerie:actif:<identifiant de l'utilisateur>` : le scénario que cet utilisateur a activé (null : situation réelle). */
+export interface ActiveState {
+  scenarioId: string | null;
+}

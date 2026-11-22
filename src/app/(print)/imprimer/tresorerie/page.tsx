@@ -16,7 +16,7 @@ export default async function PrintTreasuryPage({
   if (!canAccessTreasury(user)) return <StateMessage kind="forbidden" title="Trésorerie" message="Cet onglet est réservé à l'administrateur, à la direction et à la comptable." className="mx-auto max-w-xl" />;
   const raw = await searchParams;
   const value = Array.isArray(raw.demandes) ? raw.demandes[0] : raw.demandes;
-  const result = await getTreasuryView(user, { demandes: value === "1" });
+  const result = await getTreasuryView(user, { demandes: value === "1" }, "impression");
   if (!result.success) return <StateMessage kind="error" title="Trésorerie indisponible" message={result.error} className="mx-auto max-w-xl" />;
   return (
     <>

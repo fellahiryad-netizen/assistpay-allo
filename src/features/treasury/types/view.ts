@@ -46,6 +46,16 @@ export interface ActiveScenarioView {
   lignes: SimLineView[];
 }
 
+/** Lignes simulées signalées comme doublon possible et comptées tant qu'elles ne sont pas écartées. */
+export interface DuplicatesView {
+  count: number;
+  /** Montant de ces lignes, compris dans le total à payer. */
+  total: number;
+  /** Solde après paiements si ces lignes étaient écartées. */
+  balanceAfterWithout: number;
+  lines: Array<{ id: string; type: SimType; libelle: string; montant: number; date: string; messages: string[] }>;
+}
+
 /** Bloc « Contrôles ». */
 export interface ControlsView {
   /** Écart relevé / journal du CRM ; null si le relevé n'a pas de solde de départ ou si le solde est saisi à la main. */
@@ -80,6 +90,8 @@ export interface TreasuryView {
   history: DailyBalance[];
   scenarios: ScenarioSummary[];
   active: ActiveScenarioView | null;
+  /** Lignes simulées signalées comme doublon possible et encore comptées ; null s'il n'y en a pas. */
+  duplicates: DuplicatesView | null;
   suggestions: Record<SimType, Suggestion>;
   cheques: IssuedCheque[];
   controls: ControlsView;

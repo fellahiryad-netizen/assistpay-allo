@@ -9,6 +9,14 @@ export const KEY_SCENARIOS = "tresorerie:scenarios";
 /** Clé des réglages (réserve en jours, encaissements attendus). */
 export const KEY_SETTINGS = "tresorerie:reglages";
 
+/** Préfixe des clés du scénario actif de chaque utilisateur. */
+export const KEY_ACTIVE_PREFIX = "tresorerie:actif:";
+
+/** Clé du scénario actif d'un utilisateur : l'activation d'un scénario ne concerne que celui qui l'a faite. */
+export function keyActive(userId: string): string {
+  return `${KEY_ACTIVE_PREFIX}${userId}`;
+}
+
 /** Résultat d'un calcul de nouvel état : état suivant ou refus. */
 export type StateChange<S> = { ok: true; state: S } | { ok: false; error: string; code: ErrorCode };
 

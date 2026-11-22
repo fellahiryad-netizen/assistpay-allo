@@ -1,10 +1,12 @@
 import type { TimelinePoint } from "@/features/treasury/lib/risk";
 import type { DailyBalance } from "@/features/treasury/types";
 import { daysBetween } from "@/utils/dates";
-import { formatDate } from "@/utils/format";
+import { formatDA, formatDate } from "@/utils/format";
 
 /** Propriétés du graphique « Évolution prévue du solde » (données sérialisables). */
 export interface BalanceChartProps {
+  /** Solde bancaire à la date du solde (avant chèques en circulation et mouvements non confirmés). */
+  bank: number;
   /** Soldes de fin de journée du relevé (trait plein). */
   history: readonly DailyBalance[];
   /** Projection prudente (pointillé). */
@@ -27,12 +29,14 @@ const millionsShort = (value: number): string => `${(value / 1_000_000).toFixed(
  * Graphique SVG maison : historique en trait plein, projection prudente en pointillé, encaissements attendus hachurés (« attendu, non garanti »),
  * ligne de réserve conseillée, ligne zéro, point bas et première date de découvert annotés. Les couleurs viennent des variables du thème (clair et sombre).
  */
-export function BalanceChart({ history, projection, cushion, lowest, overdraftDate, mono = false }: Readonly<BalanceChartProps>): React.JSX.Element {
+export function BalanceChart({ bank, history, projection, cushion, lowest, overdraftDate, mono = false }: Readonly<BalanceChartProps>): React.JSX.Element {
   const first = history[0]?.d ?? projection[0]?.date ?? "";
   const last = projection[projection.length - 1]?.date ?? history[history.length - 1]?.d ?? first;
   const span = Math.max(1, daysBetween(first, last));
   const hasExpected = projection.some((point) => point.expected !== null);
-  const values = [0, cushion, ...history.map((p) => p.b), ...projection.map((p) => p.balance), ...projection.map((p) => p.expected ?? p.balance)];
+  const start = projection[0];
+  const jump = start && Math.abs(bank - start.balance) >= 0.5 ? { date: start.date, from: bank, to: start.balance } : null;
+  const values = [0, cushion, ...(jump ? [jump.from] : []), ...history.map((p) => p.b), ...projection.map((p) => p.balance), ...projection.map((p) => p.expected ?? p.balance)];
   const rawMin = Math.min(...values);
   const rawMax = Math.max(...values);
   const pad = (rawMax - rawMin) * 0.08 || 1;
@@ -59,6 +63,17 @@ export function BalanceChart({ history, projection, cushion, lowest, overdraftDa
   const ticks = Array.from({ length: 5 }, (_, index) => yMin + ((yMax - yMin) * index) / 4);
   const summary = `Solde disponible de ${formatDate(projection[0]?.date ?? first)} à ${formatDate(last)} : point bas ${millionsShort(lowest.balance)} DA le ${formatDate(lowest.date)}${overdraftDate ? `, découvert dès le ${formatDate(overdraftDate)}` : ", pas de découvert"}.`;
 
+  // Tableau accessible : un point réel par semaine et le dernier, puis le départ de la projection, chaque jour où le solde prévu change, le point bas et le dernier jour.
+  const rows: Array<{ date: string; kind: string; balance: number }> = [];
+  history.forEach((point, index) => {
+    if (index % 7 === 0 || index === history.length - 1) rows.push({ date: point.d, kind: "Réel (relevé)", balance: point.b });
+  });
+  projection.forEach((point, index) => {
+    const previous = projection[index - 1];
+    const changed = index === 0 || index === projection.length - 1 || previous?.balance !== point.balance;
+    if (changed) rows.push({ date: point.date, kind: index === 0 ? "Prévu : départ (disponible après chèques en circulation)" : point.date === lowest.date ? "Prévu : point bas" : "Prévu", balance: point.balance });
+  });
+
   return (
     <figure className="m-0">
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={summary} className="h-auto w-full" style={{ maxHeight: 360 }}>
@@ -71,7 +86,7 @@ export function BalanceChart({ history, projection, cushion, lowest, overdraftDa
         </defs>
         {ticks.map((tick) => (
           <g key={tick}>
-            <line x1={M.left} x2={W - M.right} y1={y(tick)} y2={y(tick)} stroke={muted} strokeOpacity={mono ? 0.35 : 0.25} strokeWidth="1" />
+            <line x1={M.left} x2={W - M.right} y1={y(tick)} y2={y(tick)} stroke={mono ? "#000" : muted} strokeOpacity={mono ? 1 : 0.25} strokeWidth={mono ? 0.75 : 1} />
             <text x={M.left - 8} y={y(tick) + 4} textAnchor="end" fontSize="12" fill={ink}>
               {millionsShort(tick)}
             </text>
@@ -93,6 +108,16 @@ export function BalanceChart({ history, projection, cushion, lowest, overdraftDa
         {historyPath ? <path d={historyPath} fill="none" stroke={primary} strokeWidth={mono ? 3 : 2.5} strokeLinejoin="round" /> : null}
         <path d={projectionPath} fill="none" stroke={primary} strokeWidth={mono ? 3 : 2.5} strokeDasharray="9 6" strokeLinejoin="round" />
         {hasExpected ? <path d={expectedPath} fill="none" stroke={primary} strokeWidth="2" strokeDasharray="2 4" strokeLinecap="round" /> : null}
+        {jump ? (
+          <g>
+            <line x1={x(jump.date)} x2={x(jump.date)} y1={y(jump.from)} y2={y(jump.to)} stroke={ink} strokeWidth="3" />
+            <circle cx={x(jump.date)} cy={y(jump.from)} r="4.5" fill={ink} />
+            <path d={`M${x(jump.date) - 6},${y(jump.to) - 7} L${x(jump.date)},${y(jump.to)} L${x(jump.date) + 6},${y(jump.to) - 7}`} fill="none" stroke={ink} strokeWidth="3" />
+            <text x={x(jump.date) + 12} y={(y(jump.from) + y(jump.to)) / 2 + 4} fontSize="12" fontWeight="700" fill={ink}>
+              Solde réel {millionsShort(jump.from)} → disponible {millionsShort(jump.to)}
+            </text>
+          </g>
+        ) : null}
         <circle cx={x(lowest.date)} cy={y(lowest.balance)} r="6" fill={mono ? "#fff" : "hsl(var(--card))"} stroke={ink} strokeWidth="3" />
         <text x={Math.min(x(lowest.date) + 10, W - 160)} y={y(lowest.balance) - 12} fontSize="12" fontWeight="700" fill={ink}>
           Point bas {millionsShort(lowest.balance)} ({formatDate(lowest.date).slice(0, 5)})
@@ -127,7 +152,38 @@ export function BalanceChart({ history, projection, cushion, lowest, overdraftDa
         <span>
           <b aria-hidden>···</b> Réserve conseillée
         </span>
+        {jump ? (
+          <span>
+            <b aria-hidden>↓</b> Chèques en circulation et mouvements non confirmés : du solde réel au disponible
+          </span>
+        ) : null}
       </figcaption>
+      {mono ? null : (
+        <details className="mt-2 text-sm">
+          <summary className="cursor-pointer font-semibold">Voir les points du graphique sous forme de tableau</summary>
+          <div className="mt-2 max-h-80 overflow-auto">
+            <table className="w-full border-collapse text-left">
+              <caption className="sr-only">Points du graphique : solde réel puis solde prévu, en DA</caption>
+              <thead>
+                <tr>
+                  <th scope="col" className="border-b p-1">Date</th>
+                  <th scope="col" className="border-b p-1">Nature du point</th>
+                  <th scope="col" className="border-b p-1 text-right">Solde (DA)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={`${row.kind}-${row.date}`}>
+                    <td className="border-b p-1">{formatDate(row.date)}</td>
+                    <td className="border-b p-1">{row.kind}</td>
+                    <td className="border-b p-1 text-right tabular-nums">{formatDA(row.balance)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
     </figure>
   );
 }

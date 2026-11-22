@@ -3,6 +3,7 @@ import { writeWorkbook } from "@/lib/spreadsheet";
 import { can, requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { logAction } from "@/features/journal/services/journal-service";
+import { canAccessTreasury } from "@/features/treasury/services/treasury-access";
 import { ok, type ActionResult } from "@/types";
 import { todayIso } from "@/utils/dates";
 
@@ -20,6 +21,11 @@ function flatten(row: Record<string, unknown>): Flat {
     else out[key] = String(value);
   }
   return out;
+}
+
+/** Préfixes de réglages exclus de la sauvegarde : compteurs de connexion toujours ; trésorerie sans accès à l'onglet. */
+export function excludedSettingPrefixes(withTreasury: boolean): string[] {
+  return withTreasury ? ["login:"] : ["login:", "tresorerie:"];
 }
 
 /**
@@ -40,7 +46,8 @@ export async function buildBackup(actor: AuthUser, format: "xlsx" | "json"): Pro
     db.providerRib.findMany(),
     withPayroll ? db.hrEntry.findMany({ orderBy: { date: "asc" } }) : Promise.resolve([]),
     // Réglages (primes MLA par année, brouillons, alertes) ; les compteurs de connexion n'en font pas partie.
-    db.setting.findMany({ where: { NOT: { key: { startsWith: "login:" } } }, orderBy: { key: "asc" } }),
+    // Les clés « tresorerie: » (solde, scénarios) ne sont sauvegardées que pour les profils qui ont accès à la trésorerie.
+    db.setting.findMany({ where: { AND: excludedSettingPrefixes(canAccessTreasury(actor)).map((prefix) => ({ NOT: { key: { startsWith: prefix } } })) }, orderBy: { key: "asc" } }),
   ]);
   const data: Record<string, unknown[]> = { factures, releve, demandesPaiement, facturesEtablies, caarProduction, virements, rib, reglages, ...(withPayroll ? { rh } : {}) };
   const stamp = todayIso();

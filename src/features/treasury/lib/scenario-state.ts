@@ -32,16 +32,16 @@ export function duplicateScenario(state: ScenariosState, sourceId: string, copy:
   return { ok: true, state: { ...created.state, scenarios: created.state.scenarios.map((item) => (item.id === copy.id ? { ...item, lignes } : item)) } };
 }
 
-/** Active un scénario, ou revient à la situation réelle avec `null`. */
-export function activateScenario(state: ScenariosState, id: string | null): ScenarioUpdate {
+/** Vérifie qu'un scénario existe avant son activation par un utilisateur (`null` : retour à la situation réelle, toujours permis). */
+export function canActivate(state: ScenariosState, id: string | null): ScenarioUpdate {
   if (id !== null && !state.scenarios.some((scenario) => scenario.id === id)) return notFound();
-  return { ok: true, state: { ...state, actif: id } };
+  return { ok: true, state };
 }
 
 /** Supprime un scénario (désactive le scénario actif s'il s'agit de lui). */
 export function deleteScenario(state: ScenariosState, id: string): ScenarioUpdate {
   if (!state.scenarios.some((scenario) => scenario.id === id)) return notFound();
-  return { ok: true, state: { actif: state.actif === id ? null : state.actif, scenarios: state.scenarios.filter((scenario) => scenario.id !== id) } };
+  return { ok: true, state: { ...state, scenarios: state.scenarios.filter((scenario) => scenario.id !== id) } };
 }
 
 /** Vide les lignes d'un scénario (réinitialisation). */
@@ -74,7 +74,7 @@ export function decideLine(state: ScenariosState, scenarioId: string, lineId: st
   return withScenario(state, scenarioId, (scenario) => (scenario.lignes.some((item) => item.id === lineId) ? { ...scenario, lignes: scenario.lignes.map((item) => (item.id === lineId ? { ...item, decision } : item)) } : "Cette ligne n'existe plus. Rechargez la page."));
 }
 
-/** Scénario actif, ou null. */
-export function activeScenario(state: ScenariosState): Scenario | null {
-  return state.scenarios.find((scenario) => scenario.id === state.actif) ?? null;
+/** Scénario actif d'un utilisateur (son identifiant lu dans `tresorerie:actif:<id>`), ou null s'il n'en a aucun ou si le scénario a été supprimé. */
+export function activeScenario(state: ScenariosState, activeId: string | null): Scenario | null {
+  return activeId === null ? null : (state.scenarios.find((scenario) => scenario.id === activeId) ?? null);
 }

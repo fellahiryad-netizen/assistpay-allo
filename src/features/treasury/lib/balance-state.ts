@@ -1,5 +1,5 @@
 import { shiftIsoDate } from "@/utils/dates";
-import type { BalanceRefusalKind, ManualBalance, ResolvedBalance, SoldeState, StatementBalance, StoredBalance } from "@/features/treasury/types";
+import type { BalanceRefusalKind, DailyBalance, MonthlyFlow, ManualBalance, ResolvedBalance, SoldeState, StatementBalance, StoredBalance } from "@/features/treasury/types";
 
 /** État initial de la clé `tresorerie:solde`. */
 export const EMPTY_SOLDE: SoldeState = { current: null, manual: null, rejection: null };
@@ -8,6 +8,48 @@ export const EMPTY_SOLDE: SoldeState = { current: null, manual: null, rejection:
 export type ImportDecision =
   | { action: "stored"; state: SoldeState }
   | { action: "ignored"; state: SoldeState; reason: "ancien"; message: string };
+
+const lastDayOfMonth = (iso: string): boolean => shiftIsoDate(iso, 1).slice(0, 7) !== iso.slice(0, 7);
+
+/** Un mois est complet dans un relevé si le relevé commence au plus tard le 1er et s'arrête au plus tôt le dernier jour du mois. */
+function monthComplete(m: string, start: string | null, end: string | null): boolean {
+  if (!start || !end) return false;
+  const startOk = start.slice(0, 7) < m || (start.slice(0, 7) === m && start.slice(8, 10) === "01");
+  const endOk = end.slice(0, 7) > m || (end.slice(0, 7) === m && lastDayOfMonth(end));
+  return startOk && endOk;
+}
+
+/**
+ * Fusionne l'historique d'un nouveau relevé avec celui déjà enregistré, pour qu'un relevé plus court ne raccourcisse jamais l'historique :
+ * soldes quotidiens réunis par date (le relevé le plus récent l'emporte), mois réunis en préférant la version complète (à égalité le nouveau relevé),
+ * sinon la plus fournie en débits.
+ */
+export function mergeHistory(previous: StatementBalance | null, next: StatementBalance): { daily: DailyBalance[]; monthly: MonthlyFlow[] } {
+  if (!previous) return { daily: next.daily, monthly: next.monthly };
+  const daily = new Map<string, DailyBalance>();
+  for (const point of previous.daily) daily.set(point.d, point);
+  for (const point of next.daily) daily.set(point.d, point);
+  const prevStart = previous.daily[0]?.d ?? null;
+  const prevEnd = previous.lastOperationDate ?? previous.balanceDate;
+  const nextStart = next.daily[0]?.d ?? null;
+  const nextEnd = next.lastOperationDate ?? next.balanceDate;
+  const months = new Map<string, MonthlyFlow>();
+  for (const flow of previous.monthly) months.set(flow.m, flow);
+  for (const flow of next.monthly) {
+    const old = months.get(flow.m);
+    if (!old) {
+      months.set(flow.m, flow);
+      continue;
+    }
+    const newComplete = monthComplete(flow.m, nextStart, nextEnd);
+    const oldComplete = monthComplete(flow.m, prevStart, prevEnd);
+    if (newComplete || (!oldComplete && flow.debit >= old.debit)) months.set(flow.m, flow);
+  }
+  return {
+    daily: [...daily.values()].sort((a, b) => a.d.localeCompare(b.d)),
+    monthly: [...months.values()].sort((a, b) => a.m.localeCompare(b.m)),
+  };
+}
 
 /**
  * Applique un solde de relevé valide à l'état enregistré. Un relevé dont la date de solde est plus ancienne que celle du solde déjà enregistré
@@ -19,7 +61,7 @@ export function applyValidImport(state: SoldeState, balance: StatementBalance, i
     const message = `Le relevé ${info.fileName} s'arrête au ${balance.balanceDate}, plus ancien que le solde déjà enregistré (${current.balanceDate}) : il n'a pas remplacé le solde.`;
     return { action: "ignored", reason: "ancien", message, state: { ...state, rejection: { at: info.importedAt, fileName: info.fileName, reason: "ancien", message } } };
   }
-  const stored: StoredBalance = { ...balance, ...info };
+  const stored: StoredBalance = { ...balance, ...mergeHistory(current, balance), ...info };
   const manual = state.manual && state.manual.date <= balance.balanceDate ? null : state.manual;
   return { action: "stored", state: { current: stored, manual, rejection: null } };
 }

@@ -41,7 +41,10 @@ vi.mock("@/lib/db", () => ({
       },
     },
     hrEntry: { findMany: async () => hrRows },
-    bankStatementLine: { findMany: async () => [] },
+    bankStatementLine: { findMany: async () => [], aggregate: async () => ({ _min: { date: null } }), groupBy: async () => [] },
+    invoice: { findMany: async () => [] },
+    transferBatch: { findMany: async () => [] },
+    paymentRequest: { findMany: async () => [] },
   },
 }));
 
@@ -54,8 +57,8 @@ vi.mock("@/features/journal/services/journal-service", () => ({
 
 const { activateScenarioEntry, addSimulationLine, createScenarioEntry, decideSimulationLine } = await import("@/features/treasury/services/treasury-scenarios");
 const { recordStatementBalance } = await import("@/features/treasury/services/treasury-import");
-const { saveManualBalance, saveTreasurySettings } = await import("@/features/treasury/services/treasury-service");
-const { parseScenarios, parseSolde } = await import("@/features/treasury/lib/store-parse");
+const { getTreasuryView, saveManualBalance, saveTreasurySettings } = await import("@/features/treasury/services/treasury-service");
+const { parseActive, parseScenarios, parseSolde } = await import("@/features/treasury/lib/store-parse");
 
 function actor(profile: ProfileKey): AuthUser {
   return { id: `u-${profile}`, email: "x@alloassistance.dz", name: profile, profile, isAdmin: profile === "ADMINISTRATEUR" || profile === "DIRECTION", access: resolveAccess(profile, []) };
@@ -154,7 +157,8 @@ describe("solde importé et ligne de simulation (base simulée)", () => {
     if (!added.success) return;
     expect(added.data.warnings[0]).toContain("semble déjà enregistré dans le RH");
     const before = parseScenarios(store.get("tresorerie:scenarios")?.value);
-    expect(before.actif).toBe(created.data.id);
+    expect(before.actif).toBeNull();
+    expect(parseActive(store.get(`tresorerie:actif:${importer.id}`)?.value).scenarioId).toBe(created.data.id);
     expect(before.scenarios[0]?.lignes).toHaveLength(1);
     const decided = await decideSimulationLine(importer, { scenarioId: created.data.id, lineId: added.data.lineId, decision: "ignorer" });
     expect(decided.success).toBe(true);
@@ -186,5 +190,76 @@ describe("solde importé et ligne de simulation (base simulée)", () => {
     await recordStatementBalance(importer, statement(OPS), "report_92.xls");
     expect(parseSolde(store.get("tresorerie:solde")?.value).manual).toBeNull();
     expect(await saveManualBalance(actor("ADMINISTRATEUR"), { ...manual, date: "2026-11-22" })).toMatchObject({ success: false, code: "CONFLICT" });
+  });
+});
+
+describe("scénario actif propre à chaque utilisateur, consultations journalisées, doublons", () => {
+  const comptable = actor("COMPTABLE");
+  const direction = actor("DIRECTION");
+  const line = (scenarioId: string) => ({ scenarioId, type: "G50" as const, libelle: "G50 octobre", periode: "2026-10", montant: 22_752_053, date: "2026-11-30", mode: "CHEQUE" as const, certitude: "ESTIME" as const });
+
+  async function prepare(): Promise<string> {
+    await recordStatementBalance(comptable, statement(OPS), "report_92.xls");
+    hrRows.push({ id: "hr-g50", nature: "G50", mois: "2026-10", annee: 2026, date: new Date("2026-11-19T00:00:00Z"), montant: { toNumber: () => 22_752_053 }, libelle: "G50 octobre 2026", beneficiaire: "Receveur", mode: "CHEQUE", cheque: "", sens: "PAIEMENT" });
+    const created = await createScenarioEntry(comptable, { nom: "Fin novembre" });
+    if (!created.success) throw new Error(created.error);
+    await addSimulationLine(comptable, line(created.data.id));
+    await activateScenarioEntry(comptable, { scenarioId: created.data.id });
+    return created.data.id;
+  }
+
+  it("la Direction ne voit jamais le scénario activé par la comptable ; chacun voit le sien", async () => {
+    const id = await prepare();
+    const seenByComptable = await getTreasuryView(comptable, { demandes: false });
+    const seenByDirection = await getTreasuryView(direction, { demandes: false });
+    if (!seenByComptable.success || !seenByDirection.success) throw new Error("lecture refusée");
+    expect(seenByComptable.data.active?.id).toBe(id);
+    expect(seenByDirection.data.active).toBeNull();
+    expect(seenByDirection.data.computation?.simulationTotal).toBe(0);
+    expect(seenByComptable.data.computation?.simulationTotal).toBe(22_752_053);
+    await activateScenarioEntry(direction, { scenarioId: id });
+    expect(parseActive(store.get(`tresorerie:actif:${direction.id}`)?.value).scenarioId).toBe(id);
+    await activateScenarioEntry(comptable, { scenarioId: null });
+    const after = await getTreasuryView(direction, { demandes: false });
+    if (!after.success) throw new Error("lecture refusée");
+    expect(after.data.active?.id).toBe(id);
+  });
+
+  it("l'ancien champ partagé `actif` n'est jamais appliqué à personne", async () => {
+    const id = await prepare();
+    const row = store.get("tresorerie:scenarios");
+    if (!row) throw new Error("absent");
+    store.set("tresorerie:scenarios", { ...row, value: { ...(row.value as object), actif: id } });
+    store.delete(`tresorerie:actif:${comptable.id}`);
+    const view = await getTreasuryView(direction, { demandes: false });
+    if (!view.success) throw new Error("lecture refusée");
+    expect(view.data.active).toBeNull();
+  });
+
+  it("une ligne signalée comme doublon possible est comptée et annoncée avec son impact, jusqu'à ce qu'elle soit écartée", async () => {
+    const id = await prepare();
+    const view = await getTreasuryView(comptable, { demandes: false });
+    if (!view.success || !view.data.computation) throw new Error("lecture refusée");
+    expect(view.data.duplicates).toMatchObject({ count: 1, total: 22_752_053 });
+    expect(view.data.duplicates?.balanceAfterWithout).toBe(Math.round((view.data.computation.balanceAfter + 22_752_053) * 100) / 100);
+    const lineId = view.data.active?.lignes[0]?.id ?? "";
+    await decideSimulationLine(comptable, { scenarioId: id, lineId, decision: "ignorer" });
+    const after = await getTreasuryView(comptable, { demandes: false });
+    if (!after.success) throw new Error("lecture refusée");
+    expect(after.data.duplicates).toBeNull();
+  });
+
+  it("chaque consultation écrit une ligne : page, impression ; l'export écrit la sienne seule", async () => {
+    await prepare();
+    logged.length = 0;
+    await getTreasuryView(comptable, { demandes: false });
+    await getTreasuryView(comptable, { demandes: false }, "impression");
+    await getTreasuryView(comptable, { demandes: false }, "export");
+    expect(logged).toEqual(["Consultation de la trésorerie", "Impression de la trésorerie"]);
+  });
+
+  it("la fonction de lecture des sources refuse un profil sans accès", async () => {
+    const { loadDuplicateSources } = await import("@/features/treasury/services/treasury-sources");
+    expect(await loadDuplicateSources(actor("EQUIPE_FACTURATION"))).toMatchObject({ success: false, code: "FORBIDDEN" });
   });
 });

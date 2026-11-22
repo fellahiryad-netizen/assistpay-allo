@@ -202,16 +202,38 @@ describe("chèques émis non débités", () => {
     expect(report.total).toBe(22_752_053);
     expect(report.checks.find((c) => c.cheque.id === "hr0")).toMatchObject({ status: "debite", matchedBy: "numero", debitDate: "2026-11-04" });
   });
-  it("à défaut de numéro dans le libellé : débit de même montant à ± 10 jours", () => {
-    const report = chequesInCirculation([{ ...cheque, montant: 1_500_000, date: "2026-11-25" }], debits, "2026-11-26", "2026-01-04");
+  it("à défaut de numéro : débit de type chèque, même montant, de l'émission à 10 jours après", () => {
+    const chq: BankDebit[] = [{ date: "2026-11-26", libelle: "PAIEMENT CHEQUE", numero: "", montant: 1_500_000 }];
+    const report = chequesInCirculation([{ ...cheque, montant: 1_500_000, date: "2026-11-25" }], chq, "2026-11-26", "2026-01-04");
     expect(report.checks[0]).toMatchObject({ status: "debite", matchedBy: "montant" });
-    const far = chequesInCirculation([{ ...cheque, montant: 1_500_000, date: "2026-12-05" }], debits, "2026-12-06", "2026-01-04");
-    expect(far.checks[0]?.status).toBe("circulation");
+    const late = chequesInCirculation([{ ...cheque, montant: 1_500_000, date: "2026-12-10" }], chq, "2026-12-11", "2026-01-04");
+    expect(late.checks[0]?.status).toBe("circulation");
   });
-  it("trop ancien, sans date ou antérieur au relevé : à vérifier, non déduit", () => {
+  it("un débit antérieur à l'émission n'apparie jamais (débit du 01/05, chèque émis le 20/11)", () => {
+    const old: BankDebit[] = [{ date: "2026-05-01", libelle: "PAIEMENT CHEQUE", numero: "", montant: 22_752_053 }];
+    expect(chequesInCirculation([{ ...cheque, date: "2026-11-20" }], old, "2026-11-22", "2026-01-04").total).toBe(22_752_053);
+  });
+  it("un virement du même montant ne masque pas le chèque G50 de 22 752 053", () => {
+    const virement: BankDebit[] = [{ date: "2026-11-20", libelle: "Virement divers", numero: "", montant: 22_752_053 }];
+    expect(chequesInCirculation([cheque], virement, "2026-11-22", "2026-01-04").total).toBe(22_752_053);
+  });
+  it("appariement 1 pour 1 : 2 chèques de 1 000 000 et un seul « Virement divers » de 1 000 000 = 2 en circulation", () => {
+    const two = [{ ...cheque, id: "a", numero: "1110001", montant: 1_000_000, date: "2026-11-10" }, { ...cheque, id: "b", numero: "1110002", montant: 1_000_000, date: "2026-11-10" }];
+    const one: BankDebit[] = [{ date: "2026-11-12", libelle: "Virement divers", numero: "", montant: 1_000_000 }];
+    expect(chequesInCirculation(two, one, "2026-11-22", "2026-01-04").circulation).toHaveLength(2);
+    // Un seul débit de type chèque sans numéro : il ne solde qu'un des deux chèques.
+    const chq: BankDebit[] = [{ date: "2026-11-12", libelle: "PAIEMENT CHEQUE", numero: "", montant: 1_000_000 }];
+    expect(chequesInCirculation(two, chq, "2026-11-22", "2026-01-04").circulation).toHaveLength(1);
+  });
+  it("un débit portant le numéro d'un autre chèque n'apparie pas au montant", () => {
+    const other: BankDebit[] = [{ date: "2026-11-12", libelle: "PAIEMENT CHEQUE N° TL-9990000", numero: "", montant: 22_752_053 }];
+    expect(chequesInCirculation([cheque], other, "2026-11-22", "2026-01-04").total).toBe(22_752_053);
+  });
+  it("sans date : à vérifier ; antérieur au relevé du CRM : ignoré ; trop ancien sans débit : à vérifier", () => {
     const report = chequesInCirculation([{ ...cheque, id: "a", date: "2026-05-01" }, { ...cheque, id: "b", numero: "9990001", date: null }, { ...cheque, id: "c", numero: "9990002", date: "2025-12-01" }], [], "2026-11-22", "2026-01-04");
     expect(report.total).toBe(0);
-    expect(report.toVerify.length).toBe(3);
+    expect(report.toVerify.map((c) => c.id).sort()).toEqual(["a", "b"]);
+    expect(report.checks.find((c) => c.cheque.id === "c")?.status).toBe("hors_releve");
   });
   it("une écriture RH et une facture portant le même numéro ne se comptent pas deux fois", () => {
     const report = chequesInCirculation([cheque, { ...cheque, source: "facture", id: "inv1" }], [], "2026-11-22", "2026-01-04");

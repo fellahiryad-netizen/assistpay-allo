@@ -1,9 +1,10 @@
 import { AlertTriangle, CheckCircle2, FlaskConical, Info, OctagonAlert } from "lucide-react";
 import type { RiskLevel, Verdict } from "@/features/treasury/lib/risk";
 import type { BalanceRejection } from "@/features/treasury/types";
-import type { BalanceView } from "@/features/treasury/types/view";
+import { duplicatesSentence } from "@/features/treasury/lib/duplicates-notice";
+import type { BalanceView, DuplicatesView } from "@/features/treasury/types/view";
 import { cn } from "@/utils/cn";
-import { formatDate, formatDateTime } from "@/utils/format";
+import { formatDA, formatDate, formatDateTime } from "@/utils/format";
 
 /** Date et heure d'un horodatage ISO : « le 22/11 à 09:05 ». */
 function stampLabel(iso: string): string {
@@ -80,6 +81,7 @@ const VERDICT_STYLES: Readonly<Record<RiskLevel, { box: string; Icon: typeof Che
   vert: { box: "border-success bg-success/10", Icon: CheckCircle2, word: "VERT" },
   orange: { box: "border-warning bg-warning/10", Icon: AlertTriangle, word: "ORANGE" },
   rouge: { box: "border-destructive bg-destructive/10", Icon: OctagonAlert, word: "ROUGE" },
+  indetermine: { box: "border-muted-foreground bg-muted", Icon: AlertTriangle, word: "INDÉTERMINÉ" },
 };
 
 /** Verdict en langage simple : pictogramme, niveau écrit en toutes lettres et phrase (jamais la couleur seule). */
@@ -94,5 +96,27 @@ export function VerdictCard({ verdict }: Readonly<{ verdict: Verdict }>): React.
       </h2>
       <p className="mt-2 text-base sm:text-lg">{verdict.sentence}</p>
     </section>
+  );
+}
+
+/** Bandeau des lignes simulées signalées comme doublon possible : elles restent comptées tant que la comptable ne les écarte pas ; l'impact est détaillé. */
+export function DuplicatesBanner({ duplicates }: Readonly<{ duplicates: DuplicatesView }>): React.JSX.Element {
+  return (
+    <div role="alert" className="rounded-lg border-2 border-warning bg-warning/10 p-3 text-sm sm:text-base">
+      <p className="flex items-start gap-2 font-bold">
+        <AlertTriangle aria-hidden className="mt-0.5 size-5 shrink-0" />
+        {duplicatesSentence(duplicates.count)}
+      </p>
+      <p className="mt-1">
+        Impact : {formatDA(duplicates.total)} dans le reste à payer. Si elles étaient écartées, le solde après paiements serait de {formatDA(duplicates.balanceAfterWithout)}.
+      </p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-6">
+        {duplicates.lines.map((line) => (
+          <li key={line.id}>
+            {line.libelle} — {formatDA(line.montant)} le {formatDate(line.date)} : {line.messages.join(" ")}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

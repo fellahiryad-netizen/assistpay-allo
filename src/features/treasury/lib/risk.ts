@@ -25,9 +25,13 @@ const isLastDayOfMonth = (iso: string): boolean => shiftIsoDate(iso, 1).slice(0,
  * Décaissement moyen des 6 derniers mois complets, calculé depuis les débits du relevé.
  * `dataEnd` est la date d'arrêt du relevé : son mois n'est complet que si c'est le dernier jour du mois. Renvoie null sans aucun mois complet.
  */
-export function spendingReference(monthly: readonly MonthlyFlow[], dataEnd: string): SpendingReference | null {
+export function spendingReference(monthly: readonly MonthlyFlow[], dataEnd: string, historyStart: string | null = null): SpendingReference | null {
   const endMonth = dataEnd.slice(0, 7);
-  const complete = monthly.filter((flow) => flow.m < endMonth || (flow.m === endMonth && isLastDayOfMonth(dataEnd))).sort((a, b) => a.m.localeCompare(b.m));
+  // Le premier mois de l'historique est partiel si l'historique ne commence pas le 1er : il ne doit pas tirer la moyenne vers le bas.
+  const partialFirst = historyStart !== null && historyStart.slice(8, 10) !== "01" ? historyStart.slice(0, 7) : null;
+  const complete = monthly
+    .filter((flow) => flow.m !== partialFirst && (flow.m < endMonth || (flow.m === endMonth && isLastDayOfMonth(dataEnd))))
+    .sort((a, b) => a.m.localeCompare(b.m));
   const used = complete.slice(-REFERENCE_MONTHS);
   if (used.length === 0) return null;
   const totalDebits = round2(used.reduce((sum, flow) => sum + flow.debit, 0));
@@ -41,10 +45,15 @@ export function cushionAmount(reference: SpendingReference | null, days: number)
 }
 
 /** Niveau de risque. */
-export type RiskLevel = "vert" | "orange" | "rouge";
+export type RiskLevel = "vert" | "orange" | "rouge" | "indetermine";
 
 /** Libellé court du niveau. */
-export const RISK_TITLES: Readonly<Record<RiskLevel, string>> = { vert: "Situation confortable", orange: "Vigilance", rouge: "Risque de découvert" };
+export const RISK_TITLES: Readonly<Record<RiskLevel, string>> = {
+  vert: "Situation confortable",
+  orange: "Vigilance",
+  rouge: "Risque de découvert",
+  indetermine: "Indéterminé",
+};
 
 /** Entrées du niveau de risque. */
 export interface RiskInput {
@@ -56,14 +65,18 @@ export interface RiskInput {
   lowest: number;
   /** Première date de découvert de la chronologie, ou null. */
   overdraftDate: string | null;
+  /** Faux si l'historique des décaissements est insuffisant pour fixer une réserve : le niveau ne peut alors jamais être vert. Vrai par défaut. */
+  historyKnown?: boolean;
 }
 
 /**
  * Niveau de risque. Rouge : solde après paiements négatif ou découvert sur la chronologie.
- * Orange : solde après paiements sous la réserve, ou point bas sous la réserve. Vert : le reste.
+ * Orange : solde après paiements sous la réserve, ou point bas sous la réserve. Vert : le reste, mais seulement si l'historique permet de fixer la réserve ;
+ * sans historique suffisant le niveau est « indéterminé » (jamais vert). Un découvert reste rouge, même sans historique.
  */
 export function riskLevel(input: RiskInput): RiskLevel {
   if (input.balanceAfter < 0 || input.overdraftDate !== null || input.lowest < 0) return "rouge";
+  if (input.historyKnown === false) return "indetermine";
   if (input.balanceAfter < input.cushion || input.lowest < input.cushion) return "orange";
   return "vert";
 }
@@ -106,6 +119,8 @@ export function buildVerdict(input: VerdictInput): Verdict {
       input.balanceAfter < input.cushion
         ? `Vous pouvez tout payer et il vous resterait ${millions(input.balanceAfter)}${habit}. C'est moins que ${reserve}.`
         : `Après tous les paiements, il resterait ${millions(input.balanceAfter)}, mais le solde descendrait à ${millions(input.lowest)}${input.lowestDate ? ` le ${input.lowestDate.split("-").reverse().join("/")}` : ""}, sous ${reserve}.`;
+  } else if (level === "indetermine") {
+    sentence = `Après avoir tout payé, il resterait ${millions(input.balanceAfter)}, mais l'historique du relevé est insuffisant pour fixer une réserve : le niveau de risque ne peut pas être établi. Importez un relevé couvrant au moins un mois complet.`;
   } else {
     sentence = `Après avoir tout payé, il resterait ${millions(input.balanceAfter)}${habit}, au-dessus de ${reserve}.`;
   }

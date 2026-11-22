@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hrDateAnomalies, ledgerGap } from "@/features/treasury/lib/controls";
 import { findDuplicates, suggestFor, type HrLite } from "@/features/treasury/lib/duplicates";
-import { activateScenario, addLine, clearScenario, createScenario, decideLine, deleteScenario, duplicateScenario, removeLine, updateLine, type ScenarioUpdate } from "@/features/treasury/lib/scenario-state";
+import { activeScenario, addLine, canActivate, clearScenario, createScenario, decideLine, deleteScenario, duplicateScenario, removeLine, updateLine, type ScenarioUpdate } from "@/features/treasury/lib/scenario-state";
 import { DEFAULT_SETTINGS, parseScenarios, parseSettings } from "@/features/treasury/lib/store-parse";
 import { MAX_LINES_PER_SCENARIO, MAX_SCENARIOS, type ScenariosState, type SimLine } from "@/features/treasury/types";
 import { simLineSchema, treasurySettingsSchema } from "@/features/treasury/schemas";
@@ -80,20 +80,20 @@ describe("scénarios : opérations pures", () => {
   it("crée, active, duplique, vide et supprime", () => {
     let state = made();
     state = ok(addLine(state, "s1", line()));
-    state = ok(activateScenario(state, "s1"));
-    expect(state.actif).toBe("s1");
+    state = ok(canActivate(state, "s1"));
+    expect(activeScenario(state, "s1")?.id).toBe("s1");
     state = ok(duplicateScenario(state, "s1", { id: "s2", nom: "Cas prudent", now: "x", by: "Comptable", lineIds: ["n1"] }));
     expect(state.scenarios.find((s) => s.id === "s2")?.lignes.map((l) => l.id)).toEqual(["n1"]);
     state = ok(clearScenario(state, "s1"));
     expect(state.scenarios[0]?.lignes).toEqual([]);
     state = ok(deleteScenario(state, "s1"));
-    expect(state.actif).toBeNull();
+    expect(activeScenario(state, "s1")).toBeNull();
     expect(state.scenarios.map((s) => s.id)).toEqual(["s2"]);
   });
   it("refuse un nom déjà pris, un scénario inconnu et dépasse les plafonds", () => {
     const state = made();
     expect(createScenario(state, { id: "x", nom: "fin novembre", now: "", by: "" }).ok).toBe(false);
-    expect(activateScenario(state, "inconnu")).toMatchObject({ ok: false, code: "NOT_FOUND" });
+    expect(canActivate(state, "inconnu")).toMatchObject({ ok: false, code: "NOT_FOUND" });
     let many = empty;
     for (let index = 0; index < MAX_SCENARIOS; index += 1) many = ok(createScenario(many, { id: `s${index}`, nom: `S${index}`, now: "", by: "" }));
     expect(createScenario(many, { id: "plus", nom: "Trop", now: "", by: "" }).ok).toBe(false);

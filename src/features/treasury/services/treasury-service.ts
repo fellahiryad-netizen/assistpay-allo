@@ -3,20 +3,20 @@ import type { AuthUser } from "@/features/access/types";
 import { remaining, toPayable } from "@/features/invoices/services/invoice-balance";
 import { logAction } from "@/features/journal/services/journal-service";
 import { freshness, resolveBalance } from "@/features/treasury/lib/balance-state";
-import { chequesInCirculation, type BankDebit, type IssuedCheque } from "@/features/treasury/lib/circulation";
+import { chequeDigits, chequesInCirculation, type IssuedCheque } from "@/features/treasury/lib/circulation";
 import { computeTreasury } from "@/features/treasury/lib/compute";
 import { hrDateAnomalies, ledgerGap } from "@/features/treasury/lib/controls";
-import { findDuplicates, suggestFor, type HrLite } from "@/features/treasury/lib/duplicates";
+import { findDuplicates, suggestFor } from "@/features/treasury/lib/duplicates";
 import type { PendingInvoiceInput, RequestInput } from "@/features/treasury/lib/payables";
 import { delayStats, expectedCollections, type PendingReceivable, type SettledInput } from "@/features/treasury/lib/receivables";
 import { activeScenario } from "@/features/treasury/lib/scenario-state";
-import { parseScenarios, parseSettings, parseSolde } from "@/features/treasury/lib/store-parse";
+import { parseActive, parseScenarios, parseSettings, parseSolde } from "@/features/treasury/lib/store-parse";
 import type { ManualBalanceInput, TreasuryQuery, TreasurySettingsInput } from "@/features/treasury/schemas";
 import { requireTreasury } from "@/features/treasury/services/treasury-access";
-import { KEY_SCENARIOS, KEY_SETTINGS, KEY_SOLDE, readState, updateState } from "@/features/treasury/services/treasury-store";
+import { loadDuplicateSources } from "@/features/treasury/services/treasury-sources";
+import { KEY_SCENARIOS, KEY_SETTINGS, KEY_SOLDE, keyActive, readState, updateState } from "@/features/treasury/services/treasury-store";
 import { SIM_TYPES } from "@/features/treasury/types";
-import type { ActiveScenarioView, BalanceView, ControlsView, ScenarioSummary, TreasuryView } from "@/features/treasury/types/view";
-import { monthKeyOfEntry } from "@/features/hr/lib/hr-period";
+import type { ActiveScenarioView, BalanceView, ControlsView, DuplicatesView, ScenarioSummary, TreasuryView } from "@/features/treasury/types/view";
 import { fail, ok, type ActionResult } from "@/types";
 import { round2 } from "@/utils/amounts";
 import { shiftIsoDate, toIsoDate, todayIso } from "@/utils/dates";
@@ -27,35 +27,33 @@ function dec(value: { toNumber(): number } | null | undefined): number {
   return value ? Math.round(value.toNumber() * 100) / 100 : 0;
 }
 
-/** Écritures RH et débits du relevé utiles à l'anti-doublon et aux suggestions (lecture seule). */
-export async function loadDuplicateSources(): Promise<{ hr: HrLite[]; debits: BankDebit[] }> {
-  const [hrRows, lines] = await Promise.all([
-    db.hrEntry.findMany({ where: { sens: "PAIEMENT" }, select: { id: true, nature: true, mois: true, annee: true, date: true, montant: true, libelle: true, beneficiaire: true } }),
-    db.bankStatementLine.findMany({ where: { sens: "DEBIT" }, select: { date: true, libelle: true, numero: true, montant: true } }),
-  ]);
-  return {
-    hr: hrRows.map((row) => {
-      const date = toIsoDate(row.date);
-      return { id: row.id, nature: row.nature, monthKey: monthKeyOfEntry({ nature: row.nature, mois: row.mois, annee: row.annee, date }), date, montant: dec(row.montant), libelle: row.libelle, beneficiaire: row.beneficiaire };
-    }),
-    debits: lines.map((line) => ({ date: toIsoDate(line.date) ?? "", libelle: line.libelle, numero: line.numero, montant: dec(line.montant) })),
-  };
-}
+/** Canal de consultation, écrit au journal : la page, l'impression, ou l'export (qui écrit lui-même sa ligne). */
+export type TreasuryChannel = "page" | "impression" | "export";
+
+const CHANNEL_ACTIONS: Readonly<Record<Exclude<TreasuryChannel, "export">, string>> = { page: "Consultation de la trésorerie", impression: "Impression de la trésorerie" };
 
 /**
  * Données de l'onglet Trésorerie : solde du dernier relevé importé, chèques en circulation, reste à payer des factures fournisseurs,
- * simulation active, contrôles. Lecture seule. Accès Administrateur, Direction ou Comptable (contrôlé ici, pas seulement par le menu).
- * Une consultation avec un scénario actif est écrite au journal d'administration.
+ * simulation active de l'utilisateur, contrôles. Lecture seule. Accès Administrateur, Direction ou Comptable (contrôlé ici, pas seulement par le menu).
+ * Le scénario actif est celui de l'utilisateur qui consulte : jamais celui d'un autre. Chaque consultation de la page ou de l'impression écrit une ligne
+ * au journal d'administration (l'export écrit la sienne), avec la mention du scénario s'il y en a un.
  */
-export async function getTreasuryView(actor: AuthUser, query: TreasuryQuery): Promise<ActionResult<TreasuryView>> {
+export async function getTreasuryView(actor: AuthUser, query: TreasuryQuery, channel: TreasuryChannel = "page"): Promise<ActionResult<TreasuryView>> {
   const guard = requireTreasury(actor, "view");
   if (!guard.success) return guard;
   try {
     const today = todayIso();
-    const [solde, scenarioState, settings] = await Promise.all([readState(KEY_SOLDE, parseSolde), readState(KEY_SCENARIOS, parseScenarios), readState(KEY_SETTINGS, parseSettings)]);
+    const [solde, scenarioState, settings, activeState] = await Promise.all([
+      readState(KEY_SOLDE, parseSolde),
+      readState(KEY_SCENARIOS, parseScenarios),
+      readState(KEY_SETTINGS, parseSettings),
+      readState(keyActive(actor.id), parseActive),
+    ]);
     const resolved = resolveBalance(solde);
-    const active = activeScenario(scenarioState);
-    const sources = await loadDuplicateSources();
+    const active = activeScenario(scenarioState, activeState.scenarioId);
+    const loaded = await loadDuplicateSources(actor);
+    if (!loaded.success) return loaded;
+    const sources = loaded.data;
     const suggestions = Object.fromEntries(SIM_TYPES.map((type) => [type, suggestFor(type, sources.hr)])) as TreasuryView["suggestions"];
     const scenarios: ScenarioSummary[] = scenarioState.scenarios.map((scenario) => ({ id: scenario.id, nom: scenario.nom, creeLe: scenario.creeLe, creePar: scenario.creePar, lines: scenario.lignes.length }));
     const base = {
@@ -70,9 +68,14 @@ export async function getTreasuryView(actor: AuthUser, query: TreasuryQuery): Pr
       suggestions,
       includeRequests: query.demandes,
     };
+    const logConsultation = async (): Promise<void> => {
+      if (channel === "export") return;
+      await logAction(actor, CHANNEL_ACTIONS[channel], active ? `mode simulation : scénario « ${active.nom} » (${active.lignes.length} ligne(s))` : "situation réelle", true);
+    };
     const emptyControls: ControlsView = { ledger: null, unmatched: { debitCount: 0, debitTotal: 0, creditCount: 0, creditTotal: 0 }, posterior: { count: 0, total: 0 }, hrAnomalies: [], hrAnomaliesTotal: 0, chequesToVerify: [], pendingWithCheque: 0, gaps: [], checks: null };
     if (!resolved) {
-      return ok({ ...base, balance: null, computation: null, active: null, cheques: [], controls: emptyControls, requestsWithoutInvoice: [] });
+      await logConsultation();
+      return ok({ ...base, balance: null, duplicates: null, computation: null, active: null, cheques: [], controls: emptyControls, requestsWithoutInvoice: [] });
     }
 
     const balanceDate = resolved.date;
@@ -92,15 +95,27 @@ export async function getTreasuryView(actor: AuthUser, query: TreasuryQuery): Pr
       db.bankStatementLine.groupBy({ by: ["sens"], where: { date: { gt: dateOf(balanceDate) } }, _sum: { montant: true }, _count: { _all: true } }),
     ]);
     const coverageStart = toIsoDate(coverage._min.date);
+    // Tout enregistrement avec un numéro d'au moins 4 chiffres et un mode autre que virement est un chèque (RH comme factures fournisseurs réglées).
     const chequeInvoices = coverageStart
-      ? await db.invoice.findMany({ where: { sens: "DEBIT", mode: "CHEQUE", cheque: { not: "" }, status: "REGLE", payroll: false, archived: false, dateOperation: { gte: dateOf(shiftIsoDate(coverageStart, -10)) } } })
+      ? await db.invoice.findMany({
+          where: {
+            sens: "DEBIT",
+            status: "REGLE",
+            payroll: false,
+            archived: false,
+            cheque: { not: "" },
+            AND: [{ OR: [{ mode: null }, { mode: { not: "VIREMENT" } }] }, { OR: [{ dateOperation: null }, { dateOperation: { gte: dateOf(shiftIsoDate(coverageStart, -10)) } }] }],
+          },
+        })
       : [];
 
     const issued: IssuedCheque[] = [
       ...hrRows
-        .filter((row) => row.sens === "PAIEMENT" && row.mode.toUpperCase() === "CHEQUE" && row.cheque.trim() !== "")
+        .filter((row) => row.sens === "PAIEMENT" && !/^VIR/i.test(row.mode) && chequeDigits(row.cheque) !== "")
         .map((row): IssuedCheque => ({ source: "rh", id: row.id, numero: row.cheque.trim(), montant: dec(row.montant), date: toIsoDate(row.date), beneficiaire: row.beneficiaire, libelle: row.libelle })),
-      ...chequeInvoices.map((row): IssuedCheque => ({ source: "facture", id: row.id, numero: row.cheque.trim(), montant: dec(row.montant), date: toIsoDate(row.dateOperation), beneficiaire: row.tiers, libelle: row.libelle })),
+      ...chequeInvoices
+        .filter((row) => chequeDigits(row.cheque) !== "")
+        .map((row): IssuedCheque => ({ source: "facture", id: row.id, numero: row.cheque.trim(), montant: dec(row.montant), date: toIsoDate(row.dateOperation), beneficiaire: row.tiers, libelle: row.libelle })),
     ];
     const cheques = chequesInCirculation(issued, sources.debits, today, coverageStart);
 
@@ -151,6 +166,18 @@ export async function getTreasuryView(actor: AuthUser, query: TreasuryQuery): Pr
         }
       : null;
 
+    const flagged = (activeView?.lignes ?? []).filter((line) => line.decision === null && line.warnings.length > 0);
+    const flaggedTotal = round2(flagged.reduce((total, line) => total + line.montant, 0));
+    const duplicates: DuplicatesView | null =
+      flagged.length > 0
+        ? {
+            count: flagged.length,
+            total: flaggedTotal,
+            balanceAfterWithout: round2(computation.balanceAfter + flaggedTotal),
+            lines: flagged.map((line) => ({ id: line.id, type: line.type, libelle: line.libelle, montant: line.montant, date: line.date, messages: line.warnings })),
+          }
+        : null;
+
     const crmCredit = sum(crmSums, "CREDIT");
     const crmDebit = sum(crmSums, "DEBIT");
     const unmatchedCredit = sum(unmatchedSums, "CREDIT");
@@ -181,9 +208,10 @@ export async function getTreasuryView(actor: AuthUser, query: TreasuryQuery): Pr
       freshness: fresh.level,
       workingDays: fresh.workingDays,
     };
-    if (active) await logAction(actor, "Consultation d'un scénario de trésorerie", `${active.nom} (${active.lignes.length} lignes)`, true);
+    await logConsultation();
     return ok({
       ...base,
+      duplicates,
       balance,
       computation,
       history: (solde.current?.daily ?? []).filter((point) => point.d >= shiftIsoDate(balanceDate, -120)),
