@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, Printer } from "lucide-react";
+import { Download, FileText, Printer } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
 import { buttonVariants } from "@/components/ui/button";
@@ -31,9 +31,13 @@ export function TreasuryScreen({ view }: Readonly<{ view: TreasuryView }>): Reac
             <Printer />
             Imprimer (noir et blanc)
           </Link>
-          <a href={`/api/tresorerie/export${query}`} className={buttonVariants({ variant: "outline" })}>
+          <a href={`/api/tresorerie/export?format=xlsx${query ? "&demandes=1" : ""}`} className={buttonVariants({ variant: "outline" })}>
             <Download />
             Exporter en Excel
+          </a>
+          <a href={`/api/tresorerie/export?format=pdf${query ? "&demandes=1" : ""}`} className={buttonVariants({ variant: "outline" })}>
+            <FileText />
+            Exporter en PDF (présentation)
           </a>
         </>
       ) : null}

@@ -263,3 +263,65 @@ describe("scénario actif propre à chaque utilisateur, consultations journalis�
     expect(await loadDuplicateSources(actor("EQUIPE_FACTURATION"))).toMatchObject({ success: false, code: "FORBIDDEN" });
   });
 });
+
+describe("exports Excel et PDF de présentation", () => {
+  const comptable = actor("COMPTABLE");
+  async function prepare(withSimulation: boolean): Promise<void> {
+    await recordStatementBalance(comptable, statement(OPS), "report_92.xls");
+    if (!withSimulation) return;
+    const created = await createScenarioEntry(comptable, { nom: "Fin novembre" });
+    if (!created.success) throw new Error(created.error);
+    await addSimulationLine(comptable, { scenarioId: created.data.id, type: "CNAS", libelle: "CNAS octobre", periode: "2026-10", montant: 4_800_000, date: "2026-11-30", mode: "VIREMENT", certitude: "CERTAIN" });
+    await activateScenarioEntry(comptable, { scenarioId: created.data.id });
+  }
+  const pageCount = (bytes: Uint8Array): number => (Buffer.from(bytes).toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+
+  it("le PDF est un vrai PDF de 8 pages sans simulation, 9 avec, et journalisé", async () => {
+    const { exportTreasuryPdf } = await import("@/features/treasury/services/treasury-pdf");
+    await prepare(false);
+    logged.length = 0;
+    const plain = await exportTreasuryPdf(comptable, { demandes: false });
+    if (!plain.success) throw new Error(plain.error);
+    expect(Buffer.from(plain.data.bytes.slice(0, 5)).toString("latin1")).toBe("%PDF-");
+    expect(plain.data.pages).toBe(8);
+    expect(pageCount(plain.data.bytes)).toBe(8);
+    expect(plain.data.name).toMatch(/^tresorerie_\d{4}-\d{2}-\d{2}\.pdf$/);
+    expect(logged).toEqual(["Export PDF de la trésorerie"]);
+    await prepare(true);
+    const simulated = await exportTreasuryPdf(comptable, { demandes: false });
+    if (!simulated.success) throw new Error(simulated.error);
+    expect(simulated.data.pages).toBe(9);
+    expect(pageCount(simulated.data.bytes)).toBe(9);
+  });
+
+  it("le PDF est refusé sans droit Trésorerie et sans solde", async () => {
+    const { exportTreasuryPdf } = await import("@/features/treasury/services/treasury-pdf");
+    expect(await exportTreasuryPdf(actor("EQUIPE_FACTURATION"), { demandes: false })).toMatchObject({ success: false, code: "FORBIDDEN" });
+    expect(await exportTreasuryPdf(comptable, { demandes: false })).toMatchObject({ success: false, code: "NOT_FOUND" });
+  });
+
+  it("le PDF de la Direction ne reprend pas le scénario de la comptable", async () => {
+    const { exportTreasuryPdf } = await import("@/features/treasury/services/treasury-pdf");
+    await prepare(true);
+    const direction = await exportTreasuryPdf(actor("DIRECTION"), { demandes: false });
+    if (!direction.success) throw new Error(direction.error);
+    expect(direction.data.pages).toBe(8);
+  });
+
+  it("l'Excel contient les onglets attendus, la page Simulation seulement si un scénario est actif, et des dates réelles", async () => {
+    const { exportTreasury } = await import("@/features/treasury/services/treasury-export");
+    const { readWorkbook } = await import("@/lib/spreadsheet");
+    await prepare(false);
+    const plain = await exportTreasury(comptable, { demandes: false });
+    if (!plain.success) throw new Error(plain.error);
+    expect(readWorkbook(plain.data.bytes).map((sheet) => sheet.name)).toEqual(["Synthèse", "Échéancier", "Chronologie", "Chèques en circulation", "Hypothèses et contrôles"]);
+    await prepare(true);
+    const simulated = await exportTreasury(comptable, { demandes: false });
+    if (!simulated.success) throw new Error(simulated.error);
+    const sheets = readWorkbook(simulated.data.bytes);
+    expect(sheets.map((sheet) => sheet.name)).toContain("Simulation");
+    expect(String(sheets[0]?.rows[1]?.[0])).toContain("MODE SIMULATION");
+    const forbidden = await exportTreasury(actor("EQUIPE_FACTURATION"), { demandes: false });
+    expect(forbidden).toMatchObject({ success: false, code: "FORBIDDEN" });
+  });
+});

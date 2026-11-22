@@ -22,6 +22,8 @@ export interface SheetToWrite {
   rows: Array<Array<string | number | Date | FormulaCell | null>>;
   /** Largeur des colonnes en caractères. */
   widths?: number[];
+  /** Indices (à partir de 0) des colonnes dont les nombres s'affichent au format « 1 234 567,89 » (deux décimales). */
+  moneyCols?: number[];
 }
 
 function toCell(value: unknown): SheetCell {
@@ -66,6 +68,10 @@ export function writeWorkbook(sheets: SheetToWrite[]): Uint8Array {
       if (address.startsWith("!")) continue;
       const cell = worksheet[address];
       if (cell && cell.t === "d") cell.z = "dd/mm/yyyy";
+      if (cell && cell.t === "n" && sheet.moneyCols) {
+        const column = XLSX.utils.decode_cell(address).c;
+        if (sheet.moneyCols.includes(column)) cell.z = "#,##0.00";
+      }
     }
     if (sheet.widths) worksheet["!cols"] = sheet.widths.map((wch) => ({ wch }));
     XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name.slice(0, 31));
