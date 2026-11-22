@@ -29,11 +29,28 @@ const CIRC = 2 * Math.PI * R;
  * Anneau « futuriste » : arcs dégradés avec halo lumineux, total au centre, légende interactive.
  * Au-delà de 7 parts, les plus petites sont regroupées dans « Autres ».
  */
-export function DonutChart({ slices, centerLabel, unit = "facture" }: Readonly<{ slices: DonutSlice[]; centerLabel: string; unit?: string }>): React.JSX.Element {
+export function DonutChart({
+  slices,
+  centerLabel,
+  unit = "facture",
+  colors,
+  idPrefix = "donut",
+  maxParts = 7,
+}: Readonly<{
+  slices: DonutSlice[];
+  centerLabel: string;
+  unit?: string;
+  /** Couleur imposée par libellé de part (sinon la palette par défaut, dans l'ordre). */
+  colors?: Readonly<Record<string, string>>;
+  /** Préfixe des identifiants de dégradé SVG : à changer quand plusieurs anneaux sont sur la même page. */
+  idPrefix?: string;
+  /** Nombre de parts affichées avant regroupement dans « Autres ». */
+  maxParts?: number;
+}>): React.JSX.Element {
   const [active, setActive] = useState<number | null>(null);
   const sorted = [...slices].filter((slice) => slice.amount > 0).sort((a, b) => b.amount - a.amount);
-  const head = sorted.slice(0, 7);
-  const rest = sorted.slice(7);
+  const head = sorted.slice(0, maxParts);
+  const rest = sorted.slice(maxParts);
   const parts: DonutSlice[] = rest.length ? [...head, { label: "Autres", amount: rest.reduce((s, x) => s + x.amount, 0), count: rest.reduce((s, x) => s + x.count, 0) }] : head;
   const total = parts.reduce((sum, part) => sum + part.amount, 0);
   if (total <= 0) return <p className="py-6 text-center text-sm text-muted-foreground">Rien en attente.</p>;
@@ -46,7 +63,12 @@ export function DonutChart({ slices, centerLabel, unit = "facture" }: Readonly<{
     return arc;
   });
   const shown = active !== null ? parts[active] : null;
-  const colorOf = (index: number): [string, string] => (parts[index]?.label === "Autres" && rest.length ? [OTHERS, OTHERS] : (PALETTE[index % PALETTE.length] ?? PALETTE[0] ?? ["#999", "#666"]));
+  const colorOf = (index: number): [string, string] => {
+    const label = parts[index]?.label ?? "";
+    const forced = colors?.[label];
+    if (forced) return [forced, forced];
+    return label === "Autres" && rest.length ? [OTHERS, OTHERS] : (PALETTE[index % PALETTE.length] ?? PALETTE[0] ?? ["#999", "#666"]);
+  };
   return (
     <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-center">
       <div className="relative size-52 shrink-0">
@@ -54,12 +76,12 @@ export function DonutChart({ slices, centerLabel, unit = "facture" }: Readonly<{
         <svg viewBox="0 0 180 180" className="relative size-full -rotate-90" role="img" aria-label={`${centerLabel} : ${formatDA(total)}`}>
           <defs>
             {parts.map((_, index) => (
-              <linearGradient key={index} id={`donut-g${index}`} x1="0" y1="0" x2="1" y2="1">
+              <linearGradient key={index} id={`${idPrefix}-g${index}`} x1="0" y1="0" x2="1" y2="1">
                 <stop offset="0%" stopColor={colorOf(index)[0]} />
                 <stop offset="100%" stopColor={colorOf(index)[1]} />
               </linearGradient>
             ))}
-            <filter id="donut-glow" x="-30%" y="-30%" width="160%" height="160%">
+            <filter id={`${idPrefix}-glow`} x="-30%" y="-30%" width="160%" height="160%">
               <feGaussianBlur stdDeviation="2.4" result="blur" />
               <feMerge>
                 <feMergeNode in="blur" />
@@ -77,12 +99,12 @@ export function DonutChart({ slices, centerLabel, unit = "facture" }: Readonly<{
               cy="90"
               r={R}
               fill="none"
-              stroke={`url(#donut-g${index})`}
+              stroke={`url(#${idPrefix}-g${index})`}
               strokeWidth={active === index ? 21 : 16}
               strokeLinecap="butt"
               strokeDasharray={`${dash} ${CIRC - dash}`}
               strokeDashoffset={-start}
-              filter="url(#donut-glow)"
+              filter={`url(#${idPrefix}-glow)`}
               opacity={active === null || active === index ? 1 : 0.35}
               className="cursor-pointer transition-all duration-200"
               onMouseEnter={() => setActive(index)}

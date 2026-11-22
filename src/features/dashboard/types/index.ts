@@ -17,7 +17,7 @@ export interface DashboardData {
   asOf: string;
   showCredit: boolean;
   showDebit: boolean;
-  receivables: { total: number; count: number; byCategory: AmountBucket[] };
+  receivables: { total: number; count: number; byCompany: AmountBucket[] };
   payables: { total: number; count: number; byTiers: AmountBucket[] };
   currentMonth: { month: string; encaisse: number; decaisse: number };
   aging: AmountBucket[];

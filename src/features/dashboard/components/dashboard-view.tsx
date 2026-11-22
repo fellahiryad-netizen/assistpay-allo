@@ -3,6 +3,7 @@ import { ArrowDownLeft, ArrowUpRight, Hourglass, Wallet } from "lucide-react";
 import { DonutChart } from "@/components/common/donut-chart";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarList } from "@/features/dashboard/components/bar-list";
+import { companyColor } from "@/features/receivables/lib/colors";
 import { KpiCard } from "@/features/dashboard/components/kpi-card";
 import { MonthlyFlowChart } from "@/features/dashboard/components/monthly-flow-chart";
 import type { DashboardData } from "@/features/dashboard/types";
@@ -15,6 +16,7 @@ export interface DashboardViewProps {
 
 /** Tableau de bord : indicateurs, classements, ancienneté des créances et flux mensuels. */
 export function DashboardView({ data }: Readonly<DashboardViewProps>): React.JSX.Element {
+  const companyColors = Object.fromEntries(data.receivables.byCompany.map((bucket) => [bucket.label, companyColor(bucket.label)]));
   const agingTotal = data.aging.reduce((sum, bucket) => sum + bucket.amount, 0);
   return (
     <div className="flex flex-col gap-5">
@@ -38,19 +40,24 @@ export function DashboardView({ data }: Readonly<DashboardViewProps>): React.JSX
           <Card>
             <CardHeader>
               <CardTitle>Créances par partenaire</CardTitle>
-              <CardDescription>Factures partenaires en attente, par catégorie</CardDescription>
+              <CardDescription>Factures partenaires en attente, par compagnie (GAM et GAM BDG réunis, etc.)</CardDescription>
             </CardHeader>
             <CardContent>
-              <DonutChart slices={data.receivables.byCategory} centerLabel="En attente" />
+              <DonutChart slices={data.receivables.byCompany} centerLabel="En attente" colors={companyColors} idPrefix="dash-creances" />
               <details className="mt-4 text-sm">
                 <summary className="cursor-pointer text-muted-foreground">Voir en barres</summary>
                 <div className="mt-3">
-                  <BarList items={data.receivables.byCategory} emptyLabel="Aucune créance en attente." />
+                  <BarList items={data.receivables.byCompany} emptyLabel="Aucune créance en attente." />
                 </div>
               </details>
-              <Link href="/factures?sens=CREDIT&status=EN_ATTENTE" className="mt-4 inline-block text-sm font-medium text-primary hover:underline">
-                Voir les factures partenaires en attente
-              </Link>
+              <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1">
+                <Link href="/creances" className="text-sm font-medium text-primary hover:underline">
+                  Voir toutes les créances
+                </Link>
+                <Link href="/factures?sens=CREDIT&status=EN_ATTENTE" className="text-sm font-medium text-primary hover:underline">
+                  Voir les factures partenaires en attente
+                </Link>
+              </div>
             </CardContent>
           </Card>
         ) : null}

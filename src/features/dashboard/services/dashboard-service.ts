@@ -5,6 +5,7 @@ import type { AuthUser } from "@/features/access/types";
 import type { AmountBucket, DashboardData, MonthlyFlow } from "@/features/dashboard/types";
 import { decimalToNumber } from "@/features/invoices/services/invoice-mapper";
 import { visibleSens } from "@/features/invoices/services/invoice-rules";
+import { companyOf } from "@/features/receivables/lib/company";
 import { fail, ok, type ActionResult } from "@/types";
 import { daysBetween, toIsoDate, todayIso } from "@/utils/dates";
 
@@ -75,17 +76,17 @@ export async function getDashboard(actor: AuthUser): Promise<ActionResult<Dashbo
         GROUP BY 1, 2`),
     ]);
 
-    const byCategory = new Map<string, AmountBucket>();
+    const byCompany = new Map<string, AmountBucket>();
     const aging: AmountBucket[] = AGING_LIMITS.map((limit) => ({ label: limit.label, amount: 0, count: 0 }));
     let receivablesTotal = 0;
     for (const row of credits) {
       const amount = decimalToNumber(row.montant);
       receivablesTotal += amount;
-      const label = row.categorie || "Sans catégorie";
-      const bucket = byCategory.get(label) ?? { label, amount: 0, count: 0 };
+      const label = companyOf(row.categorie);
+      const bucket = byCompany.get(label) ?? { label, amount: 0, count: 0 };
       bucket.amount += amount;
       bucket.count += 1;
-      byCategory.set(label, bucket);
+      byCompany.set(label, bucket);
       const since = toIsoDate(row.dateFacture ?? row.dateOperation);
       const age = since ? Math.max(0, daysBetween(since, today)) : 0;
       const index = AGING_LIMITS.findIndex((limit) => age <= limit.max);
@@ -117,7 +118,7 @@ export async function getDashboard(actor: AuthUser): Promise<ActionResult<Dashbo
       receivables: {
         total: receivablesTotal,
         count: credits.length,
-        byCategory: [...byCategory.values()].sort((a, b) => b.amount - a.amount).slice(0, TOP),
+        byCompany: [...byCompany.values()].sort((a, b) => b.amount - a.amount).slice(0, TOP),
       },
       payables: {
         total: payables.reduce((sum, item) => sum + item.amount, 0),
