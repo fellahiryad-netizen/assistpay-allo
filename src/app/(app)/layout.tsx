@@ -11,6 +11,7 @@ import { countPendingDeletions } from "@/features/invoices/services/deletion-ser
 import { AdminNotices } from "@/components/common/admin-notices";
 import { listAdminNotices } from "@/features/system/services/admin-notices";
 import { can, PROFILE_LABELS } from "@/features/access/services/access-rules";
+import { canAccessTreasury } from "@/features/treasury/services/treasury-access";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
     if (module === "admin") return user.isAdmin;
     if (module === "history") return !user.isAdmin && can(user, "FACT");
     if (module === "invoices") return can(user, "FCLI") || can(user, "FFOUR");
+    if (module === "treasury") return canAccessTreasury(user);
     return can(user, module);
   });
   await autoCaatAdvances(user);

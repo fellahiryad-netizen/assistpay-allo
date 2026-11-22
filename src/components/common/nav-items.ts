@@ -6,7 +6,7 @@ export interface NavItem {
   label: string;
   icon: NavIcon;
   /** Onglet du tableau des accès requis ; `admin` = réservé aux administrateurs. */
-  module: ModuleKey | "admin" | "all" | "invoices" | "history";
+  module: ModuleKey | "admin" | "all" | "invoices" | "history" | "treasury";
   /** Pastille de compteur (renseignée à l'affichage, par exemple le nombre d'alertes). */
   badge?: number;
 }
@@ -82,6 +82,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: "/demandes", label: "Demandes de paiement", icon: "request", module: "DP" },
       { href: "/virements", label: "Virements et RIB", icon: "transfer", module: "VIR" },
       { href: "/releve", label: "Relevé bancaire", icon: "bank", module: "RELEVE" },
+      { href: "/tresorerie", label: "Trésorerie", icon: "bank", module: "treasury" },
       { href: "/releve/rapprochement", label: "Double emploi", icon: "double", module: "FFOUR" },
     ],
   },

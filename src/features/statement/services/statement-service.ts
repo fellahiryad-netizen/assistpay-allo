@@ -10,6 +10,7 @@ import { isPayrollInvoice, moduleForSens } from "@/features/invoices/services/in
 import { ensureCaatAdvance } from "@/features/invoices/services/caat-advances";
 import { cumulForLines, cumulLineIds } from "@/features/statement/services/cumul";
 import { logAction } from "@/features/journal/services/journal-service";
+import { recordStatementBalance } from "@/features/treasury/services/treasury-import";
 import { IGNORE_MOTIFS, type ApplyProposalsInput, type AssignCaatInput, type AssignCaatMonthsInput, type IgnoreLineInput, AssignLineInput, AssignSearchInput, CreateFromLineInput, StatementQuery } from "@/features/statement/schemas";
 import { strongHrMatches, type HrBankEntry } from "@/features/hr/lib/hr-bank-match";
 import { analyseLines, bankBranch, branchCompat, inFamily, paidEntries } from "@/features/statement/services/statement-matching";
@@ -161,7 +162,10 @@ export async function analyseStatement(actor: AuthUser, file: UploadedFile, mapp
   if (!sheet.success) return sheet;
   const all = readStatementLines(sheet.data.rows, detectHeaderRow(sheet.data.rows), mapping);
   if (all.length === 0) return fail("Aucune ligne avec une date et un montant n'a été trouvée. Vérifiez les colonnes choisies.", "VALIDATION");
-  return analyseParsed(actor, all);
+  const analysed = await analyseParsed(actor, all);
+  // Trésorerie : le solde « Solde FIN AU » du relevé est enregistré après un import réussi. N'altère ni ne bloque l'import (fichier non AGB : rien n'est écrit).
+  if (analysed.success) await recordStatementBalance(actor, sheet.data.rows, file.name);
+  return analysed;
 }
 
 async function analyseParsed(actor: AuthUser, all: ParsedLine[]): Promise<ActionResult<StatementAnalysis>> {
