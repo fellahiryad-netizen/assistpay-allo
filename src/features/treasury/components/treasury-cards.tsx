@@ -1,3 +1,4 @@
+import { MINIMUM_LABEL, minimumExplanation } from "@/features/treasury/lib/minimum";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import type { IssuedCheque } from "@/features/treasury/lib/circulation";
@@ -42,7 +43,7 @@ function Kpi({ label, value, detail }: Readonly<{ label: string; value: string; 
   );
 }
 
-/** Quatre indicateurs : reste à payer, solde après paiements, couverture, réserve conseillée. */
+/** Quatre indicateurs : reste à payer, solde après paiements, couverture, minimum de trésorerie. */
 export function Kpis({ computation }: Readonly<{ computation: TreasuryComputation }>): React.JSX.Element {
   const ratio = computation.coverageRatio;
   return (
@@ -55,9 +56,9 @@ export function Kpis({ computation }: Readonly<{ computation: TreasuryComputatio
       <Kpi label="Solde après paiements" value={millions(computation.balanceAfter)} detail={`Disponible ${millions(computation.available)} − reste à payer${computation.coverageDays !== null ? ` · environ ${daysLabel(Math.max(0, computation.coverageDays))} de dépenses` : ""}`} />
       <Kpi label="Couverture" value={ratio === null ? "sans objet" : ratio.toFixed(2).replace(".", ",")} detail={ratio === null ? "Rien à payer." : `Le disponible couvre ${Math.round(ratio * 100)} % de ce qui reste à payer.`} />
       <Kpi
-        label="Réserve conseillée"
+        label={MINIMUM_LABEL}
         value={millions(computation.cushion)}
-        detail={computation.reference ? `${computation.cushionDays} jours de dépenses habituelles (${millions(computation.reference.perMonth)} par mois)` : `${computation.cushionDays} jours : historique insuffisant`}
+        detail={minimumExplanation(computation)}
       />
     </div>
   );

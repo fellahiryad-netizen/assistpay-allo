@@ -15,3 +15,9 @@ export function daysLabel(value: number): string {
   const rounded = Math.round(value);
   return `${rounded} jour${Math.abs(rounded) > 1 ? "s" : ""}`;
 }
+
+/** Montant en millions et exact : « 41,4 M DA (41 378 405,18 DA) » ; sous 1 M DA le montant exact seul. */
+export function withExact(value: number): string {
+  const short = millions(value);
+  return short.endsWith("M DA") ? `${short} (${formatDA(value)})` : short;
+}

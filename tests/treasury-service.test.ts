@@ -181,9 +181,9 @@ describe("solde importé et ligne de simulation (base simulée)", () => {
   });
 
   it("réglages et solde manuel : réservés à l'Administrateur et à la Direction ; manuel refusé si un relevé valide existe", async () => {
-    expect(await saveTreasurySettings(actor("COMPTABLE"), { coussinJours: 30, encaissementsAttendus: true })).toMatchObject({ success: false, code: "FORBIDDEN" });
-    expect((await saveTreasurySettings(actor("DIRECTION"), { coussinJours: 30, encaissementsAttendus: false })).success).toBe(true);
-    expect(store.get("tresorerie:reglages")?.value).toEqual({ coussinJours: 30, encaissementsAttendus: false });
+    expect(await saveTreasurySettings(actor("COMPTABLE"), { minimumMode: "jours", minimumMontant: 20_000_000, coussinJours: 30, encaissementsAttendus: true })).toMatchObject({ success: false, code: "FORBIDDEN" });
+    expect((await saveTreasurySettings(actor("DIRECTION"), { minimumMode: "jours", minimumMontant: 20_000_000, coussinJours: 30, encaissementsAttendus: false })).success).toBe(true);
+    expect(store.get("tresorerie:reglages")?.value).toEqual({ minimumMode: "jours", minimumMontant: 20_000_000, coussinJours: 30, encaissementsAttendus: false });
     const manual = { balance: 1000, date: "2026-11-21", source: "relevé AGB du 21/11/2026" };
     expect((await saveManualBalance(actor("ADMINISTRATEUR"), manual)).success).toBe(true);
     expect(parseSolde(store.get("tresorerie:solde")?.value).manual?.balance).toBe(1000);

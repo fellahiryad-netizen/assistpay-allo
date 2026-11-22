@@ -49,7 +49,7 @@ describe("historique insuffisant (I4)", () => {
       requestsWithoutInvoice: [],
       includeRequests: false,
       simulationLines: [],
-      settings: { coussinJours: 15, encaissementsAttendus: false },
+      settings: { minimumMode: "jours", minimumMontant: 20_000_000, coussinJours: 15, encaissementsAttendus: false },
       collections: { rows: [], flows: [], total: 0 },
     } as never);
     expect(result.reference).toBeNull();

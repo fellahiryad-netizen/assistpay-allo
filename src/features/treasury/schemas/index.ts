@@ -49,6 +49,8 @@ export type LineDecisionInput = z.infer<typeof lineDecisionSchema>;
 
 /** Réglages de la trésorerie (administrateur ou direction). */
 export const treasurySettingsSchema = z.object({
+  minimumMode: z.enum(["montant", "jours"]),
+  minimumMontant: z.number({ invalid_type_error: "Indiquez le minimum de trésorerie." }).finite().positive("Le minimum de trésorerie doit être supérieur à zéro.").max(100_000_000_000, "Minimum trop grand."),
   coussinJours: z.union([z.literal(7), z.literal(15), z.literal(30)]),
   encaissementsAttendus: z.boolean(),
 });

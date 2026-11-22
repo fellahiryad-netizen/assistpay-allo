@@ -1,7 +1,8 @@
 import { formatDA, formatDate } from "@/utils/format";
 import { AGB_ACCOUNT, SIM_MODE_LABELS, SIM_TYPE_LABELS, type SimType } from "@/features/treasury/types";
 import { buildHypotheses, DECISION_AID_MENTION } from "@/features/treasury/lib/hypotheses";
-import { millions } from "@/features/treasury/lib/format";
+import { withExact } from "@/features/treasury/lib/format";
+import { MINIMUM_LABEL } from "@/features/treasury/lib/minimum";
 import { priorityGroups, type PayNature, type PayableItem } from "@/features/treasury/lib/payables";
 import type { RiskLevel } from "@/features/treasury/lib/risk";
 import type { TreasuryView } from "@/features/treasury/types/view";
@@ -12,11 +13,7 @@ export type DeckPageId = "garde" | "essentiel" | "solde" | "reste" | "evolution"
 /** Mots écrits en toutes lettres pour chaque niveau (jamais la couleur seule). */
 export const LEVEL_WORDS: Readonly<Record<RiskLevel, string>> = { vert: "VERT", orange: "ORANGE", rouge: "ROUGE", indetermine: "INDÉTERMINÉ" };
 
-/** Montant en millions et exact : « 41,4 M DA (41 378 405,18 DA) » ; sous 1 M DA le montant exact seul. */
-export function withExact(value: number): string {
-  const short = millions(value);
-  return short.endsWith("M DA") ? `${short} (${formatDA(value)})` : short;
-}
+export { withExact };
 
 /** Indicateur de la page « L'essentiel ». */
 export interface DeckKpi {
@@ -193,7 +190,7 @@ export function buildDeck(view: TreasuryView): Deck | null {
         { label: "Reste à payer", value: formatDA(computation.totalToPay), hint: "Factures fournisseurs en attente de règlement" + (computation.simulationTotal > 0 ? ", plus la simulation." : ".") },
         { label: "Solde après paiements", value: formatDA(computation.balanceAfter), hint: "Ce qu'il resterait en banque une fois tout payé." },
         { label: "Couverture", value: computation.coverageDays === null ? "non calculable" : `${Math.max(0, Math.round(computation.coverageDays * 10) / 10).toString().replace(".", ",")} jours`, hint: computation.coverageDays === null ? "Historique du relevé insuffisant." : "Nombre de jours de dépenses habituelles que ce solde permet de couvrir." },
-        { label: `Réserve conseillée (${computation.cushionDays} jours)`, value: computation.reference ? formatDA(computation.cushion) : "non calculable", hint: "Montant à garder en banque pour faire face aux dépenses courantes." },
+        { label: MINIMUM_LABEL, value: computation.minimumMode === "montant" || computation.reference ? formatDA(computation.cushion) : "non calculable", hint: computation.minimumMode === "montant" ? "Montant fixé par la direction : en dessous, le niveau passe en Orange." : `${computation.cushionDays} jours de dépenses habituelles à garder en banque.` },
       ],
       level,
       word: LEVEL_WORDS[level],
@@ -257,9 +254,9 @@ export function buildDeck(view: TreasuryView): Deck | null {
         ["Reste à payer", "Somme de ce qu'il reste à régler sur les factures fournisseurs en attente."],
         ["Solde après paiements", "Solde disponible moins le reste à payer : ce qui resterait si tout était payé."],
         ["Couverture en jours", "Solde après paiements divisé par la dépense moyenne par jour : combien de jours le compte tiendrait au rythme habituel."],
-        ["Réserve conseillée", `${computation.cushionDays} jours de dépenses moyennes (moyenne des derniers mois complets du relevé, mois de 30 jours).`],
+        [MINIMUM_LABEL, computation.minimumMode === "montant" ? `Montant fixé par la direction, ${formatDA(computation.cushion)} : le solde après paiements ne doit pas descendre en dessous.` : `${computation.cushionDays} jours de dépenses moyennes (moyenne des derniers mois complets du relevé, mois de 30 jours).`],
         ["Point bas", "Le solde le plus bas atteint jour après jour, une fois chaque paiement retiré à sa date."],
-        ["Niveau", "Vert : au-dessus de la réserve. Orange : sous la réserve. Rouge : découvert prévu. Indéterminé : historique insuffisant."],
+        ["Niveau", "Vert : au moins égal au minimum de trésorerie. Orange : sous le minimum sans être négatif. Rouge : découvert prévu. Indéterminé : historique insuffisant (mode en jours seulement)."],
       ],
       counted: ["Le solde du relevé AGB.", "Les chèques émis non débités, retirés du solde.", "Le reste à payer des factures fournisseurs en attente.", ...(simulated ? ["Les lignes de la simulation active, signalées comme telles."] : [])],
       notCounted: [

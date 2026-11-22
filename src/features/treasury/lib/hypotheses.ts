@@ -1,6 +1,6 @@
 import type { TreasuryComputation } from "@/features/treasury/lib/compute";
 import type { BalanceView } from "@/features/treasury/types/view";
-import { formatDate } from "@/utils/format";
+import { formatDA, formatDate } from "@/utils/format";
 
 /** Mention obligatoire de l'ordre de paiement conseillé. */
 export const DECISION_AID_MENTION = "Aide à la décision. L'ordre de paiement relève de la décision de la direction.";
@@ -37,9 +37,11 @@ export function buildHypotheses(input: {
       : `Les ${computation.requestsInfo.count} demandes de paiement sans facture liée ne sont pas comptées (information).`,
   );
   lines.push(
-    computation.reference
-      ? `Réserve conseillée : ${computation.cushionDays} jours de décaissements moyens (moyenne des ${computation.reference.months.length} derniers mois complets du relevé, mois de 30 jours).`
-      : `Réserve conseillée : ${computation.cushionDays} jours de décaissements moyens ; l'historique du relevé ne permet pas de la calculer.`,
+    computation.minimumMode === "montant"
+      ? `Minimum de trésorerie : montant fixe de ${formatDA(computation.cushion)}, fixé par la direction. Le niveau est Vert si le solde après paiements reste au moins égal à ce minimum, Orange s'il passe en dessous sans être négatif, Rouge en cas de découvert.`
+      : computation.reference
+        ? `Minimum de trésorerie : ${computation.cushionDays} jours de décaissements moyens (moyenne des ${computation.reference.months.length} derniers mois complets du relevé, mois de 30 jours).`
+        : `Minimum de trésorerie : ${computation.cushionDays} jours de décaissements moyens ; l'historique du relevé ne permet pas de le calculer.`,
   );
   lines.push("Les factures sans échéance fixée sont supposées payées à la date du solde (hypothèse la plus prudente).");
   lines.push(input.scenarioName ? `Simulation active : « ${input.scenarioName} », ${input.scenarioLines} ligne(s) saisie(s) par la comptable, jamais enregistrées dans les factures, les demandes ni le RH.` : "Aucune simulation n'est active : situation réelle.");

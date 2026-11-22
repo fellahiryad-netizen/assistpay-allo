@@ -3,6 +3,7 @@ import type { AuthUser } from "@/features/access/types";
 import { logAction } from "@/features/journal/services/journal-service";
 import { buildDeck } from "@/features/treasury/lib/deck";
 import { duplicatesSentence } from "@/features/treasury/lib/duplicates-notice";
+import { MINIMUM_LABEL, minimumExplanation } from "@/features/treasury/lib/minimum";
 import { NATURE_LABELS } from "@/features/treasury/lib/payables";
 import { COMPANIES } from "@/features/treasury/lib/receivables";
 import type { TreasuryQuery } from "@/features/treasury/schemas";
@@ -57,7 +58,7 @@ export async function exportTreasury(actor: AuthUser, query: TreasuryQuery): Pro
         coverage === null ? "sans objet" : Math.max(0, Math.round(coverage * 10) / 10),
         coverage === null ? "Historique insuffisant" : coverage < 0 ? "0 : le solde après paiements est négatif, la couverture est épuisée" : "Solde après paiements ÷ décaissement moyen journalier",
       ],
-      [`Réserve conseillée (${computation.cushionDays} jours)`, computation.cushion, computation.reference ? `Moyenne mensuelle ${Math.round(computation.reference.perMonth)} DA sur ${computation.reference.months.length} mois complets` : "Historique insuffisant"],
+      [MINIMUM_LABEL, computation.cushion, minimumExplanation(computation)],
       ["Point bas de la chronologie", computation.timeline.lowest.balance, formatDate(computation.timeline.lowest.date)],
       ["Premier découvert", computation.timeline.overdraftDate ? formatDate(computation.timeline.overdraftDate) : "aucun", ""],
       ["Dont déjà dans des virements préparés", computation.preparedTotal, `${computation.preparedCount} lot(s) en attente, non additionnés`],

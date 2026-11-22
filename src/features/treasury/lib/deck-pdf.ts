@@ -192,7 +192,7 @@ function drawChart(pen: Pen, view: TreasuryView, x0: number, y0: number, w: numb
   pen.text("Zéro : en dessous, le compte est à découvert", right, Y(0) - 1.2, { size: 8, bold: true, align: "right" });
   if (computation.cushion > 0) {
     pen.line(left, Y(computation.cushion), right, Y(computation.cushion), { color: ORANGE, width: 0.7, dash: [0.8, 1.6] });
-    pen.text(`Réserve conseillée ${Math.round(computation.cushion / 1_000_000)} M`, left + 2, Y(computation.cushion) - 1.2, { size: 8, bold: true });
+    pen.text(`Minimum de trésorerie ${Math.round(computation.cushion / 1_000_000)} M`, left + 2, Y(computation.cushion) - 1.2, { size: 8, bold: true });
   }
   pen.polyline(history.map((p): [number, number] => [X(p.d), Y(p.b)]), { color: VIOLET, width: 0.9 });
   pen.polyline(projection.map((p): [number, number] => [X(p.date), Y(p.balance)]), { color: VIOLET, width: 0.9, dash: [2.4, 1.6] });
@@ -380,11 +380,11 @@ export function drawDeck(doc: jsPDF, deck: Deck, view: TreasuryView, assets: Dec
     let lx = MARGIN + 24;
     lx = legendItem(pen, lx, TOP + 112, "Solde réel (relevé)", "plein");
     lx = legendItem(pen, lx, TOP + 112, "Solde prévu, sans encaissement", "tirets");
-    lx = legendItem(pen, lx, TOP + 112, "Réserve conseillée", "points");
+    lx = legendItem(pen, lx, TOP + 112, "Minimum de trésorerie", "points");
     legendItem(pen, lx, TOP + 112, "Zéro", "zero");
     if (!c) return;
     pen.paragraph("Lecture : la ligne pleine est le solde réel du compte jusqu'au relevé ; le pointillé est le solde prévu si l'on règle chaque facture et chaque obligation à la date indiquée, sans compter aucun encaissement.", MARGIN, TOP + 121, CONTENT_W, { size: 9.5, lineHeight: 4.2 });
-    pen.paragraph(c.timeline.overdraftDate ? `Alerte : le solde passe sous zéro le ${formatDate(c.timeline.overdraftDate)}.` : `Le solde le plus bas, ${withExact(c.timeline.lowest.balance)}, est atteint le ${formatDate(c.timeline.lowest.date)} ; il ${c.timeline.lowest.balance < c.cushion ? "reste inférieur à" : "reste supérieur à"} la réserve conseillée de ${withExact(c.cushion)}.`, MARGIN, TOP + 132, CONTENT_W, { size: 9.5, bold: true, lineHeight: 4.2 });
+    pen.paragraph(c.timeline.overdraftDate ? `Alerte : le solde passe sous zéro le ${formatDate(c.timeline.overdraftDate)}.` : `Le solde le plus bas, ${withExact(c.timeline.lowest.balance)}, est atteint le ${formatDate(c.timeline.lowest.date)} ; il ${c.timeline.lowest.balance < c.cushion ? "reste inférieur au" : "reste supérieur au"} minimum de trésorerie de ${withExact(c.cushion)}.`, MARGIN, TOP + 132, CONTENT_W, { size: 9.5, bold: true, lineHeight: 4.2 });
   }
 
   function paiements(): void {

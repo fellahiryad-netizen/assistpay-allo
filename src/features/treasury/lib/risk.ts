@@ -1,6 +1,6 @@
 import { round2 } from "@/utils/amounts";
 import { shiftIsoDate } from "@/utils/dates";
-import { daysLabel, millions } from "@/features/treasury/lib/format";
+import { daysLabel, millions, withExact } from "@/features/treasury/lib/format";
 import type { MonthlyFlow } from "@/features/treasury/types";
 
 /** Nombre de jours d'un mois conventionnel pour passer du mois au jour. */
@@ -39,7 +39,7 @@ export function spendingReference(monthly: readonly MonthlyFlow[], dataEnd: stri
   return { months: used.map((flow) => flow.m), totalDebits, perMonth: round2(perMonth), perDay: perMonth / DAYS_PER_MONTH };
 }
 
-/** Réserve conseillée : `days` jours de décaissements moyens. Zéro sans historique. */
+/** Minimum de trésorerie en mode « jours » : `days` jours de décaissements moyens. Zéro sans historique. */
 export function cushionAmount(reference: SpendingReference | null, days: number): number {
   return reference ? round2(reference.perDay * days) : 0;
 }
@@ -65,7 +65,7 @@ export interface RiskInput {
   lowest: number;
   /** Première date de découvert de la chronologie, ou null. */
   overdraftDate: string | null;
-  /** Faux si l'historique des décaissements est insuffisant pour fixer une réserve : le niveau ne peut alors jamais être vert. Vrai par défaut. */
+  /** Faux si le minimum se calcule en jours de dépenses et que l'historique est insuffisant : le niveau ne peut alors jamais être vert. Vrai par défaut (et toujours vrai avec un minimum fixe). */
   historyKnown?: boolean;
 }
 
@@ -93,6 +93,8 @@ export interface VerdictInput extends RiskInput {
   /** Décaissement moyen journalier (0 si inconnu). */
   perDay: number;
   cushionDays: number;
+  /** « montant » : minimum de trésorerie fixe (phrases « minimum de trésorerie fixé à… ») ; « jours » (défaut) : réserve en jours de dépenses. */
+  minimumMode?: "montant" | "jours";
   /** Date du point bas. */
   lowestDate: string | null;
 }
@@ -107,22 +109,25 @@ export function buildVerdict(input: VerdictInput): Verdict {
   const level = riskLevel(input);
   const days = coverageDays(input.balanceAfter, input.perDay);
   const habit = days === null ? "" : `, soit environ ${daysLabel(Math.max(0, days))} de dépenses habituelles`;
-  const reserve = `la réserve conseillée de ${input.cushionDays} jours (${millions(input.cushion)})`;
+  const fixed = input.minimumMode === "montant";
+  const reserve = fixed ? `le minimum de trésorerie fixé à ${withExact(input.cushion)}` : `la réserve conseillée de ${input.cushionDays} jours (${millions(input.cushion)})`;
+  const reserveDu = fixed ? `du minimum de trésorerie fixé à ${withExact(input.cushion)}` : `de ${reserve}`;
+  const amount = fixed ? withExact : millions;
   let sentence: string;
   if (level === "rouge") {
     sentence =
       input.balanceAfter < 0
-        ? `Après avoir tout payé, il manquerait ${millions(-input.balanceAfter)} : le compte serait à découvert${input.overdraftDate ? ` dès le ${input.overdraftDate.split("-").reverse().join("/")}` : ""}.`
-        : `Le compte passerait à découvert le ${(input.overdraftDate ?? "").split("-").reverse().join("/")} (point bas : ${millions(input.lowest)}).`;
+        ? `Après avoir tout payé, il manquerait ${amount(-input.balanceAfter)} : le compte serait à découvert${input.overdraftDate ? ` dès le ${input.overdraftDate.split("-").reverse().join("/")}` : ""}.`
+        : `Le compte passerait à découvert le ${(input.overdraftDate ?? "").split("-").reverse().join("/")} (point bas : ${amount(input.lowest)}).`;
   } else if (level === "orange") {
     sentence =
       input.balanceAfter < input.cushion
-        ? `Vous pouvez tout payer et il vous resterait ${millions(input.balanceAfter)}${habit}. C'est moins que ${reserve}.`
-        : `Après tous les paiements, il resterait ${millions(input.balanceAfter)}, mais le solde descendrait à ${millions(input.lowest)}${input.lowestDate ? ` le ${input.lowestDate.split("-").reverse().join("/")}` : ""}, sous ${reserve}.`;
+        ? `Vous pouvez tout payer et il vous resterait ${amount(input.balanceAfter)}${habit}. ${fixed ? `C'est en dessous ${reserveDu}.` : `C'est moins que ${reserve}.`}`
+        : `Après tous les paiements, il resterait ${amount(input.balanceAfter)}, mais le solde descendrait à ${amount(input.lowest)}${input.lowestDate ? ` le ${input.lowestDate.split("-").reverse().join("/")}` : ""}, sous ${reserve}.`;
   } else if (level === "indetermine") {
     sentence = `Après avoir tout payé, il resterait ${millions(input.balanceAfter)}, mais l'historique du relevé est insuffisant pour fixer une réserve : le niveau de risque ne peut pas être établi. Importez un relevé couvrant au moins un mois complet.`;
   } else {
-    sentence = `Après avoir tout payé, il resterait ${millions(input.balanceAfter)}${habit}, au-dessus de ${reserve}.`;
+    sentence = `${fixed ? "Vous pouvez tout payer" : "Après avoir tout payé"}${fixed ? " et il vous" : ", il"} resterait ${amount(input.balanceAfter)}${habit}${fixed ? `. C'est ${input.balanceAfter > input.cushion ? "au-dessus" : "au niveau"} ${reserveDu}.` : `, au-dessus de ${reserve}.`}`;
   }
   return { level, title: RISK_TITLES[level], sentence };
 }

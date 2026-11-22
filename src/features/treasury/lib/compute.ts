@@ -65,8 +65,11 @@ export interface TreasuryComputation {
   coverageRatio: number | null;
   coverageDays: number | null;
   reference: SpendingReference | null;
+  /** Minimum de trésorerie en DA : montant fixe (par défaut 20 000 000,00 DA) ou jours de dépenses habituelles selon `minimumMode`. */
   cushion: number;
+  /** Jours de dépenses du mode « jours » (informatif en mode « montant »). */
   cushionDays: number;
+  minimumMode: "montant" | "jours";
   timeline: Timeline;
   verdict: Verdict;
   schedule: ScheduleRow[];
@@ -102,11 +105,12 @@ export function computeTreasury(input: ComputeInput): TreasuryComputation {
   const balanceAfter = round2(available - totalToPay);
 
   const reference = spendingReference(input.monthly, start, input.daily[0]?.d ?? null);
-  const cushion = cushionAmount(reference, input.settings.coussinJours);
+  const fixedMinimum = input.settings.minimumMode === "montant";
+  const cushion = fixedMinimum ? round2(input.settings.minimumMontant) : cushionAmount(reference, input.settings.coussinJours);
   const useExpected = input.settings.encaissementsAttendus;
   const timeline = buildTimeline(start, available, payables.map((item) => ({ date: item.date, montant: item.montant })), useExpected ? input.collections.flows : null);
   const perDay = reference?.perDay ?? 0;
-  const verdict = buildVerdict({ historyKnown: reference !== null, balanceAfter, cushion, lowest: timeline.lowest.balance, overdraftDate: timeline.overdraftDate, perDay, cushionDays: input.settings.coussinJours, lowestDate: timeline.lowest.date });
+  const verdict = buildVerdict({ historyKnown: fixedMinimum || reference !== null, minimumMode: input.settings.minimumMode, balanceAfter, cushion, lowest: timeline.lowest.balance, overdraftDate: timeline.overdraftDate, perDay, cushionDays: input.settings.coussinJours, lowestDate: timeline.lowest.date });
 
   let running = available;
   const schedule: ScheduleRow[] = priorityOrder(payables)
@@ -131,6 +135,7 @@ export function computeTreasury(input: ComputeInput): TreasuryComputation {
     reference,
     cushion,
     cushionDays: input.settings.coussinJours,
+    minimumMode: input.settings.minimumMode,
     timeline,
     verdict,
     schedule,

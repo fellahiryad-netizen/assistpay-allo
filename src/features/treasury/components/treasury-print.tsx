@@ -2,6 +2,7 @@ import { BalanceChart } from "@/features/treasury/components/balance-chart";
 import { buildHypotheses, DECISION_AID_MENTION, FOOTER_MENTION } from "@/features/treasury/lib/hypotheses";
 import { NATURE_LABELS } from "@/features/treasury/lib/payables";
 import { duplicatesSentence } from "@/features/treasury/lib/duplicates-notice";
+import { MINIMUM_LABEL } from "@/features/treasury/lib/minimum";
 import { millions } from "@/features/treasury/lib/format";
 import type { TreasuryView } from "@/features/treasury/types/view";
 import { formatDA, formatDate } from "@/utils/format";
@@ -87,7 +88,7 @@ export function TreasuryPrint({ view }: Readonly<{ view: TreasuryView }>): React
             <td className="num">{computation.coverageRatio === null ? "sans objet" : computation.coverageRatio.toFixed(2).replace(".", ",")}</td>
           </tr>
           <tr>
-            <td>Réserve conseillée ({computation.cushionDays} jours)</td>
+            <td>{MINIMUM_LABEL}{computation.minimumMode === "jours" ? ` (${computation.cushionDays} jours)` : " (montant fixé)"}</td>
             <td className="num">{formatDA(computation.cushion)}</td>
           </tr>
         </tbody>

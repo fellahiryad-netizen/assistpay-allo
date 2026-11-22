@@ -96,7 +96,7 @@ export async function decideSimulationLineAction(input: LineDecisionInput): Prom
   return run(lineDecisionSchema, input, decideSimulationLine);
 }
 
-/** Réglages de la trésorerie (réserve, encaissements attendus). */
+/** Réglages de la trésorerie (minimum de trésorerie, encaissements attendus). */
 export async function saveTreasurySettingsAction(input: TreasurySettingsInput): Promise<ActionResult<true>> {
   return run(treasurySettingsSchema, input, saveTreasurySettings);
 }

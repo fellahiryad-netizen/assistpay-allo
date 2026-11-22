@@ -102,7 +102,7 @@ function input(overrides: Partial<ComputeInput> = {}): ComputeInput {
     requestsWithoutInvoice: [{ id: "d1", ref: "1292/2026AS", beneficiaire: "X", montant: 2_116_557.45 }],
     includeRequests: false,
     simulationLines: [],
-    settings: { coussinJours: 15, encaissementsAttendus: false },
+    settings: { minimumMode: "jours", minimumMontant: 20_000_000, coussinJours: 15, encaissementsAttendus: false },
     collections: emptyExpected,
     ...overrides,
   };
@@ -157,7 +157,7 @@ describe("calcul de trésorerie", () => {
 
   it("les encaissements attendus n'entrent pas dans le solde après paiements ni dans le niveau", () => {
     const collections = { rows: [], flows: [{ date: "2026-11-25", montant: 80_000_000 }], total: 80_000_000 };
-    const result = computeTreasury(input({ settings: { coussinJours: 15, encaissementsAttendus: true }, collections }));
+    const result = computeTreasury(input({ settings: { minimumMode: "jours", minimumMontant: 20_000_000, coussinJours: 15, encaissementsAttendus: true }, collections }));
     expect(result.balanceAfter).toBe(41_378_405.18);
     expect(result.balanceAfterExpected).toBe(121_378_405.18);
     expect(result.verdict.level).toBe("orange");
@@ -165,7 +165,7 @@ describe("calcul de trésorerie", () => {
   });
 
   it("le coussin de 7 jours rend la situation du jour verte", () => {
-    expect(computeTreasury(input({ settings: { coussinJours: 7, encaissementsAttendus: false } })).verdict.level).toBe("vert");
+    expect(computeTreasury(input({ settings: { minimumMode: "jours", minimumMontant: 20_000_000, coussinJours: 7, encaissementsAttendus: false } })).verdict.level).toBe("vert");
   });
 
   it("l'échéancier cumule le solde après chaque paiement", () => {

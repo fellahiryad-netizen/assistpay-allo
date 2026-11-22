@@ -6,7 +6,7 @@ import { fail, ok, type ActionResult, type ErrorCode } from "@/types";
 export const KEY_SOLDE = "tresorerie:solde";
 /** Clé des scénarios de simulation. */
 export const KEY_SCENARIOS = "tresorerie:scenarios";
-/** Clé des réglages (réserve en jours, encaissements attendus). */
+/** Clé des réglages (minimum de trésorerie, encaissements attendus). */
 export const KEY_SETTINGS = "tresorerie:reglages";
 
 /** Préfixe des clés du scénario actif de chaque utilisateur. */

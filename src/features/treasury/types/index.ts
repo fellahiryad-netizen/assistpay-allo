@@ -179,12 +179,28 @@ export interface ScenariosState {
   scenarios: Scenario[];
 }
 
-/** Nombre de jours de la réserve conseillée. */
+/** Nombre de jours de dépenses du minimum de trésorerie, dans le mode « en jours ». */
 export const CUSHION_CHOICES = [7, 15, 30] as const;
 export type CushionDays = (typeof CUSHION_CHOICES)[number];
 
-/** Contenu de la clé `tresorerie:reglages`. */
+/** Minimum de trésorerie par défaut : 20 000 000,00 DA. */
+export const MINIMUM_DEFAULT = 20_000_000;
+
+/** Plafond accepté pour le minimum de trésorerie (DA). */
+export const MINIMUM_MAX = 100_000_000_000;
+
+/** Façon de fixer le minimum de trésorerie : un montant fixe (par défaut) ou un nombre de jours de dépenses habituelles. */
+export type MinimumMode = "montant" | "jours";
+
+/**
+ * Contenu de la clé `tresorerie:reglages`. Un ancien réglage qui ne contient que les jours (`coussinJours`) passe au montant fixe par défaut ;
+ * les jours sont conservés pour qui choisit le mode « en jours de dépenses ».
+ */
 export interface TreasurySettings {
+  minimumMode: MinimumMode;
+  /** Minimum de trésorerie en DA (mode « montant »). */
+  minimumMontant: number;
+  /** Jours de dépenses habituelles (mode « jours »). */
   coussinJours: CushionDays;
   encaissementsAttendus: boolean;
 }

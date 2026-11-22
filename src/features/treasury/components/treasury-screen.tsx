@@ -52,7 +52,7 @@ export function TreasuryScreen({ view }: Readonly<{ view: TreasuryView }>): Reac
         {view.rejection ? <RejectionBanner rejection={view.rejection} /> : null}
         <StateMessage kind="empty" title="Aucun solde disponible" message="Importez un relevé AGB ci-dessous : le solde est lu dans la ligne « Solde FIN AU ». À défaut, l'administrateur peut saisir un solde de secours." />
         <StatementImport mode="zone" canImport={view.permissions.importStatement} />
-        {view.permissions.settings ? <TreasurySettingsPanel coussinJours={view.settings.coussinJours} encaissementsAttendus={view.settings.encaissementsAttendus} hasManual={view.manual.has} manualAllowed={view.manual.allowed} today={view.today} /> : null}
+        {view.permissions.settings ? <TreasurySettingsPanel minimumMode={view.settings.minimumMode} minimumMontant={view.settings.minimumMontant} coussinJours={view.settings.coussinJours} encaissementsAttendus={view.settings.encaissementsAttendus} hasManual={view.manual.has} manualAllowed={view.manual.allowed} today={view.today} /> : null}
         <FooterMention />
       </div>
     );
@@ -112,7 +112,7 @@ export function TreasuryScreen({ view }: Readonly<{ view: TreasuryView }>): Reac
       <ControlsBlock controls={view.controls} />
       <h2 className="pt-2 text-lg font-semibold">Espace de la comptable</h2>
       <SimulationPanel scenarios={view.scenarios} active={view.active} suggestions={view.suggestions} balanceDate={balance.date} />
-      {view.permissions.settings ? <TreasurySettingsPanel coussinJours={view.settings.coussinJours} encaissementsAttendus={view.settings.encaissementsAttendus} hasManual={view.manual.has} manualAllowed={view.manual.allowed} today={view.today} /> : null}
+      {view.permissions.settings ? <TreasurySettingsPanel minimumMode={view.settings.minimumMode} minimumMontant={view.settings.minimumMontant} coussinJours={view.settings.coussinJours} encaissementsAttendus={view.settings.encaissementsAttendus} hasManual={view.manual.has} manualAllowed={view.manual.allowed} today={view.today} /> : null}
       <FooterMention />
     </div>
   );

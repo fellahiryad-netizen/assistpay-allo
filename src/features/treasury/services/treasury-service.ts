@@ -227,14 +227,14 @@ export async function getTreasuryView(actor: AuthUser, query: TreasuryQuery, cha
   }
 }
 
-/** Réglages : réserve conseillée (7, 15 ou 30 jours) et encaissements attendus. Administrateur ou Direction. */
+/** Réglages : minimum de trésorerie (montant fixe, 20 000 000,00 DA par défaut, ou 7, 15 ou 30 jours de dépenses) et encaissements attendus. Administrateur ou Direction. */
 export async function saveTreasurySettings(actor: AuthUser, input: TreasurySettingsInput): Promise<ActionResult<true>> {
   const guard = requireTreasury(actor, "settings");
   if (!guard.success) return guard;
   try {
-    const saved = await updateState(KEY_SETTINGS, parseSettings, () => ({ ok: true, state: { coussinJours: input.coussinJours, encaissementsAttendus: input.encaissementsAttendus } }));
+    const saved = await updateState(KEY_SETTINGS, parseSettings, () => ({ ok: true, state: { minimumMode: input.minimumMode, minimumMontant: input.minimumMontant, coussinJours: input.coussinJours, encaissementsAttendus: input.encaissementsAttendus } }));
     if (!saved.success) return saved;
-    await logAction(actor, "Réglages de la trésorerie", `Réserve ${input.coussinJours} jours ; encaissements attendus : ${input.encaissementsAttendus ? "comptés (non garantis)" : "non comptés"}`, true);
+    await logAction(actor, "Réglages de la trésorerie", `Minimum de trésorerie : ${input.minimumMode === "montant" ? formatDA(input.minimumMontant) : `${input.coussinJours} jours de dépenses`} ; encaissements attendus : ${input.encaissementsAttendus ? "comptés (non garantis)" : "non comptés"}`, true);
     return ok(true);
   } catch (error) {
     console.error("[tresorerie] réglages :", error);

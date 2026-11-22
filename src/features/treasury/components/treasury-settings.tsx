@@ -9,12 +9,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { CUSHION_CHOICES, type CushionDays } from "@/features/treasury/types";
+import { CUSHION_CHOICES, type CushionDays, type MinimumMode } from "@/features/treasury/types";
 import { parseTypedAmount } from "@/features/treasury/lib/amount-input";
 import { formatDA } from "@/utils/format";
 
 /** Propriétés du panneau de réglages (données sérialisables). */
 export interface TreasurySettingsPanelProps {
+  minimumMode: MinimumMode;
+  minimumMontant: number;
   coussinJours: CushionDays;
   encaissementsAttendus: boolean;
   /** Un solde saisi à la main existe-t-il ? */
@@ -24,12 +26,15 @@ export interface TreasurySettingsPanelProps {
   today: string;
 }
 
-/** Réglages réservés à l'Administrateur et à la Direction : réserve conseillée, encaissements attendus, solde de secours saisi à la main. */
-export function TreasurySettingsPanel({ coussinJours, encaissementsAttendus, hasManual, manualAllowed, today }: Readonly<TreasurySettingsPanelProps>): React.JSX.Element {
+/** Réglages réservés à l'Administrateur et à la Direction : minimum de trésorerie, encaissements attendus, solde de secours saisi à la main. */
+export function TreasurySettingsPanel({ minimumMode, minimumMontant, coussinJours, encaissementsAttendus, hasManual, manualAllowed, today }: Readonly<TreasurySettingsPanelProps>): React.JSX.Element {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [mode, setMode] = useState<MinimumMode>(minimumMode);
+  const [minimum, setMinimum] = useState(String(minimumMontant).replace(".", ","));
   const [days, setDays] = useState<CushionDays>(coussinJours);
+  const typedMinimum = parseTypedAmount(minimum);
   const [expected, setExpected] = useState(encaissementsAttendus);
   const [balance, setBalance] = useState("");
   const [date, setDate] = useState(today);
@@ -56,20 +61,35 @@ export function TreasurySettingsPanel({ coussinJours, encaissementsAttendus, has
           </p>
         ) : null}
         <div className="flex flex-wrap items-end gap-3">
-          <Field id="tr-days" label="Réserve conseillée">
-            <NativeSelect id="tr-days" value={days} onChange={(event) => setDays(Number(event.target.value) as CushionDays)}>
-              {CUSHION_CHOICES.map((choice) => (
-                <option key={choice} value={choice}>
-                  {choice} jours de dépenses
-                </option>
-              ))}
+          <Field id="tr-mode" label="Minimum de trésorerie">
+            <NativeSelect id="tr-mode" value={mode} onChange={(event) => setMode(event.target.value as MinimumMode)}>
+              <option value="montant">Montant fixe</option>
+              <option value="jours">En jours de dépenses habituelles</option>
             </NativeSelect>
           </Field>
+          {mode === "montant" ? (
+            <Field id="tr-minimum" label="Montant du minimum (DA)" error={minimum.trim() !== "" && !typedMinimum.ok ? typedMinimum.error : undefined} hint={typedMinimum.ok ? `= ${formatDA(typedMinimum.value)}` : "Par défaut : 20 000 000,00 DA"}>
+              <Input id="tr-minimum" inputMode="decimal" value={minimum} onChange={(event) => setMinimum(event.target.value)} />
+            </Field>
+          ) : (
+            <Field id="tr-days" label="Jours de dépenses">
+              <NativeSelect id="tr-days" value={days} onChange={(event) => setDays(Number(event.target.value) as CushionDays)}>
+                {CUSHION_CHOICES.map((choice) => (
+                  <option key={choice} value={choice}>
+                    {choice} jours de dépenses
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          )}
           <label className="flex items-center gap-2 pb-2 text-sm font-medium">
             <input type="checkbox" checked={expected} onChange={(event) => setExpected(event.target.checked)} />
             Montrer les encaissements attendus (non garantis)
           </label>
-          <Button type="button" disabled={pending} onClick={() => run(() => saveTreasurySettingsAction({ coussinJours: days, encaissementsAttendus: expected }), "Réglages enregistrés.")}>
+          <Button type="button" disabled={pending} onClick={() => {
+              if (mode === "montant" && !typedMinimum.ok) setMessage({ kind: "error", text: typedMinimum.error });
+              else run(() => saveTreasurySettingsAction({ minimumMode: mode, minimumMontant: typedMinimum.ok ? typedMinimum.value : minimumMontant, coussinJours: days, encaissementsAttendus: expected }), "Réglages enregistrés.");
+            }}>
             <Save />
             Enregistrer
           </Button>

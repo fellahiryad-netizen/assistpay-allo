@@ -127,9 +127,9 @@ describe("lecture tolérante et validation", () => {
   });
   it("réglages : 15 jours et aucun encaissement par défaut ; valeurs inconnues ramenées au défaut", () => {
     expect(parseSettings(undefined)).toEqual(DEFAULT_SETTINGS);
-    expect(parseSettings({ coussinJours: 7, encaissementsAttendus: true })).toEqual({ coussinJours: 7, encaissementsAttendus: true });
+    expect(parseSettings({ coussinJours: 7, encaissementsAttendus: true })).toEqual({ minimumMode: "montant", minimumMontant: 20_000_000, coussinJours: 7, encaissementsAttendus: true });
     expect(parseSettings({ coussinJours: 12, encaissementsAttendus: "oui" })).toEqual(DEFAULT_SETTINGS);
-    expect(treasurySettingsSchema.safeParse({ coussinJours: 12, encaissementsAttendus: false }).success).toBe(false);
+    expect(treasurySettingsSchema.safeParse({ minimumMode: "jours", minimumMontant: 20_000_000, coussinJours: 12, encaissementsAttendus: false }).success).toBe(false);
   });
   it("ligne de simulation : montant strictement positif, date et libellé obligatoires", () => {
     const valid = { scenarioId: "s1", type: "G50", libelle: "G50", periode: "2026-10", montant: 10, date: "2026-12-01", mode: "CHEQUE", certitude: "ESTIME" };

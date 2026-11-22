@@ -1,6 +1,8 @@
 import { round2 } from "@/utils/amounts";
 import {
   CUSHION_CHOICES,
+  MINIMUM_DEFAULT,
+  MINIMUM_MAX,
   type ActiveState,
   MAX_LINES_PER_SCENARIO,
   MAX_SCENARIOS,
@@ -26,14 +28,21 @@ const str = (value: unknown): string => (typeof value === "string" ? value : "")
 const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const isIso = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 
-/** Réglages par défaut : réserve de 15 jours, aucun encaissement compté. */
-export const DEFAULT_SETTINGS: TreasurySettings = { coussinJours: 15, encaissementsAttendus: false };
+/** Réglages par défaut : minimum de trésorerie fixe de 20 000 000,00 DA (15 jours si le mode « jours » est choisi), aucun encaissement compté. */
+export const DEFAULT_SETTINGS: TreasurySettings = { minimumMode: "montant", minimumMontant: MINIMUM_DEFAULT, coussinJours: 15, encaissementsAttendus: false };
 
 /** Lecture tolérante de la clé `tresorerie:reglages`. */
 export function parseSettings(value: unknown): TreasurySettings {
   if (!isRecord(value)) return DEFAULT_SETTINGS;
   const days = CUSHION_CHOICES.find((choice) => choice === value.coussinJours);
-  return { coussinJours: (days ?? 15) as CushionDays, encaissementsAttendus: value.encaissementsAttendus === true };
+  const amount = num(value.minimumMontant);
+  // Rétrocompatibilité : un ancien réglage (jours seuls) passe au montant fixe ; seul « jours » écrit explicitement conserve le mode en jours.
+  return {
+    minimumMode: value.minimumMode === "jours" ? "jours" : "montant",
+    minimumMontant: amount !== null && amount > 0 && amount <= MINIMUM_MAX ? round2(amount) : MINIMUM_DEFAULT,
+    coussinJours: (days ?? 15) as CushionDays,
+    encaissementsAttendus: value.encaissementsAttendus === true,
+  };
 }
 
 function parseDaily(value: unknown): DailyBalance[] {

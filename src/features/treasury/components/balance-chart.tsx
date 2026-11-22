@@ -11,7 +11,7 @@ export interface BalanceChartProps {
   history: readonly DailyBalance[];
   /** Projection prudente (pointillé). */
   projection: readonly TimelinePoint[];
-  /** Réserve conseillée (ligne). */
+  /** Minimum de trésorerie (ligne). */
   cushion: number;
   lowest: { date: string; balance: number };
   overdraftDate: string | null;
@@ -27,7 +27,7 @@ const millionsShort = (value: number): string => `${(value / 1_000_000).toFixed(
 
 /**
  * Graphique SVG maison : historique en trait plein, projection prudente en pointillé, encaissements attendus hachurés (« attendu, non garanti »),
- * ligne de réserve conseillée, ligne zéro, point bas et première date de découvert annotés. Les couleurs viennent des variables du thème (clair et sombre).
+ * ligne du minimum de trésorerie, ligne zéro, point bas et première date de découvert annotés. Les couleurs viennent des variables du thème (clair et sombre).
  */
 export function BalanceChart({ bank, history, projection, cushion, lowest, overdraftDate, mono = false }: Readonly<BalanceChartProps>): React.JSX.Element {
   const first = history[0]?.d ?? projection[0]?.date ?? "";
@@ -100,7 +100,7 @@ export function BalanceChart({ bank, history, projection, cushion, lowest, overd
           <>
             <line x1={M.left} x2={W - M.right} y1={y(cushion)} y2={y(cushion)} stroke={warn} strokeWidth={mono ? 2.5 : 2} strokeDasharray="2 5" strokeLinecap="round" />
             <text x={M.left + 6} y={y(cushion) - 5} fontSize="12" fontWeight="700" fill={mono ? "#000" : warn}>
-              Réserve conseillée {millionsShort(cushion)}
+              Minimum de trésorerie {millionsShort(cushion)}
             </text>
           </>
         ) : null}
@@ -150,7 +150,7 @@ export function BalanceChart({ bank, history, projection, cushion, lowest, overd
           </span>
         ) : null}
         <span>
-          <b aria-hidden>···</b> Réserve conseillée
+          <b aria-hidden>···</b> Minimum de trésorerie
         </span>
         {jump ? (
           <span>
