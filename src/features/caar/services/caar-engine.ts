@@ -14,10 +14,12 @@ export const CAAR_FLAGS = {
   DUP: { label: "Doublon (police + avenant + immat.)", severity: "warn", ask: "Ligne en double" },
   TOTAL: { label: "Ligne de total détectée", severity: "info", ask: null },
   HEADER: { label: "En-tête répété détecté", severity: "info", ask: null },
-  PRIME_KO: { label: "Prime non conforme au barème", severity: "warn", ask: "Prime non conforme au barème (produit / durée)" },
+  // Signalée à l'écran mais plus reprise dans le message envoyé à la succursale (demande du propriétaire).
+  PRIME_KO: { label: "Prime non conforme au barème", severity: "warn", ask: null },
   PROD_UNK: { label: "Formule absente ou non reconnue", severity: "warn", ask: "Formule d'assistance absente ou non reconnue" },
   PRIME_FLOTTE: { label: "Prime de flotte (plusieurs véhicules)", severity: "info", ask: null },
   TUNISIE: { label: "Formule Tunisie (hors Allo Assistance)", severity: "info", ask: null },
+  TUNISIE_NZ: { label: "Police Tunisie avec une prime non nulle", severity: "warn", ask: "Police Tunisie dont la prime n'est pas à 0" },
   PRIME_ZERO: { label: "Prime à zéro", severity: "info", ask: null },
   PRIME_NEG: { label: "Prime négative (ristourne)", severity: "info", ask: null },
 } as const;
@@ -341,6 +343,7 @@ export function analyseCaarWorkbook(sheets: SheetData[], fileName: string, barem
       if (/annul|non encaiss|impay/.test(norm(col(row, "etat")))) flags.push("ETAT_KO");
       if (product === "TUNISIE") {
         flags.push("TUNISIE");
+        if (prime !== null && prime !== 0) flags.push("TUNISIE_NZ");
         record.include = false;
       }
       if (prime !== null && prime < 0) flags.push("PRIME_NEG");
