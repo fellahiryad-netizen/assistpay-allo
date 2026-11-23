@@ -36,6 +36,7 @@ export function DonutChart({
   colors,
   idPrefix = "donut",
   maxParts = 7,
+  logos,
 }: Readonly<{
   slices: DonutSlice[];
   centerLabel: string;
@@ -46,6 +47,8 @@ export function DonutChart({
   idPrefix?: string;
   /** Nombre de parts affichées avant regroupement dans « Autres ». */
   maxParts?: number;
+  /** Logo à afficher devant le libellé dans la légende (chemin public par libellé de part). */
+  logos?: Readonly<Record<string, string>>;
 }>): React.JSX.Element {
   const [active, setActive] = useState<number | null>(null);
   const sorted = [...slices].filter((slice) => slice.amount > 0).sort((a, b) => b.amount - a.amount);
@@ -129,6 +132,9 @@ export function DonutChart({
             className={cn("flex items-center gap-2 rounded-md px-2 py-1 transition-colors", active === index && "bg-muted")}
           >
             <span className="size-2.5 shrink-0 rounded-full shadow-[0_0_8px_currentColor]" style={{ background: colorOf(index)[0], color: colorOf(index)[0] }} />
+            {logos?.[part.label] ? (
+              <img src={logos[part.label]} alt={part.label} className="size-5 shrink-0 rounded bg-white object-contain p-px ring-1 ring-border print:grayscale" />
+            ) : null}
             <span className="min-w-0 flex-1 truncate">{part.label}</span>
             <span className="shrink-0 tabular-nums text-muted-foreground">{formatDA(part.amount)}</span>
             <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{Math.round((part.amount / total) * 1000) / 10} %</span>

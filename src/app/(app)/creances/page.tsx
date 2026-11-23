@@ -16,7 +16,7 @@ export default async function ReceivablesPage({ searchParams }: Readonly<{ searc
   const user = await requireUser();
   const raw = await searchParams;
   const one = (value: string | string[] | undefined): string | undefined => (Array.isArray(value) ? value[0] : value) || undefined;
-  const query = receivablesQuerySchema.parse({ annee: one(raw.annee), activite: one(raw.activite) });
+  const query = receivablesQuerySchema.parse({ annee: one(raw.annee), activite: one(raw.activite), detail: one(raw.detail), anc: one(raw.anc) });
   const result = await getReceivables(user, query);
   if (!result.success) {
     return (
@@ -32,7 +32,7 @@ export default async function ReceivablesPage({ searchParams }: Readonly<{ searc
     <>
       <PageHeader title="Créances par compagnie" description={`Factures partenaires en attente d'encaissement, situation au ${formatDate(summary.asOf)}.`} />
       <ReceivablesFilters years={years} query={result.data.query} canExport={can(user, "A_EXPORT", "EDIT")} />
-      <ReceivablesView summary={summary} query={result.data.query} />
+      <ReceivablesView summary={summary} query={result.data.query} detail={result.data.detail} canExport={can(user, "A_EXPORT", "EDIT")} canRelance={result.data.canRelance} />
     </>
   );
 }

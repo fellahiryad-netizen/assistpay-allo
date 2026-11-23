@@ -15,3 +15,15 @@ export function invoicesHref(company: string | null, categories: readonly string
   }
   return `/factures?${params.toString()}`;
 }
+
+/** Adresse de la page des créances avec ses filtres, éventuellement modifiés par `patch` (valeur `undefined` = retirer). */
+export function receivablesHref(query: ReceivablesQuery, patch: Partial<ReceivablesQuery> = {}, anchor = ""): string {
+  const merged: ReceivablesQuery = { ...query, ...patch };
+  const params = new URLSearchParams();
+  if (merged.annee) params.set("annee", String(merged.annee));
+  if (merged.activite) params.set("activite", merged.activite);
+  if (merged.detail) params.set("detail", merged.detail);
+  if (merged.anc) params.set("anc", String(merged.anc));
+  const text = params.toString();
+  return `/creances${text ? `?${text}` : ""}${anchor ? `#${anchor}` : ""}`;
+}

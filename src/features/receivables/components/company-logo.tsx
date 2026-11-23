@@ -17,13 +17,14 @@ export function CompanyLogo({ company, className }: Readonly<CompanyLogoProps>):
   const path = logoPathOf(companySlug(company));
   if (path) {
     return (
-      <img src={path} alt={`Logo ${company}`} className={cn("size-9 shrink-0 rounded-md bg-white object-contain p-0.5", className)} />
+      // Les logos fournis ont un fond blanc opaque : un cadre clair discret les garde lisibles en mode sombre.
+      <img src={path} alt={company} className={cn("size-9 shrink-0 rounded-md bg-white object-contain p-0.5 ring-1 ring-border print:grayscale", className)} />
     );
   }
   return (
     <span
       aria-hidden
-      className={cn("inline-flex size-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold tracking-tight text-white", className)}
+      className={cn("inline-flex size-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold tracking-tight text-white print:bg-white print:text-black print:ring-1 print:ring-black", className)}
       style={{ backgroundColor: companyColor(company) }}
     >
       {monogramOf(company)}

@@ -3,6 +3,8 @@ import { ArrowDownLeft, ArrowUpRight, Hourglass, Wallet } from "lucide-react";
 import { DonutChart } from "@/components/common/donut-chart";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarList } from "@/features/dashboard/components/bar-list";
+import { logoMapOf } from "@/features/receivables/config/logos";
+import { companySlug } from "@/features/receivables/lib/company";
 import { companyColor } from "@/features/receivables/lib/colors";
 import { KpiCard } from "@/features/dashboard/components/kpi-card";
 import { MonthlyFlowChart } from "@/features/dashboard/components/monthly-flow-chart";
@@ -43,7 +45,7 @@ export function DashboardView({ data }: Readonly<DashboardViewProps>): React.JSX
               <CardDescription>Factures partenaires en attente, par compagnie (GAM et GAM BDG réunis, etc.)</CardDescription>
             </CardHeader>
             <CardContent>
-              <DonutChart slices={data.receivables.byCompany} centerLabel="En attente" colors={companyColors} idPrefix="dash-creances" />
+              <DonutChart slices={data.receivables.byCompany} centerLabel="En attente" colors={companyColors} idPrefix="dash-creances" logos={logoMapOf(data.receivables.byCompany.map((bucket) => bucket.label), companySlug)} />
               <details className="mt-4 text-sm">
                 <summary className="cursor-pointer text-muted-foreground">Voir en barres</summary>
                 <div className="mt-3">

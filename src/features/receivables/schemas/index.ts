@@ -4,6 +4,10 @@ import { z } from "zod";
 export const receivablesQuerySchema = z.object({
   annee: z.coerce.number().int().min(2000).max(2100).optional().catch(undefined),
   activite: z.enum(["ASSISTANCE", "BDG"]).optional().catch(undefined),
+  /** Panneau de détail : « CAAT » ou « CAAT:BDG ». */
+  detail: z.string().trim().min(1).max(90).optional().catch(undefined),
+  /** Relance : factures de plus de 30, 60 ou 90 jours (ou sans date). */
+  anc: z.coerce.number().int().refine((value) => value === 30 || value === 60 || value === 90).optional().catch(undefined),
 });
 
 /** Filtres validés de la page des créances. */

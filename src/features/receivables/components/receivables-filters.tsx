@@ -44,6 +44,8 @@ export function ReceivablesFilters({ years, query, canExport }: Readonly<Receiva
           <option value="BDG">BDG</option>
         </NativeSelect>
       </label>
+      {query.detail ? <input type="hidden" name="detail" value={query.detail} /> : null}
+      {query.anc ? <input type="hidden" name="anc" value={query.anc} /> : null}
       <button type="submit" className={cn(buttonVariants({ variant: "violet" }))}>
         Appliquer
       </button>

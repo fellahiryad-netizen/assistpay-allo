@@ -36,7 +36,7 @@ export function toReceivableLine(input: ReceivableInput, today: string): Receiva
 }
 
 /** Garde les factures de l'activité demandée (`null` : toutes). */
-export function filterByActivity(lines: readonly ReceivableLine[], activity: ActivityFilter): ReceivableLine[] {
+export function filterByActivity<T extends ReceivableLine>(lines: readonly T[], activity: ActivityFilter): T[] {
   return activity ? lines.filter((line) => line.activity === activity) : [...lines];
 }
 
