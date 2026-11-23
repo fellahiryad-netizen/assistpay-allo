@@ -17,6 +17,7 @@ import {
   Bell,
   Landmark,
   LayoutDashboard,
+  Mail,
   ScrollText,
   Send,
   ShieldCheck,
@@ -48,6 +49,7 @@ const ICONS: Readonly<Record<NavIcon, LucideIcon>> = {
   journal: ScrollText,
   account: UserRound,
   alert: Bell,
+  mail: Mail,
 };
 
 /** Propriétés du menu latéral. */

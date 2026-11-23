@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft, Download, Printer } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { PageHeader } from "@/components/common/page-header";
 import { StateMessage } from "@/components/common/state-message";
@@ -10,6 +10,8 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { matchBranch } from "@/features/courrier/lib/address-book";
+import { getAddressBook } from "@/features/courrier/services/courrier-service";
 import { ReminderButton } from "@/features/partners/components/reminder-button";
 import { partnerQuerySchema } from "@/features/partners/schemas";
 import { partnerDetail } from "@/features/partners/services/partner-service";
@@ -36,6 +38,9 @@ export default async function PartnerPage({
     return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="Fiche indisponible" message={result.error} />;
   }
   const data = result.data;
+  // Courrier des originaux : l'enveloppe n'est proposée que si la succursale des factures correspond à une seule fiche du carnet d'adresses.
+  const book = query.succ ? await getAddressBook(user) : null;
+  const mailBranch = book?.success ? matchBranch(book.data.branches, query.key, query.succ) : null;
   const link = (patch: Record<string, string>): string => {
     const search = new URLSearchParams({ annee: String(query.annee), seuil: String(query.seuil), ...(query.succ ? { succ: query.succ } : {}), ...patch });
     return `/partenaires/${encodeURIComponent(query.key)}?${search.toString()}`;
@@ -69,6 +74,12 @@ export default async function PartnerPage({
         </form>
         <div className="flex flex-wrap gap-2 sm:ml-auto">
           {data.canEdit ? <ReminderButton partner={query.key} branch={query.succ} threshold={query.seuil} /> : null}
+          {mailBranch ? (
+            <a href={`/imprimer/enveloppe?ids=${encodeURIComponent(mailBranch.id)}`} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "outline" })}>
+              <Printer />
+              Imprimer l&apos;enveloppe
+            </a>
+          ) : null}
           <a href={`/api/partenaires/releve?${new URLSearchParams({ key: query.key, succ: query.succ }).toString()}`} className={buttonVariants({ variant: "outline" })}>
             <Download />
             Relevé de compte (Excel)

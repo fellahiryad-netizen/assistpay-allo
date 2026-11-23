@@ -30,7 +30,8 @@ export type NavIcon =
   | "users"
   | "journal"
   | "account"
-  | "alert";
+  | "alert"
+  | "mail";
 
 /** Groupe du menu. */
 export interface NavGroup {
@@ -69,6 +70,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: "Ventes",
     items: [
       { href: "/partenaires", label: "Partenaires", icon: "partners", module: "PART" },
+      { href: "/adresses-courrier", label: "Adresses courrier", icon: "mail", module: "PART" },
       { href: "/facturation", label: "Établir une facture", icon: "invoice", module: "FACT" },
       { href: "/avoirs", label: "Factures d'avoir", icon: "invoice", module: "FACT" },
       { href: "/numerotation", label: "Registre de numérotation", icon: "invoice", module: "FACT" },
