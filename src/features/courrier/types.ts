@@ -15,6 +15,8 @@ export interface BranchAddress {
   /** Un ou plusieurs numéros, en texte libre. */
   telephones: string;
   adresse: string;
+  /** Destination affichée sur le bordereau d'envoi (ville, ou ville + précision) ; vide : la ville est déduite de l'adresse. */
+  destination: string;
   remarque: string;
 }
 
@@ -58,3 +60,14 @@ export const COURRIER_KEY = "courrier:adresses";
 
 /** Nombre maximal de fiches (succursales et contacts EMS confondus). */
 export const MAX_FICHES = 200;
+
+/** Observation proposée par défaut pour chaque ligne du bordereau. */
+export const DEFAULT_OBSERVATION = "COURRIER : DOCUMENT FACTURATION";
+
+/** Ligne d'un bordereau d'envoi. */
+export interface BordereauLine {
+  designation: string;
+  qnt: number;
+  destination: string;
+  observation: string;
+}

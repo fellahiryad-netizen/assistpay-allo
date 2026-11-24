@@ -22,7 +22,7 @@ export interface BranchDialogProps {
   onSaved: (message: string) => void;
 }
 
-const emptyValues = (company: BranchFormValues["compagnie"]): BranchFormValues => ({ compagnie: company, nom: "", contact: "", telephones: "", adresse: "", remarque: "" });
+const emptyValues = (company: BranchFormValues["compagnie"]): BranchFormValues => ({ compagnie: company, nom: "", contact: "", telephones: "", adresse: "", destination: "", remarque: "" });
 
 /** Ajout ou modification d'une succursale destinataire du courrier. */
 export function BranchDialog({ target, defaultCompany, onClose, onSaved }: Readonly<BranchDialogProps>): React.JSX.Element {
@@ -37,7 +37,7 @@ export function BranchDialog({ target, defaultCompany, onClose, onSaved }: Reado
 
 function BranchForm({ target, defaultCompany, onClose, onSaved }: Readonly<Omit<BranchDialogProps, "target"> & { target: BranchAddress | "new" }>): React.JSX.Element {
   const editing = target === "new" ? null : target;
-  const [values, setValues] = useState<BranchFormValues>(editing ? { id: editing.id, compagnie: editing.compagnie, nom: editing.nom, contact: editing.contact, telephones: editing.telephones, adresse: editing.adresse, remarque: editing.remarque } : emptyValues(defaultCompany));
+  const [values, setValues] = useState<BranchFormValues>(editing ? { id: editing.id, compagnie: editing.compagnie, nom: editing.nom, contact: editing.contact, telephones: editing.telephones, adresse: editing.adresse, destination: editing.destination, remarque: editing.remarque } : emptyValues(defaultCompany));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -95,6 +95,9 @@ function BranchForm({ target, defaultCompany, onClose, onSaved }: Readonly<Omit<
         </Field>
         <Field id="br-contact" label="Nom du contact" error={errors.contact} hint="Facultatif : s'imprime « À l'attention de … ».">
           <Input {...bind("contact")} placeholder="Mr. NOM PRÉNOM" autoComplete="off" />
+        </Field>
+        <Field id="br-destination" label="Destination (bordereau)" error={errors.destination} className="sm:col-span-2" hint="Ville, ou ville + précision, telle qu'elle s'imprime sur le bordereau d'envoi. Vide : la ville est déduite de l'adresse.">
+          <Input {...bind("destination")} placeholder="ORAN" autoComplete="off" />
         </Field>
         <Field id="br-remarque" label="Remarque" error={errors.remarque} className="sm:col-span-2" hint="Facultatif, non imprimée.">
           <Input {...bind("remarque")} autoComplete="off" />

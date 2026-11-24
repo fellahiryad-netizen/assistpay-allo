@@ -51,7 +51,7 @@ export function parseAddressBook(value: unknown): AddressBook | null {
     const compagnie = COURRIER_COMPANIES.find((company) => company === item.compagnie);
     const nom = str(item.nom);
     if (!compagnie || nom === "") return;
-    branches.push({ id: uniqueId(item.id, taken, "succ", index), compagnie, nom, contact: str(item.contact), telephones: str(item.telephones), adresse: str(item.adresse), remarque: str(item.remarque) });
+    branches.push({ id: uniqueId(item.id, taken, "succ", index), compagnie, nom, contact: str(item.contact), telephones: str(item.telephones), adresse: str(item.adresse), destination: str(item.destination), remarque: str(item.remarque) });
   });
   const contacts: EmsContact[] = [];
   (Array.isArray(value.emsContacts) ? value.emsContacts : []).forEach((item: unknown, index: number) => {
@@ -84,7 +84,7 @@ export function saveBranch(book: AddressBook, input: BranchInput, newId: string)
     return refuse(`Une fiche « ${input.nom} » existe déjà pour ${input.compagnie}. Modifiez-la plutôt que d'en créer une seconde.`, "CONFLICT");
   }
   if (!before && ficheCount(book) >= MAX_FICHES) return refuse(`Limite de ${MAX_FICHES} fiches atteinte : supprimez une fiche inutile avant d'en ajouter.`, "VALIDATION");
-  const saved: BranchAddress = { id, compagnie: input.compagnie, nom: input.nom, contact: input.contact, telephones: input.telephones, adresse: input.adresse, remarque: input.remarque };
+  const saved: BranchAddress = { id, compagnie: input.compagnie, nom: input.nom, contact: input.contact, telephones: input.telephones, adresse: input.adresse, destination: input.destination, remarque: input.remarque };
   const branches = before ? book.branches.map((item) => (item.id === id ? saved : item)) : [...book.branches, saved];
   return { ok: true, book: { ...book, branches }, value: { saved, before } };
 }

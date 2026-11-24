@@ -38,7 +38,7 @@ async function mutateBook<T>(compute: (book: AddressBook) => BookChange<T>): Pro
 const branchLabel = (item: Pick<BranchAddress, "compagnie" | "nom">): string => `${item.compagnie} – ${item.nom}`;
 
 const branchValues = (item: BranchAddress | null): JournalTrace["avant"] =>
-  item ? { compagnie: item.compagnie, nom: item.nom, contact: item.contact, telephones: item.telephones, adresse: item.adresse, remarque: item.remarque } : {};
+  item ? { compagnie: item.compagnie, nom: item.nom, contact: item.contact, telephones: item.telephones, adresse: item.adresse, destination: item.destination, remarque: item.remarque } : {};
 
 const emsValues = (item: EmsContact | null): JournalTrace["avant"] =>
   item ? { nom: item.nom, role: item.role, telephone: item.telephone, email: item.email, remarque: item.remarque } : {};

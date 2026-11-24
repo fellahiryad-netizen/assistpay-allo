@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { cleanPersonName, cleanPhones, cleanText } from "@/features/courrier/lib/clean";
-import { COURRIER_COMPANIES, EMS_ROLES } from "@/features/courrier/types";
+import { COURRIER_COMPANIES, EMS_ROLES, type BordereauLine } from "@/features/courrier/types";
 
 /** Texte nettoyé (espaces, insécables), avec une longueur maximale. */
 const text = (max: number, tooLong: string) =>
@@ -29,6 +29,7 @@ export const branchSchema = z.object({
   contact: z.string({ invalid_type_error: "Texte attendu." }).max(240, "Nom du contact trop long (120 caractères au plus).").transform(cleanPersonName).refine((value) => value.length <= 120, "Nom du contact trop long (120 caractères au plus)."),
   telephones: phones("Le téléphone doit contenir des chiffres."),
   adresse: required(200, "Indiquez l'adresse.", "Adresse trop longue (200 caractères au plus)."),
+  destination: text(120, "Destination trop longue (120 caractères au plus).").default(""),
   remarque: text(300, "Remarque trop longue (300 caractères au plus)."),
 });
 /** Fiche de succursale validée. */
@@ -74,3 +75,41 @@ export const envelopeQuerySchema = z.object({
 });
 /** Paramètres d'impression validés. */
 export type EnvelopeQuery = z.infer<typeof envelopeQuerySchema>;
+
+/** Plafond de lignes d'un bordereau. */
+export const MAX_BORDEREAU_LINES = 60;
+
+/** Date `AAAA-MM-JJ` réelle (le 31 février est refusée). */
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date invalide.")
+  .refine((value) => {
+    const date = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  }, "Date invalide.");
+
+/** Paramètre répété de l'adresse : une valeur seule devient une liste, l'absence donne une liste vide. */
+const repeated = <T extends z.ZodTypeAny>(item: T) =>
+  z.preprocess((value) => (Array.isArray(value) ? value : value === undefined ? [] : [value]), z.array(item).min(1, "Ajoutez au moins une ligne.").max(MAX_BORDEREAU_LINES, `Pas plus de ${MAX_BORDEREAU_LINES} lignes.`));
+
+/**
+ * Paramètres de la page d'impression du bordereau : date, cachet, et quatre listes de même longueur
+ * (désignation, quantité, destination, observation). Les textes sont nettoyés et plafonnés.
+ */
+export const bordereauQuerySchema = z
+  .object({
+    date: isoDate,
+    cachet: z.enum(["0", "1"]).default("1").transform((value) => value === "1"),
+    des: repeated(text(120, "Désignation trop longue (120 caractères au plus).").refine((value) => value.length > 0, "Chaque ligne a besoin d'une désignation.")),
+    qnt: repeated(z.coerce.number({ invalid_type_error: "La quantité doit être un nombre." }).int("La quantité doit être un nombre entier.").min(1, "La quantité doit être au moins 1.").max(9999, "Quantité trop grande.")),
+    dst: repeated(text(120, "Destination trop longue (120 caractères au plus).")),
+    obs: repeated(text(160, "Observation trop longue (160 caractères au plus).")),
+  })
+  .refine((value) => value.des.length === value.qnt.length && value.des.length === value.dst.length && value.des.length === value.obs.length, { message: "Les lignes du bordereau sont incomplètes." });
+/** Paramètres validés du bordereau (listes de même longueur). */
+export type BordereauQuery = z.infer<typeof bordereauQuerySchema>;
+
+/** Lignes d'un bordereau validé. */
+export function bordereauLinesOf(query: BordereauQuery): BordereauLine[] {
+  return query.des.map((designation, index) => ({ designation, qnt: query.qnt[index] ?? 1, destination: query.dst[index] ?? "", observation: query.obs[index] ?? "" }));
+}

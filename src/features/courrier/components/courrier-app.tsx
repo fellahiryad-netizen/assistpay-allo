@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { Pencil, Plus, Printer, Search, Trash2 } from "lucide-react";
+import { FileText, Pencil, Plus, Printer, Search, Trash2 } from "lucide-react";
 import { deleteBranchAddressAction, deleteEmsContactAction } from "@/app/actions/courrier-actions";
 import { Notice } from "@/components/common/notice";
 import { StateMessage } from "@/components/common/state-message";
@@ -31,6 +31,9 @@ export interface CourrierAppProps {
 
 /** Adresse de la page d'impression pour une ou plusieurs fiches (une étiquette par page). */
 export const envelopeHref = (ids: readonly string[]): string => `/imprimer/enveloppe?ids=${ids.map(encodeURIComponent).join(",")}`;
+
+/** Adresse de l'aperçu modifiable du bordereau d'envoi pour une ou plusieurs fiches. */
+export const bordereauPreviewHref = (ids: readonly string[]): string => `/adresses-courrier/bordereau?ids=${ids.map(encodeURIComponent).join(",")}`;
 
 type Dialogs = { branch: BranchAddress | "new" | null; ems: EmsContact | "new" | null; societe: boolean };
 type Feedback = { tone: "success" | "error"; text: string } | null;
@@ -90,6 +93,7 @@ export function CourrierApp({ branches, emsSociete, emsContacts, canEdit, persis
 
   const printAll = envelopeHref(visibleIds);
   const printChosen = envelopeHref(chosen.map((item) => item.id));
+  const bordereauChosen = bordereauPreviewHref(chosen.map((item) => item.id));
   const actionLink = "inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline";
 
   return (
@@ -138,10 +142,16 @@ export function CourrierApp({ branches, emsSociete, emsContacts, canEdit, persis
 
         <div className="mb-3 flex flex-wrap items-center gap-2">
           {chosen.length > 0 ? (
-            <Link href={printChosen} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
-              <Printer />
-              Imprimer la sélection ({chosen.length})
-            </Link>
+            <>
+              <Link href={printChosen} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
+                <Printer />
+                Imprimer la sélection ({chosen.length})
+              </Link>
+              <Link href={bordereauChosen} className={buttonVariants({ variant: "violet", size: "sm" })}>
+                <FileText />
+                Bordereau d&apos;envoi ({chosen.length})
+              </Link>
+            </>
           ) : null}
           {visible.length > 0 ? (
             <Link href={printAll} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
@@ -194,6 +204,10 @@ export function CourrierApp({ branches, emsSociete, emsContacts, canEdit, persis
                             <Printer className="size-3.5" aria-hidden />
                             Imprimer l&apos;enveloppe
                           </Link>
+                          <Link href={bordereauPreviewHref([item.id])} className={actionLink}>
+                            <FileText className="size-3.5" aria-hidden />
+                            Bordereau
+                          </Link>
                           {canEdit ? (
                             <>
                               <button type="button" className={actionLink} onClick={() => setDialogs((current) => ({ ...current, branch: item }))}>
@@ -245,6 +259,10 @@ export function CourrierApp({ branches, emsSociete, emsContacts, canEdit, persis
                         <Link href={envelopeHref([item.id])} target="_blank" rel="noopener noreferrer" className={cn(actionLink, "text-sm")}>
                           <Printer className="size-4" aria-hidden />
                           Imprimer l&apos;enveloppe
+                        </Link>
+                        <Link href={bordereauPreviewHref([item.id])} className={cn(actionLink, "text-sm")}>
+                          <FileText className="size-4" aria-hidden />
+                          Bordereau
                         </Link>
                         {canEdit ? (
                           <>

@@ -713,3 +713,96 @@ html[data-skin="neo"] .skin-btn { border-color: rgba(59, 232, 255, 0.4); color: 
     page-break-after: auto;
   }
 }
+
+/* Bordereau d'envoi remis au prestataire de courrier : A4 portrait sur papier à en-tête (marges de `fx-wrap`), tout en noir et en gras, cadres noirs, aucun fond. */
+@layer components {
+  .bd-sheet {
+    box-sizing: border-box;
+    width: 210mm;
+    padding: 2mm 14mm 0;
+    background: #fff;
+    color: #000;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 11pt;
+    line-height: 1.35;
+  }
+  .bd-date {
+    text-align: right;
+    font-size: 11pt;
+  }
+  .bd-sender {
+    width: 120mm;
+    margin-top: 2mm;
+    border: 0.4mm solid #000;
+    padding: 2mm 3mm;
+    font-size: 10.5pt;
+  }
+  .bd-title {
+    margin: 7mm 0 6mm;
+    text-align: center;
+    font-size: 24pt;
+    letter-spacing: 0.02em;
+  }
+  .bd-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .bd-table th,
+  .bd-table td {
+    border: 0.4mm solid #000;
+    padding: 3mm 2mm;
+    text-align: center;
+    vertical-align: middle;
+    overflow-wrap: anywhere;
+  }
+  .bd-table th {
+    font-size: 10.5pt;
+  }
+  .bd-table tbody td,
+  .bd-table tfoot td {
+    font-size: 11pt;
+  }
+  .bd-table .bd-qnt {
+    width: 15mm;
+  }
+  .bd-table .bd-des {
+    width: 38%;
+  }
+  .bd-table .bd-dst {
+    width: 24%;
+  }
+  .bd-table thead {
+    display: table-header-group;
+  }
+  .bd-table tr {
+    break-inside: avoid;
+  }
+  .bd-sign {
+    display: flex;
+    gap: 8mm;
+    margin-top: 7mm;
+    break-inside: avoid;
+  }
+  .bd-box {
+    flex: 1;
+    min-height: 28mm;
+    border: 0.4mm solid #000;
+    padding: 2mm 3mm;
+    font-size: 10.5pt;
+  }
+  .bd-box p + p {
+    margin-top: 2mm;
+  }
+  .bd-sheet,
+  .bd-sheet * {
+    color: #000 !important;
+    font-weight: 700 !important;
+    background: transparent !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .bd-sheet {
+    background: #fff !important;
+  }
+}

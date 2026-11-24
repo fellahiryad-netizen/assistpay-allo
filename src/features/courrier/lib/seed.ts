@@ -1,3 +1,4 @@
+import { defaultDestination } from "@/features/courrier/lib/bordereau";
 import { cleanPersonName, cleanPhones, cleanText } from "@/features/courrier/lib/clean";
 import type { AddressBook, BranchAddress, CourrierCompany, EmsContact, EmsRole } from "@/features/courrier/types";
 
@@ -12,6 +13,8 @@ export interface RawBranch {
   contact?: string;
   telephones?: string;
   adresse: string;
+  /** Destination du bordereau quand elle diffère de la ville déduite de l'adresse. */
+  destination?: string;
 }
 
 /** Les 13 succursales du fichier Excel (9 CAAT, 4 CAAR), telles que saisies, espaces insécables et fautes comprises. */
@@ -25,7 +28,7 @@ export const RAW_BRANCHES: readonly RawBranch[] = [
     telephones: `TEL${NBSP}: 0661 49 00 38 - 021 83 33 64`,
     adresse: "22, Rue TATA (ADJACENTE A LA RUE BOUAMAMA) El Harrach Belfort - Alger",
   },
-  { id: "caat-alger-3", compagnie: "CAAT", nom: "SUCCURSALE CAAT ALGER 3", adresse: "RESIDENCE CHAABANI VAL-D 'HYDRA ALGER" },
+  { id: "caat-alger-3", compagnie: "CAAT", nom: "SUCCURSALE CAAT ALGER 3", adresse: "RESIDENCE CHAABANI VAL-D 'HYDRA ALGER", destination: "CITE CHAABANI HYDRA ALGER" },
   { id: "caat-annaba", compagnie: "CAAT", nom: "SUCCURSALE CAAT ANNABA", contact: "M.LAYADA ADIL", telephones: "TEL :0661 51 00 69", adresse: "CITE 05 JUILLET, ROUTE DU PARC D'ATTRACTION.ANNABA" },
   { id: "caat-constantine", compagnie: "CAAT", nom: "SUCCURSALE CAAT CONSTANTINE", contact: "Mr. LAZZOUNI MONCEF", telephones: `TEL${NBSP}: 0661 25 05 67`, adresse: "CITE LES MIMOSAS, ROUTE DE SETIF CONSTANTINE" },
   { id: "caat-ghardaia", compagnie: "CAAT", nom: "SUCCURSALE CAAT GHERDAIA", telephones: `TEL${NBSP}: 0661 47 61 67`, adresse: "RUE LARBI BEN-M'HIDI, ROUTE DE BEN-ISGUEN GHARDAÏA" },
@@ -85,6 +88,7 @@ export function cleanRawBranch(raw: RawBranch): BranchAddress {
     contact: cleanPersonName(raw.contact ?? ""),
     telephones: cleanPhones(raw.telephones ?? ""),
     adresse: cleanText(raw.adresse),
+    destination: cleanText(raw.destination ?? "") || defaultDestination(cleanText(raw.adresse)),
     remarque: "",
   };
 }
