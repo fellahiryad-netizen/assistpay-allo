@@ -730,6 +730,26 @@ html[data-skin="neo"] .skin-btn { border-color: rgba(59, 232, 255, 0.4); color: 
     text-align: right;
     font-size: 11pt;
   }
+  .bd-dup {
+    text-align: right;
+    font-size: 8.5pt;
+    letter-spacing: 0.12em;
+  }
+  .bd-numero {
+    margin: -3mm 0 5mm;
+    text-align: center;
+    font-size: 13pt;
+  }
+  .bd-annule {
+    margin: -2mm 0 4mm;
+    text-align: center;
+    font-size: 12pt;
+    letter-spacing: 0.08em;
+  }
+  .bd-remarque {
+    margin-top: 4mm;
+    font-size: 10pt;
+  }
   .bd-sender {
     width: 120mm;
     margin-top: 2mm;

@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { BordereauPickerDialog } from "@/features/courrier/components/bordereau-picker-dialog";
 import { BranchDialog } from "@/features/courrier/components/branch-dialog";
 import { EmsContactDialog, EmsSocieteDialog } from "@/features/courrier/components/ems-dialogs";
 import { MailLink, PhoneLink } from "@/features/courrier/components/ems-card";
@@ -27,6 +28,8 @@ export interface CourrierAppProps {
   canEdit: boolean;
   /** Faux tant que la liste de départ du code n'a pas été enregistrée : la première modification l'enregistre. */
   persisted: boolean;
+  /** Dernier envoi par fiche (`AAAA-MM-JJ`, date du dernier bordereau non annulé). */
+  lastSent: Record<string, string>;
 }
 
 /** Adresse de la page d'impression pour une ou plusieurs fiches (une étiquette par page). */
@@ -35,15 +38,18 @@ export const envelopeHref = (ids: readonly string[]): string => `/imprimer/envel
 /** Adresse de l'aperçu modifiable du bordereau d'envoi pour une ou plusieurs fiches. */
 export const bordereauPreviewHref = (ids: readonly string[]): string => `/adresses-courrier/bordereau?ids=${ids.map(encodeURIComponent).join(",")}`;
 
-type Dialogs = { branch: BranchAddress | "new" | null; ems: EmsContact | "new" | null; societe: boolean };
+/** « Dernier envoi : JJ/MM/AAAA » ou « Jamais envoyé » à partir de la date `AAAA-MM-JJ` du dernier bordereau. */
+const lastSentLabel = (iso: string | undefined): string => (iso ? `Dernier envoi : ${iso.split("-").reverse().join("/")}` : "Jamais envoyé");
+
+type Dialogs = { branch: BranchAddress | "new" | null; ems: EmsContact | "new" | null; societe: boolean; picker: boolean };
 type Feedback = { tone: "success" | "error"; text: string } | null;
 
 /** Adresses courrier : succursales CAAR et CAAT (recherche, filtre, ajout, modification, suppression, impression d'enveloppes) et prestataire de courrier. */
-export function CourrierApp({ branches, emsSociete, emsContacts, canEdit, persisted }: Readonly<CourrierAppProps>): React.JSX.Element {
+export function CourrierApp({ branches, emsSociete, emsContacts, canEdit, persisted, lastSent }: Readonly<CourrierAppProps>): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [company, setCompany] = useState<CourrierCompany | "">("");
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [dialogs, setDialogs] = useState<Dialogs>({ branch: null, ems: null, societe: false });
+  const [dialogs, setDialogs] = useState<Dialogs>({ branch: null, ems: null, societe: false, picker: false });
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [pending, startTransition] = useTransition();
 
@@ -118,10 +124,16 @@ export function CourrierApp({ branches, emsSociete, emsContacts, canEdit, persis
             <p className="text-sm text-muted-foreground">Succursales CAAR et CAAT à qui l&apos;on envoie les originaux des factures.</p>
           </div>
           {canEdit ? (
-            <Button type="button" onClick={() => setDialogs((current) => ({ ...current, branch: "new" }))}>
-              <Plus />
-              Ajouter une succursale
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" onClick={() => setDialogs((current) => ({ ...current, branch: "new" }))}>
+                <Plus />
+                Ajouter une succursale
+              </Button>
+              <Button type="button" variant="violet" onClick={() => setDialogs((current) => ({ ...current, picker: true }))}>
+                <FileText />
+                Bordereau
+              </Button>
+            </div>
           ) : null}
         </div>
 
@@ -147,10 +159,12 @@ export function CourrierApp({ branches, emsSociete, emsContacts, canEdit, persis
                 <Printer />
                 Imprimer la sélection ({chosen.length})
               </Link>
-              <Link href={bordereauChosen} className={buttonVariants({ variant: "violet", size: "sm" })}>
-                <FileText />
-                Bordereau d&apos;envoi ({chosen.length})
-              </Link>
+              {canEdit ? (
+                <Link href={bordereauChosen} className={buttonVariants({ variant: "violet", size: "sm" })}>
+                  <FileText />
+                  Bordereau d&apos;envoi ({chosen.length})
+                </Link>
+              ) : null}
             </>
           ) : null}
           {visible.length > 0 ? (
@@ -193,7 +207,10 @@ export function CourrierApp({ branches, emsSociete, emsContacts, canEdit, persis
                       <TableCell>
                         <Badge variant={item.compagnie === "CAAR" ? "default" : "accent"}>{item.compagnie}</Badge>
                       </TableCell>
-                      <TableCell className="font-medium">{item.nom}</TableCell>
+                      <TableCell className="font-medium">
+                        {item.nom}
+                        <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{lastSentLabel(lastSent[item.id])}</span>
+                      </TableCell>
                       <TableCell>{item.contact || <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell>{item.telephones || <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="min-w-56">{item.adresse}</TableCell>
@@ -204,10 +221,12 @@ export function CourrierApp({ branches, emsSociete, emsContacts, canEdit, persis
                             <Printer className="size-3.5" aria-hidden />
                             Imprimer l&apos;enveloppe
                           </Link>
-                          <Link href={bordereauPreviewHref([item.id])} className={actionLink}>
-                            <FileText className="size-3.5" aria-hidden />
-                            Bordereau
-                          </Link>
+                          {canEdit ? (
+                            <Link href={bordereauPreviewHref([item.id])} className={actionLink}>
+                              <FileText className="size-3.5" aria-hidden />
+                              Bordereau
+                            </Link>
+                          ) : null}
                           {canEdit ? (
                             <>
                               <button type="button" className={actionLink} onClick={() => setDialogs((current) => ({ ...current, branch: item }))}>
@@ -239,6 +258,7 @@ export function CourrierApp({ branches, emsSociete, emsContacts, canEdit, persis
                         <p className="font-semibold">{item.nom}</p>
                       </div>
                       <p className="mt-1 text-sm">{item.adresse}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{lastSentLabel(lastSent[item.id])}</p>
                       <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-sm">
                         <dt className="text-muted-foreground">Téléphone</dt>
                         <dd>{item.telephones || "—"}</dd>
@@ -260,10 +280,12 @@ export function CourrierApp({ branches, emsSociete, emsContacts, canEdit, persis
                           <Printer className="size-4" aria-hidden />
                           Imprimer l&apos;enveloppe
                         </Link>
-                        <Link href={bordereauPreviewHref([item.id])} className={cn(actionLink, "text-sm")}>
-                          <FileText className="size-4" aria-hidden />
-                          Bordereau
-                        </Link>
+                        {canEdit ? (
+                          <Link href={bordereauPreviewHref([item.id])} className={cn(actionLink, "text-sm")}>
+                            <FileText className="size-4" aria-hidden />
+                            Bordereau
+                          </Link>
+                        ) : null}
                         {canEdit ? (
                           <>
                             <button type="button" className={cn(actionLink, "text-sm")} onClick={() => setDialogs((current) => ({ ...current, branch: item }))}>
@@ -344,6 +366,7 @@ export function CourrierApp({ branches, emsSociete, emsContacts, canEdit, persis
         )}
       </section>
 
+      <BordereauPickerDialog open={dialogs.picker} branches={branches} lastSent={lastSent} onClose={() => setDialogs((current) => ({ ...current, picker: false }))} />
       <BranchDialog target={dialogs.branch} defaultCompany={company || "CAAR"} onClose={() => setDialogs((current) => ({ ...current, branch: null }))} onSaved={done} />
       <EmsContactDialog target={dialogs.ems} onClose={() => setDialogs((current) => ({ ...current, ems: null }))} onSaved={done} />
       <EmsSocieteDialog open={dialogs.societe} current={emsSociete} onClose={() => setDialogs((current) => ({ ...current, societe: false }))} onSaved={done} />

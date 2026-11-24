@@ -7,7 +7,7 @@ import { StateMessage } from "@/components/common/state-message";
 import { buttonVariants } from "@/components/ui/button";
 import { BordereauEditor } from "@/features/courrier/components/bordereau-editor";
 import { pickBranches } from "@/features/courrier/lib/address-book";
-import { buildBordereauLines } from "@/features/courrier/lib/bordereau";
+import { buildEditorLines } from "@/features/courrier/lib/bordereau";
 import { envelopeQuerySchema } from "@/features/courrier/schemas";
 import { getAddressBook } from "@/features/courrier/services/courrier-service";
 import { todayIso } from "@/utils/dates";
@@ -30,12 +30,13 @@ export default async function BordereauPreviewPage({
   if (!parsed.success) return <StateMessage kind="error" title="Aucune succursale choisie" message="Cochez une ou plusieurs succursales dans la page « Adresses courrier »." action={back} />;
   const result = await getAddressBook(user);
   if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="Bordereau indisponible" message={result.error} />;
+  if (!result.data.canEdit) return <StateMessage kind="forbidden" title="Bordereau réservé" message="Établir un bordereau demande l'accès Partenaires en modification." action={back} />;
   const branches = pickBranches(result.data.branches, parsed.data.ids);
   if (branches.length === 0) return <StateMessage kind="empty" title="Succursale introuvable" message="Ces fiches ont peut-être été supprimées." action={back} />;
   return (
     <>
-      <PageHeader title="Bordereau d'envoi" description="Vérifiez et complétez le bordereau, puis imprimez-le sur le papier à en-tête avant de remettre les enveloppes à EMS." actions={back} />
-      <BordereauEditor initialLines={buildBordereauLines(branches)} initialDate={todayIso()} ramasseurs={[...result.data.emsContacts].sort((a, b) => Number(b.role === "RAMASSEUR") - Number(a.role === "RAMASSEUR")).map((contact) => contact.nom)} />
+      <PageHeader title="Bordereau d'envoi" description="Vérifiez et complétez le bordereau, puis enregistrez-le : il reçoit un numéro et sa date de création, puis s'imprime sur le papier à en-tête avant la remise des enveloppes à EMS." actions={back} />
+      <BordereauEditor initialLines={buildEditorLines(branches)} initialDate={todayIso()} ramasseurs={[...result.data.emsContacts].sort((a, b) => Number(b.role === "RAMASSEUR") - Number(a.role === "RAMASSEUR")).map((contact) => contact.nom)} />
     </>
   );
 }

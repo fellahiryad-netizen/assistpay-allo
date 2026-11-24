@@ -1,22 +1,22 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { Plus, Printer, Trash2 } from "lucide-react";
+import { Plus, Printer, Save, Trash2 } from "lucide-react";
+import { createEnvoiAction } from "@/app/actions/envoi-actions";
 import { Notice } from "@/components/common/notice";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
-import { bordereauDateLabel, bordereauHref, totalPlis } from "@/features/courrier/lib/bordereau";
-import { bordereauQuerySchema } from "@/features/courrier/schemas";
-import { DEFAULT_OBSERVATION, type BordereauLine } from "@/features/courrier/types";
-import { cn } from "@/utils/cn";
+import { bordereauDateLabel } from "@/features/courrier/lib/bordereau";
+import { envoiCreateSchema } from "@/features/courrier/schemas";
+import { DEFAULT_OBSERVATION, type Envoi, type EnvoiLine } from "@/features/courrier/types";
 
 /** Propriétés de l'éditeur de bordereau. */
 export interface BordereauEditorProps {
-  initialLines: BordereauLine[];
+  initialLines: EnvoiLine[];
   /** Date du jour `AAAA-MM-JJ` (fuseau d'Alger), calculée côté serveur. */
   initialDate: string;
   /** Noms des contacts EMS, le ramasseur en premier (choisi par défaut). */
@@ -25,6 +25,8 @@ export interface BordereauEditorProps {
 
 interface Row {
   key: number;
+  brancheId: string;
+  compagnie: EnvoiLine["compagnie"];
   designation: string;
   qnt: string;
   destination: string;
@@ -40,34 +42,49 @@ export function BordereauEditor({ initialLines, initialDate, ramasseurs }: Reado
   const [ramChoice, setRamChoice] = useState<string>(ramasseurs.length > 0 ? "0" : "vide");
   const [ramFree, setRamFree] = useState("");
   const ramasseur = ramChoice === "autre" ? ramFree : ramChoice === "vide" ? "" : (ramasseurs[Number(ramChoice)] ?? "");
-  const [rows, setRows] = useState<Row[]>(() => initialLines.map((line, index) => ({ key: index, designation: line.designation, qnt: String(line.qnt), destination: line.destination, observation: line.observation })));
+  const [rows, setRows] = useState<Row[]>(() => initialLines.map((line, index) => ({ key: index, brancheId: line.brancheId, compagnie: line.compagnie, designation: line.designation, qnt: String(line.qnt), destination: line.destination, observation: line.observation })));
 
-  const checked = useMemo(
-    () =>
-      bordereauQuerySchema.safeParse({
-        date,
-        cachet: cachet ? "1" : "0",
-        des: rows.map((row) => row.designation),
-        qnt: rows.map((row) => row.qnt),
-        dst: rows.map((row) => row.destination),
-        obs: rows.map((row) => row.observation),
-        ram: ramasseur,
-      }),
-    [date, cachet, rows, ramasseur],
+  const [remarque, setRemarque] = useState("");
+  const [saved, setSaved] = useState<Envoi | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const payload = useMemo(
+    () => ({
+      date,
+      ramasseur,
+      remarque,
+      lignes: rows.map((row) => ({ brancheId: row.brancheId, compagnie: row.compagnie, designation: row.designation, qnt: row.qnt.trim() === "" ? Number.NaN : Number(row.qnt), destination: row.destination, observation: row.observation })),
+    }),
+    [date, ramasseur, remarque, rows],
   );
-  const lines: BordereauLine[] = checked.success ? checked.data.des.map((designation, index) => ({ designation, qnt: checked.data.qnt[index] ?? 1, destination: checked.data.dst[index] ?? "", observation: checked.data.obs[index] ?? "" })) : [];
-  const total = checked.success ? totalPlis(lines) : rows.reduce((sum, row) => sum + (Number.parseInt(row.qnt, 10) || 0), 0);
+  const checked = useMemo(() => envoiCreateSchema.safeParse(payload), [payload]);
+  const total = checked.success ? checked.data.lignes.reduce((sum, line) => sum + line.qnt, 0) : rows.reduce((sum, row) => sum + (Number.parseInt(row.qnt, 10) || 0), 0);
+  const printHref = (numero: string): string => `/imprimer/bordereau?no=${encodeURIComponent(numero)}${cachet ? "" : "&cachet=0"}`;
+
+  function save(): void {
+    if (!checked.success || saved) return;
+    setFailure(null);
+    startTransition(async () => {
+      const result = await createEnvoiAction(payload);
+      if (result.success) {
+        setSaved(result.data);
+        // Selon le navigateur, l'ouverture automatique peut être bloquée : le lien « Imprimer » reste affiché.
+        window.open(printHref(result.data.numero), "_blank", "noopener,noreferrer");
+      } else setFailure(result.error);
+    });
+  }
 
   const update = (key: number, patch: Partial<Omit<Row, "key">>): void => setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   const add = (): void => {
     counter.current += 1;
     const key = counter.current;
-    setRows((current) => [...current, { key, designation: "", qnt: "1", destination: "", observation: DEFAULT_OBSERVATION }]);
+    setRows((current) => [...current, { key, brancheId: "", compagnie: "", designation: "", qnt: "1", destination: "", observation: DEFAULT_OBSERVATION }]);
   };
   const remove = (key: number): void => setRows((current) => current.filter((row) => row.key !== key));
 
   return (
-    <div className="flex flex-col gap-4">
+    <fieldset disabled={saved !== null || pending} className="flex min-w-0 flex-col gap-4 border-0 p-0">
       <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:items-end">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="bd-date">Date du bordereau</Label>
@@ -130,6 +147,11 @@ export function BordereauEditor({ initialLines, initialDate, ramasseurs }: Reado
         ))}
       </ul>
 
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="bd-remarque">Remarque (facultative, conservée dans l&apos;historique)</Label>
+        <Input id="bd-remarque" value={remarque} onChange={(event) => setRemarque(event.target.value)} maxLength={300} autoComplete="off" />
+      </div>
+
       <div className="flex flex-wrap items-center gap-3">
         <Button type="button" variant="outline" onClick={add} disabled={rows.length >= 60}>
           <Plus />
@@ -138,21 +160,30 @@ export function BordereauEditor({ initialLines, initialDate, ramasseurs }: Reado
         <p className="text-sm font-semibold" aria-live="polite">
           Total : {total} pli(s)
         </p>
-        {checked.success ? (
-          <Link href={bordereauHref({ date, cachet, ramasseur: checked.data.ram, lines })} target="_blank" rel="noopener noreferrer" className={cn(buttonVariants(), "sm:ml-auto")}>
-            <Printer />
-            Imprimer le bordereau
-          </Link>
-        ) : (
-          <span aria-disabled="true" className={cn(buttonVariants(), "pointer-events-none opacity-50 sm:ml-auto")}>
-            <Printer />
-            Imprimer le bordereau
-          </span>
-        )}
+        <Button type="button" className="sm:ml-auto" onClick={save} disabled={!checked.success || saved !== null || pending}>
+          <Save />
+          {pending ? "Enregistrement…" : "Enregistrer et imprimer"}
+        </Button>
       </div>
-      {checked.success ? null : (
-        <Notice tone="warning">{rows.length === 0 ? "Ajoutez au moins une ligne pour imprimer le bordereau." : (checked.error.issues[0]?.message ?? "Vérifiez les champs du bordereau.")}</Notice>
+      <p className="text-xs text-muted-foreground">Chaque bordereau est enregistré avec un numéro, sa date et son heure de création : il n&apos;y a pas d&apos;impression sans enregistrement.</p>
+      {failure ? <Notice tone="error">{failure}</Notice> : null}
+      {saved ? (
+        <Notice tone="success">
+          <p className="font-semibold">Bordereau {saved.numero} enregistré.</p>
+          <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+            <a href={printHref(saved.numero)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium underline">
+              <Printer className="size-4" aria-hidden />
+              Imprimer le bordereau
+            </a>
+            <Link href="/adresses-courrier/historique" className="font-medium underline">
+              Voir l&apos;historique et renseigner la date de ramassage
+            </Link>
+          </p>
+        </Notice>
+      ) : null}
+      {checked.success || saved ? null : (
+        <Notice tone="warning">{rows.length === 0 ? "Ajoutez au moins une ligne pour enregistrer le bordereau." : (checked.error.issues[0]?.message ?? "Vérifiez les champs du bordereau.")}</Notice>
       )}
-    </div>
+    </fieldset>
   );
 }

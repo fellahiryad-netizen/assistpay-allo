@@ -71,3 +71,72 @@ export interface BordereauLine {
   destination: string;
   observation: string;
 }
+
+/** Statuts d'un bordereau enregistré. */
+export const ENVOI_STATUTS = ["ETABLI", "RAMASSE", "ANNULE"] as const;
+/** Statut d'un bordereau enregistré. */
+export type EnvoiStatut = (typeof ENVOI_STATUTS)[number];
+
+/** Libellés français des statuts. */
+export const ENVOI_STATUT_LABELS: Readonly<Record<EnvoiStatut, string>> = { ETABLI: "Établi", RAMASSE: "Ramassé", ANNULE: "Annulé" };
+
+/** Ligne d'un bordereau enregistré : ce qui a été envoyé, et où. */
+export interface EnvoiLine {
+  /** Identifiant de la fiche du carnet (vide pour une ligne libre). */
+  brancheId: string;
+  /** Compagnie de la fiche (vide pour une ligne libre). */
+  compagnie: CourrierCompany | "";
+  designation: string;
+  qnt: number;
+  destination: string;
+  observation: string;
+}
+
+/** Bordereau d'envoi enregistré (jamais supprimé : on l'annule avec un motif). */
+export interface Envoi {
+  /** Numéro d'ordre « BE-AAAA-NNN », séquence propre aux bordereaux. */
+  numero: string;
+  annee: number;
+  /** Instant de création (ISO UTC), affiché à l'heure d'Alger ; non modifiable. */
+  creeLe: string;
+  creePar: string;
+  creeParId: string;
+  /** Date imprimée « ALGER LE » (`AAAA-MM-JJ`). */
+  date: string;
+  ramasseur: string;
+  /** Date à laquelle EMS a réellement ramassé (`AAAA-MM-JJ`), vide tant qu'elle n'est pas connue. */
+  ramasseLe: string;
+  lignes: EnvoiLine[];
+  /** Total de plis (somme des quantités). */
+  total: number;
+  remarque: string;
+  statut: EnvoiStatut;
+  motifAnnulation: string;
+  annuleLe: string;
+  annulePar: string;
+}
+
+/** Contenu d'une clé `courrier:envois:AAAA`. */
+export interface EnvoiYear {
+  /** Dernier numéro attribué dans l'année. */
+  seq: number;
+  items: Envoi[];
+}
+
+/** Préfixe des clés Setting des bordereaux (une clé par année). */
+export const ENVOI_KEY_PREFIX = "courrier:envois:";
+
+/** Nombre maximal de bordereaux enregistrés par année. */
+export const MAX_ENVOIS_PAR_AN = 500;
+
+/** Filtres de l'historique des bordereaux. */
+export interface EnvoiFilters {
+  q: string;
+  /** Création à partir de (`AAAA-MM-JJ`, vide = sans borne). */
+  du: string;
+  /** Création jusqu'à (`AAAA-MM-JJ`, vide = sans borne). */
+  au: string;
+  ramasse: "" | "oui" | "non";
+  statut: "" | EnvoiStatut;
+  compagnie: "" | CourrierCompany;
+}

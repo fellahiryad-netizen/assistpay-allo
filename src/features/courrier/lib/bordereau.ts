@@ -1,5 +1,5 @@
 import { cleanText } from "@/features/courrier/lib/clean";
-import { DEFAULT_OBSERVATION, type BordereauLine, type BranchAddress } from "@/features/courrier/types";
+import { DEFAULT_OBSERVATION, type BordereauLine, type BranchAddress, type EnvoiLine } from "@/features/courrier/types";
 import { upperPlain } from "@/utils/text";
 
 /** Villes connues, avec leur écriture soignée (clé : majuscules sans accent). */
@@ -43,6 +43,11 @@ export function buildBordereauLines(branches: ReadonlyArray<Pick<BranchAddress, 
   return branches.map((branch) => ({ designation: branch.nom, qnt: 1, destination: branchDestination(branch), observation: DEFAULT_OBSERVATION }));
 }
 
+/** Lignes de l'éditeur de bordereau : comme `buildBordereauLines`, avec l'identifiant et la compagnie de la fiche (gardés dans l'historique). */
+export function buildEditorLines(branches: ReadonlyArray<Pick<BranchAddress, "id" | "compagnie" | "nom" | "destination" | "adresse">>): EnvoiLine[] {
+  return branches.map((branch) => ({ brancheId: branch.id, compagnie: branch.compagnie, designation: branch.nom, qnt: 1, destination: branchDestination(branch), observation: DEFAULT_OBSERVATION }));
+}
+
 /** Total de plis : somme des quantités. */
 export function totalPlis(lines: ReadonlyArray<Pick<BordereauLine, "qnt">>): number {
   return lines.reduce((sum, line) => sum + line.qnt, 0);
@@ -52,31 +57,4 @@ export function totalPlis(lines: ReadonlyArray<Pick<BordereauLine, "qnt">>): num
 export function bordereauDateLabel(iso: string): string {
   const [year = "", month = "", day = ""] = iso.split("-");
   return `ALGER LE : ${day}/${month}/${year}`;
-}
-
-/** Paramètres de la page d'impression du bordereau. */
-export interface BordereauParams {
-  date: string;
-  cachet: boolean;
-  /** Nom du ramasseur (vide : ligne à remplir à la main). */
-  ramasseur: string;
-  lines: readonly BordereauLine[];
-}
-
-/**
- * Adresse de la page d'impression : date, cachet et, pour chaque ligne, désignation, quantité, destination et observation
- * (paramètres répétés dans le même ordre). Ne contient aucun identifiant ni donnée sensible.
- */
-export function bordereauHref(params: BordereauParams): string {
-  const query = new URLSearchParams();
-  query.set("date", params.date);
-  if (!params.cachet) query.set("cachet", "0");
-  if (params.ramasseur.trim() !== "") query.set("ram", params.ramasseur.trim());
-  for (const line of params.lines) {
-    query.append("des", line.designation);
-    query.append("qnt", String(line.qnt));
-    query.append("dst", line.destination);
-    query.append("obs", line.observation);
-  }
-  return `/imprimer/bordereau?${query.toString()}`;
 }

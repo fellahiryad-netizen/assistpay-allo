@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { parseAddressBook } from "@/features/courrier/lib/address-book";
-import { bordereauDateLabel, bordereauHref, branchDestination, buildBordereauLines, defaultDestination, totalPlis } from "@/features/courrier/lib/bordereau";
+import { bordereauDateLabel, branchDestination, buildBordereauLines, buildEditorLines, defaultDestination, totalPlis } from "@/features/courrier/lib/bordereau";
 import { buildDefaultBook } from "@/features/courrier/lib/seed";
-import { bordereauLinesOf, bordereauQuerySchema, branchSchema } from "@/features/courrier/schemas";
+import { branchSchema } from "@/features/courrier/schemas";
 import { DEFAULT_OBSERVATION } from "@/features/courrier/types";
 import { todayIso } from "@/utils/dates";
 
@@ -94,69 +94,10 @@ describe("lignes du bordereau", () => {
   });
 });
 
-describe("paramètres de l'adresse d'impression", () => {
-  const lines = buildBordereauLines([byId("caat-alger-3"), byId("caar-oran-400")]);
-  const toRaw = (href: string) => {
-    const query = new URL(href, "http://x").searchParams;
-    return { date: query.get("date") ?? undefined, cachet: query.get("cachet") ?? undefined, des: query.getAll("des"), qnt: query.getAll("qnt"), dst: query.getAll("dst"), obs: query.getAll("obs"), ram: query.get("ram") ?? undefined };
-  };
-
-  it("aller-retour : l'adresse construite se relit identique et ne contient aucun identifiant", () => {
-    const href = bordereauHref({ date: "2026-11-24", cachet: true, ramasseur: "Hichem", lines });
-    expect(href.startsWith("/imprimer/bordereau?")).toBe(true);
-    const parsed = bordereauQuerySchema.parse(toRaw(href));
-    expect(parsed.date).toBe("2026-11-24");
-    expect(parsed.cachet).toBe(true);
-    expect(parsed.ram).toBe("Hichem");
-    expect(bordereauLinesOf(parsed)).toEqual(lines);
-    expect(href).not.toMatch(/ids=|caat-alger-3|caar-oran-400/);
-  });
-
-  it("une ligne unique (paramètres non répétés) est acceptée ; cachet=0 le désactive", () => {
-    const parsed = bordereauQuerySchema.parse({ date: "2026-11-24", cachet: "0", des: "X", qnt: "2", dst: "", obs: "" });
-    expect(parsed.cachet).toBe(false);
-    expect(bordereauLinesOf(parsed)).toEqual([{ designation: "X", qnt: 2, destination: "", observation: "" }]);
-  });
-
-  it("refuse une date impossible ou absente, une quantité fausse, des listes de longueurs différentes, aucune ligne, trop de lignes", () => {
-    const ok = { date: "2026-11-24", des: ["A"], qnt: ["1"], dst: ["B"], obs: ["C"] };
-    expect(bordereauQuerySchema.safeParse(ok).success).toBe(true);
-    expect(bordereauQuerySchema.safeParse({ ...ok, date: "2026-02-31" }).success).toBe(false);
-    expect(bordereauQuerySchema.safeParse({ ...ok, date: undefined }).success).toBe(false);
-    expect(bordereauQuerySchema.safeParse({ ...ok, date: "24/11/2026" }).success).toBe(false);
-    for (const qnt of ["0", "-1", "1.5", "abc", "10000", ""]) expect(bordereauQuerySchema.safeParse({ ...ok, qnt: [qnt] }).success, qnt).toBe(false);
-    expect(bordereauQuerySchema.safeParse({ ...ok, qnt: ["1", "2"] }).success).toBe(false);
-    expect(bordereauQuerySchema.safeParse({ ...ok, des: [], qnt: [], dst: [], obs: [] }).success).toBe(false);
-    expect(bordereauQuerySchema.safeParse({ date: "2026-11-24" }).success).toBe(false);
-    const many = Array.from({ length: 61 }, () => "1");
-    expect(bordereauQuerySchema.safeParse({ date: "2026-11-24", des: many, qnt: many, dst: many, obs: many }).success).toBe(false);
-    expect(bordereauQuerySchema.safeParse({ ...ok, des: ["   "] }).success).toBe(false);
-    expect(bordereauQuerySchema.safeParse({ ...ok, des: ["A".repeat(121)] }).success).toBe(false);
-    expect(bordereauQuerySchema.safeParse({ ...ok, cachet: "oui" }).success).toBe(false);
-  });
-
-  it("les textes sont nettoyés (espaces insécables et multiples)", () => {
-    const parsed = bordereauQuerySchema.parse({ date: "2026-11-24", des: [`SUCCURSALE${String.fromCharCode(160)}  CAAR`], qnt: ["1"], dst: [" ORAN "], obs: [""] });
-    expect(parsed.des[0]).toBe("SUCCURSALE CAAR");
-    expect(parsed.dst[0]).toBe("ORAN");
-  });
-
-  it("ramasseur : contact choisi, nom libre (remplaçant) nettoyé, ou vide (ligne à remplir)", () => {
-    const base = { date: "2026-11-24", des: ["A"], qnt: ["1"], dst: [""], obs: [""] };
-    const hichem = bordereauHref({ date: "2026-11-24", cachet: true, ramasseur: "Hichem", lines });
-    expect(toRaw(hichem).des).toHaveLength(2);
-    expect(new URL(hichem, "http://x").searchParams.get("ram")).toBe("Hichem");
-    expect(bordereauQuerySchema.parse({ ...base, ram: "Hichem" }).ram).toBe("Hichem");
-    expect(bordereauQuerySchema.parse({ ...base, ram: `  Karim${String.fromCharCode(160)}  B. ` }).ram).toBe("Karim B.");
-    const vide = bordereauHref({ date: "2026-11-24", cachet: true, ramasseur: "   ", lines });
-    expect(new URL(vide, "http://x").searchParams.has("ram")).toBe(false);
-    expect(bordereauQuerySchema.parse(base).ram).toBe("");
-    expect(bordereauQuerySchema.parse({ ...base, ram: "" }).ram).toBe("");
-  });
-
-  it("ramasseur : 80 caractères au plus", () => {
-    const base = { date: "2026-11-24", des: ["A"], qnt: ["1"], dst: [""], obs: [""] };
-    expect(bordereauQuerySchema.safeParse({ ...base, ram: "x".repeat(80) }).success).toBe(true);
-    expect(bordereauQuerySchema.safeParse({ ...base, ram: "x".repeat(81) }).success).toBe(false);
+describe("lignes de l'éditeur (enregistrées dans l'historique)", () => {
+  it("gardent l'identifiant et la compagnie de la fiche, en plus des champs du bordereau", () => {
+    const lines = buildEditorLines([byId("caat-alger-3"), byId("caar-oran-400")]);
+    expect(lines[0]).toEqual({ brancheId: "caat-alger-3", compagnie: "CAAT", designation: "SUCCURSALE CAAT ALGER 3", qnt: 1, destination: "CITE CHAABANI HYDRA ALGER", observation: DEFAULT_OBSERVATION });
+    expect(lines[1]).toMatchObject({ brancheId: "caar-oran-400", compagnie: "CAAR", destination: "ORAN" });
   });
 });
