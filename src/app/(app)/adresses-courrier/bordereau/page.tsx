@@ -35,7 +35,7 @@ export default async function BordereauPreviewPage({
   return (
     <>
       <PageHeader title="Bordereau d'envoi" description="Vérifiez et complétez le bordereau, puis imprimez-le sur le papier à en-tête avant de remettre les enveloppes à EMS." actions={back} />
-      <BordereauEditor initialLines={buildBordereauLines(branches)} initialDate={todayIso()} />
+      <BordereauEditor initialLines={buildBordereauLines(branches)} initialDate={todayIso()} ramasseurs={[...result.data.emsContacts].sort((a, b) => Number(b.role === "RAMASSEUR") - Number(a.role === "RAMASSEUR")).map((contact) => contact.nom)} />
     </>
   );
 }

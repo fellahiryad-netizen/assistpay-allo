@@ -8,6 +8,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { bordereauDateLabel, bordereauHref, totalPlis } from "@/features/courrier/lib/bordereau";
 import { bordereauQuerySchema } from "@/features/courrier/schemas";
 import { DEFAULT_OBSERVATION, type BordereauLine } from "@/features/courrier/types";
@@ -18,6 +19,8 @@ export interface BordereauEditorProps {
   initialLines: BordereauLine[];
   /** Date du jour `AAAA-MM-JJ` (fuseau d'Alger), calculée côté serveur. */
   initialDate: string;
+  /** Noms des contacts EMS, le ramasseur en premier (choisi par défaut). */
+  ramasseurs: string[];
 }
 
 interface Row {
@@ -29,10 +32,14 @@ interface Row {
 }
 
 /** Aperçu modifiable du bordereau : date, lignes (quantité, destination, observation), ajout d'une ligne libre, retrait d'une ligne, cachet. */
-export function BordereauEditor({ initialLines, initialDate }: Readonly<BordereauEditorProps>): React.JSX.Element {
+export function BordereauEditor({ initialLines, initialDate, ramasseurs }: Readonly<BordereauEditorProps>): React.JSX.Element {
   const counter = useRef(initialLines.length);
   const [date, setDate] = useState(initialDate);
   const [cachet, setCachet] = useState(true);
+  // « 0 », « 1 »… : contact EMS de la liste ; « autre » : nom saisi (remplaçant) ; « vide » : ligne à remplir à la main.
+  const [ramChoice, setRamChoice] = useState<string>(ramasseurs.length > 0 ? "0" : "vide");
+  const [ramFree, setRamFree] = useState("");
+  const ramasseur = ramChoice === "autre" ? ramFree : ramChoice === "vide" ? "" : (ramasseurs[Number(ramChoice)] ?? "");
   const [rows, setRows] = useState<Row[]>(() => initialLines.map((line, index) => ({ key: index, designation: line.designation, qnt: String(line.qnt), destination: line.destination, observation: line.observation })));
 
   const checked = useMemo(
@@ -44,8 +51,9 @@ export function BordereauEditor({ initialLines, initialDate }: Readonly<Borderea
         qnt: rows.map((row) => row.qnt),
         dst: rows.map((row) => row.destination),
         obs: rows.map((row) => row.observation),
+        ram: ramasseur,
       }),
-    [date, cachet, rows],
+    [date, cachet, rows, ramasseur],
   );
   const lines: BordereauLine[] = checked.success ? checked.data.des.map((designation, index) => ({ designation, qnt: checked.data.qnt[index] ?? 1, destination: checked.data.dst[index] ?? "", observation: checked.data.obs[index] ?? "" })) : [];
   const total = checked.success ? totalPlis(lines) : rows.reduce((sum, row) => sum + (Number.parseInt(row.qnt, 10) || 0), 0);
@@ -66,6 +74,24 @@ export function BordereauEditor({ initialLines, initialDate }: Readonly<Borderea
           <Input id="bd-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} className="sm:w-48" />
         </div>
         <p className="text-sm font-semibold sm:pb-2">{checked.success ? bordereauDateLabel(date) : "ALGER LE : —"}</p>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="bd-ram">Ramasseur EMS</Label>
+          <NativeSelect id="bd-ram" value={ramChoice} onChange={(event) => setRamChoice(event.target.value)} className="sm:w-56">
+            {ramasseurs.map((nom, index) => (
+              <option key={`${index}-${nom}`} value={String(index)}>
+                {nom}
+              </option>
+            ))}
+            <option value="autre">Autre (saisir un nom)</option>
+            <option value="vide">Laisser vide</option>
+          </NativeSelect>
+        </div>
+        {ramChoice === "autre" ? (
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="bd-ram-free">Nom du remplaçant</Label>
+            <Input id="bd-ram-free" value={ramFree} onChange={(event) => setRamFree(event.target.value)} maxLength={80} autoComplete="off" className="sm:w-56" />
+          </div>
+        ) : null}
         <label className="flex items-center gap-2 text-sm sm:ml-auto sm:pb-2">
           <Checkbox checked={cachet} onChange={(event) => setCachet(event.target.checked)} />
           Zone « Cachet et signature »
@@ -113,7 +139,7 @@ export function BordereauEditor({ initialLines, initialDate }: Readonly<Borderea
           Total : {total} pli(s)
         </p>
         {checked.success ? (
-          <Link href={bordereauHref({ date, cachet, lines })} target="_blank" rel="noopener noreferrer" className={cn(buttonVariants(), "sm:ml-auto")}>
+          <Link href={bordereauHref({ date, cachet, ramasseur: checked.data.ram, lines })} target="_blank" rel="noopener noreferrer" className={cn(buttonVariants(), "sm:ml-auto")}>
             <Printer />
             Imprimer le bordereau
           </Link>

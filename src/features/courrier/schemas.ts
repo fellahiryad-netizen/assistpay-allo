@@ -103,6 +103,8 @@ export const bordereauQuerySchema = z
     des: repeated(text(120, "Désignation trop longue (120 caractères au plus).").refine((value) => value.length > 0, "Chaque ligne a besoin d'une désignation.")),
     qnt: repeated(z.coerce.number({ invalid_type_error: "La quantité doit être un nombre." }).int("La quantité doit être un nombre entier.").min(1, "La quantité doit être au moins 1.").max(9999, "Quantité trop grande.")),
     dst: repeated(text(120, "Destination trop longue (120 caractères au plus).")),
+    /** Nom du ramasseur EMS (contact choisi ou remplaçant saisi) ; vide : ligne à remplir à la main. */
+    ram: text(80, "Nom du ramasseur trop long (80 caractères au plus).").default(""),
     obs: repeated(text(160, "Observation trop longue (160 caractères au plus).")),
   })
   .refine((value) => value.des.length === value.qnt.length && value.des.length === value.dst.length && value.des.length === value.obs.length, { message: "Les lignes du bordereau sont incomplètes." });

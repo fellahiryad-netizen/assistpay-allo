@@ -98,15 +98,16 @@ describe("paramètres de l'adresse d'impression", () => {
   const lines = buildBordereauLines([byId("caat-alger-3"), byId("caar-oran-400")]);
   const toRaw = (href: string) => {
     const query = new URL(href, "http://x").searchParams;
-    return { date: query.get("date") ?? undefined, cachet: query.get("cachet") ?? undefined, des: query.getAll("des"), qnt: query.getAll("qnt"), dst: query.getAll("dst"), obs: query.getAll("obs") };
+    return { date: query.get("date") ?? undefined, cachet: query.get("cachet") ?? undefined, des: query.getAll("des"), qnt: query.getAll("qnt"), dst: query.getAll("dst"), obs: query.getAll("obs"), ram: query.get("ram") ?? undefined };
   };
 
   it("aller-retour : l'adresse construite se relit identique et ne contient aucun identifiant", () => {
-    const href = bordereauHref({ date: "2026-11-24", cachet: true, lines });
+    const href = bordereauHref({ date: "2026-11-24", cachet: true, ramasseur: "Hichem", lines });
     expect(href.startsWith("/imprimer/bordereau?")).toBe(true);
     const parsed = bordereauQuerySchema.parse(toRaw(href));
     expect(parsed.date).toBe("2026-11-24");
     expect(parsed.cachet).toBe(true);
+    expect(parsed.ram).toBe("Hichem");
     expect(bordereauLinesOf(parsed)).toEqual(lines);
     expect(href).not.toMatch(/ids=|caat-alger-3|caar-oran-400/);
   });
@@ -138,5 +139,24 @@ describe("paramètres de l'adresse d'impression", () => {
     const parsed = bordereauQuerySchema.parse({ date: "2026-11-24", des: [`SUCCURSALE${String.fromCharCode(160)}  CAAR`], qnt: ["1"], dst: [" ORAN "], obs: [""] });
     expect(parsed.des[0]).toBe("SUCCURSALE CAAR");
     expect(parsed.dst[0]).toBe("ORAN");
+  });
+
+  it("ramasseur : contact choisi, nom libre (remplaçant) nettoyé, ou vide (ligne à remplir)", () => {
+    const base = { date: "2026-11-24", des: ["A"], qnt: ["1"], dst: [""], obs: [""] };
+    const hichem = bordereauHref({ date: "2026-11-24", cachet: true, ramasseur: "Hichem", lines });
+    expect(toRaw(hichem).des).toHaveLength(2);
+    expect(new URL(hichem, "http://x").searchParams.get("ram")).toBe("Hichem");
+    expect(bordereauQuerySchema.parse({ ...base, ram: "Hichem" }).ram).toBe("Hichem");
+    expect(bordereauQuerySchema.parse({ ...base, ram: `  Karim${String.fromCharCode(160)}  B. ` }).ram).toBe("Karim B.");
+    const vide = bordereauHref({ date: "2026-11-24", cachet: true, ramasseur: "   ", lines });
+    expect(new URL(vide, "http://x").searchParams.has("ram")).toBe(false);
+    expect(bordereauQuerySchema.parse(base).ram).toBe("");
+    expect(bordereauQuerySchema.parse({ ...base, ram: "" }).ram).toBe("");
+  });
+
+  it("ramasseur : 80 caractères au plus", () => {
+    const base = { date: "2026-11-24", des: ["A"], qnt: ["1"], dst: [""], obs: [""] };
+    expect(bordereauQuerySchema.safeParse({ ...base, ram: "x".repeat(80) }).success).toBe(true);
+    expect(bordereauQuerySchema.safeParse({ ...base, ram: "x".repeat(81) }).success).toBe(false);
   });
 });

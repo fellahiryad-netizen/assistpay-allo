@@ -58,6 +58,8 @@ export function bordereauDateLabel(iso: string): string {
 export interface BordereauParams {
   date: string;
   cachet: boolean;
+  /** Nom du ramasseur (vide : ligne à remplir à la main). */
+  ramasseur: string;
   lines: readonly BordereauLine[];
 }
 
@@ -69,6 +71,7 @@ export function bordereauHref(params: BordereauParams): string {
   const query = new URLSearchParams();
   query.set("date", params.date);
   if (!params.cachet) query.set("cachet", "0");
+  if (params.ramasseur.trim() !== "") query.set("ram", params.ramasseur.trim());
   for (const line of params.lines) {
     query.append("des", line.designation);
     query.append("qnt", String(line.qnt));
