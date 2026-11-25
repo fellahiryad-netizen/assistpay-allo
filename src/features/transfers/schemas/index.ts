@@ -1,7 +1,8 @@
 import { z } from "zod";
 
-/** Activités d'un compte RIB : A = assistance routière, B = BDG, C = autre fournisseur (hors fichiers de virements A/B). */
+/** Produits des fichiers de virements : A = assistance routière, B = BDG. */
 const productSchema = z.enum(["A", "B"]);
+/** Activités d'un compte RIB : A, B, ou C = autre fournisseur (hors fichiers de virements). */
 const ribProductSchema = z.enum(["A", "B", "C"]);
 
 /** Options du contrôle d'un fichier déposé. */
