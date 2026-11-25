@@ -33,7 +33,7 @@ function Lines({ fit, className }: Readonly<{ fit: FitResult; className?: string
 }
 
 /**
- * Sigle de la compagnie écrit « CaaT » / « CaaR » : première lettre en capitale, les deux « a » en petit, dernière lettre en très grande capitale soulignée,
+ * Sigle de la compagnie écrit « CAAT » / « CAAR » : « CAA » en majuscules normales, dernière lettre en très grande capitale grasse et soulignée,
  * puisque c'est la seule différence entre les deux sigles. Le texte lu par un lecteur d'écran reste le sigle normal.
  */
 export function CompanySigle({ company }: Readonly<{ company: MarkedCompany }>): React.JSX.Element {
@@ -41,7 +41,6 @@ export function CompanySigle({ company }: Readonly<{ company: MarkedCompany }>):
   return (
     <span className="env-sigle" role="img" aria-label={company}>
       <span className="env-sigle-first" aria-hidden>{parts.first}</span>
-      <span className="env-sigle-small" aria-hidden>{parts.small}</span>
       <span className="env-sigle-last" aria-hidden>{parts.last}</span>
     </span>
   );

@@ -22,12 +22,12 @@ export const COMPANY_NAMES: Readonly<Record<MarkedCompany, string>> = {
   CAAR: "COMPAGNIE ALGÉRIENNE D'ASSURANCE ET DE RÉASSURANCE",
 };
 
-/** Sigle décomposé d'une compagnie, par exemple `CAAT` donne « C », « aa », « T ». */
+/** Sigle décomposé d'une compagnie, par exemple `CAAT` donne « CAA » (majuscules, caractères normaux), « » et « T » (dernière lettre, en gras et soulignée). */
 export function sigleParts(company: MarkedCompany): SigleParts {
-  return { first: company.slice(0, 1), small: company.slice(1, -1).toLocaleLowerCase("fr"), last: company.slice(-1) };
+  return { first: company.slice(0, -1), small: "", last: company.slice(-1) };
 }
 
-/** Sigle écrit à la façon du repère imprimé : « CaaT », « CaaR ». */
+/** Sigle écrit comme sur le repère imprimé : « CAAT », « CAAR ». */
 export function sigleText(company: MarkedCompany): string {
   const parts = sigleParts(company);
   return `${parts.first}${parts.small}${parts.last}`;
@@ -61,7 +61,7 @@ export function groupByCompany<T extends { compagnie: string }>(items: readonly 
   return ordered.map((key) => ({ compagnie: key as CompanyGroup<T>["compagnie"], items: items.filter((item) => (markedCompany(item.compagnie) ?? "") === key) }));
 }
 
-/** Libellé d'un sous-total : « CaaT : 3 plis » (singulier pour un pli). */
+/** Libellé d'un sous-total : « CAAT : 3 plis » (singulier pour un pli). */
 export function subtotalLabel(company: MarkedCompany, plis: number): string {
   return `${sigleText(company)} : ${plis} ${plis > 1 ? "plis" : "pli"}`;
 }

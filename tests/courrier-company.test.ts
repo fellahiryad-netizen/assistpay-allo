@@ -9,11 +9,11 @@ import { join } from "node:path";
 const line = (compagnie: string, designation: string, qnt = 1) => ({ compagnie, designation, qnt });
 
 describe("sigle de la compagnie", () => {
-  it("CaaT et CaaR : seule la dernière lettre change", () => {
-    expect(sigleParts("CAAT")).toEqual({ first: "C", small: "aa", last: "T" });
-    expect(sigleParts("CAAR")).toEqual({ first: "C", small: "aa", last: "R" });
-    expect(sigleText("CAAT")).toBe("CaaT");
-    expect(sigleText("CAAR")).toBe("CaaR");
+  it("CAAT et CAAR : seule la dernière lettre change", () => {
+    expect(sigleParts("CAAT")).toEqual({ first: "CAA", small: "", last: "T" });
+    expect(sigleParts("CAAR")).toEqual({ first: "CAA", small: "", last: "R" });
+    expect(sigleText("CAAT")).toBe("CAAT");
+    expect(sigleText("CAAR")).toBe("CAAR");
   });
 
   it("repère seulement pour CAAT et CAAR", () => {
@@ -27,8 +27,8 @@ describe("sigle de la compagnie", () => {
   });
 
   it("sous-total : singulier et pluriel", () => {
-    expect(subtotalLabel("CAAT", 3)).toBe("CaaT : 3 plis");
-    expect(subtotalLabel("CAAR", 1)).toBe("CaaR : 1 pli");
+    expect(subtotalLabel("CAAT", 3)).toBe("CAAT : 3 plis");
+    expect(subtotalLabel("CAAR", 1)).toBe("CAAR : 1 pli");
   });
 });
 
