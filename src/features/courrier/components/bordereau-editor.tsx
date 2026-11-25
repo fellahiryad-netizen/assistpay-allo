@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { Fragment, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { Plus, Printer, Save, Trash2 } from "lucide-react";
 import { createEnvoiAction } from "@/app/actions/envoi-actions";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { bordereauDateLabel } from "@/features/courrier/lib/bordereau";
+import { groupByCompany, sigleText, subtotalLabel } from "@/features/courrier/lib/company";
 import { envoiCreateSchema } from "@/features/courrier/schemas";
 import { DEFAULT_OBSERVATION, type Envoi, type EnvoiLine } from "@/features/courrier/types";
 
@@ -60,6 +61,8 @@ export function BordereauEditor({ initialLines, initialDate, ramasseurs }: Reado
   );
   const checked = useMemo(() => envoiCreateSchema.safeParse(payload), [payload]);
   const total = checked.success ? checked.data.lignes.reduce((sum, line) => sum + line.qnt, 0) : rows.reduce((sum, row) => sum + (Number.parseInt(row.qnt, 10) || 0), 0);
+  const groups = useMemo(() => groupByCompany(rows), [rows]);
+  let lineNo = 0;
   const printHref = (numero: string): string => `/imprimer/bordereau?no=${encodeURIComponent(numero)}${cachet ? "" : "&cachet=0"}`;
 
   function save(): void {
@@ -115,8 +118,20 @@ export function BordereauEditor({ initialLines, initialDate, ramasseurs }: Reado
         </label>
       </div>
 
+      <p className="text-xs text-muted-foreground">À l&apos;impression, les lignes sont regroupées par compagnie (CAAT puis CAAR), avec un sous-total par compagnie. L&apos;ordre enregistré ne change pas.</p>
       <ul className="flex flex-col gap-3">
-        {rows.map((row, index) => (
+        {groups.map((group) => (
+          <Fragment key={group.compagnie || "autres"}>
+            {group.compagnie ? (
+              <li className="flex items-center justify-between gap-2 rounded-md border-2 border-foreground px-3 py-1.5 text-sm font-bold" aria-label={`Compagnie ${group.compagnie}`}>
+                <span>{sigleText(group.compagnie)}</span>
+                <span>{subtotalLabel(group.compagnie, group.items.reduce((sum, row) => sum + (Number.parseInt(row.qnt, 10) || 0), 0))}</span>
+              </li>
+            ) : null}
+            {group.items.map((row) => {
+              lineNo += 1;
+              const index = lineNo - 1;
+              return (
           <li key={row.key} className="rounded-lg border bg-card p-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-sm font-semibold text-muted-foreground">Ligne {index + 1}</p>
@@ -144,6 +159,9 @@ export function BordereauEditor({ initialLines, initialDate, ramasseurs }: Reado
               </div>
             </div>
           </li>
+              );
+            })}
+          </Fragment>
         ))}
       </ul>
 

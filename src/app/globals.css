@@ -692,6 +692,79 @@ html[data-skin="neo"] .skin-btn { border-color: rgba(59, 232, 255, 0.4); color: 
     font-size: 10.5pt;
     text-align: center;
   }
+  /* Repère de compagnie en haut de l'étiquette : logo en niveaux de gris à gauche, sigle « CaaT » / « CaaR » à droite ; le cadre aussi change (CAAR : double, CAAT : simple très épais). */
+  .env-frame-caat {
+    border: 3mm solid #000;
+    padding: 4mm 6mm 3mm;
+  }
+  .env-frame-caar {
+    border: 4.2mm double #000;
+    padding: 4mm 6mm 3mm;
+  }
+  .env-mark {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8mm;
+    padding-bottom: 2mm;
+    border-bottom: 1.2mm solid #000;
+    margin-bottom: 2mm;
+  }
+  .env-mark-logo {
+    height: 40mm;
+    width: auto;
+    max-width: 80mm;
+    object-fit: contain;
+    background: #fff;
+    filter: url(#env-bw);
+  }
+  .env-sigle {
+    display: inline-flex;
+    align-items: baseline;
+    line-height: 1;
+    letter-spacing: 0.01em;
+  }
+  .env-sigle-first {
+    font-size: 76pt;
+  }
+  .env-sigle-small {
+    font-size: 50pt;
+  }
+  .env-sigle-last {
+    font-size: 120pt;
+    margin-left: 1.5mm;
+    text-decoration: underline;
+    text-decoration-thickness: 2.2mm;
+    text-underline-offset: 2.2mm;
+  }
+  .env-mark-id {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    min-width: 0;
+  }
+  .env-mark-name {
+    margin-top: 2mm;
+    max-width: 150mm;
+    font-size: 14pt;
+    line-height: 1.1;
+    letter-spacing: 0.02em;
+    text-align: right;
+  }
+  .env-svg-defs {
+    position: absolute;
+  }
+  .env-head-compact .env-logo {
+    height: 14mm;
+  }
+  .env-head-compact .env-mention {
+    font-size: 13pt;
+    padding: 1mm 4mm;
+  }
+  .env-frame-caat .env-to,
+  .env-frame-caar .env-to {
+    gap: 2.5mm;
+  }
   .env-sheet,
   .env-sheet * {
     color: #000 !important;
@@ -791,6 +864,12 @@ html[data-skin="neo"] .skin-btn { border-color: rgba(59, 232, 255, 0.4); color: 
   }
   .bd-table .bd-dst {
     width: 24%;
+  }
+  .bd-table .bd-sub td {
+    border-top: 0.7mm solid #000;
+    text-align: right;
+    letter-spacing: 0.04em;
+    padding: 1.2mm 3mm;
   }
   .bd-table thead {
     display: table-header-group;

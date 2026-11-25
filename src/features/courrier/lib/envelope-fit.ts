@@ -159,3 +159,27 @@ export function layoutEnvelope(source: EnvelopeSource, widthMm: number = ENVELOP
     contact: source.contact ? fitEnvelopeText({ text: `À l'attention de ${source.contact}`, widthMm, maxPt: 30, minPt: 18, maxLines: 1 }) : null,
   };
 }
+
+/** Interligne des blocs de l'étiquette (identique à la feuille de style). */
+const LINE_HEIGHT = 1.05;
+
+/** Espace entre deux blocs de texte, en millimètres (identique à la feuille de style d'une étiquette avec repère de compagnie). */
+const BLOCK_GAP_MM = 2.5;
+
+/** Hauteur occupée par les blocs d'une mise en page, en millimètres. */
+export function layoutHeightMm(layout: EnvelopeLayout): number {
+  const blocks = [layout.nom, layout.adresse, ...(layout.telephones.lines.length > 0 ? [layout.telephones] : []), ...(layout.contact ? [layout.contact] : [])];
+  return blocks.reduce((sum, block) => sum + block.lines.length * block.fontPt * LINE_HEIGHT * MM_PER_PT, 0) + BLOCK_GAP_MM * Math.max(0, blocks.length - 1);
+}
+
+/**
+ * Réduit toutes les tailles dans la même proportion si la mise en page dépasse la hauteur disponible (étiquette avec repère de compagnie, qui prend de la place en haut).
+ * Une mise en page qui tient déjà est rendue telle quelle ; les lignes restent les mêmes (une taille plus petite ne peut pas ajouter de ligne).
+ */
+export function shrinkLayoutToHeight(layout: EnvelopeLayout, availableMm: number): EnvelopeLayout {
+  const needed = layoutHeightMm(layout);
+  if (needed <= availableMm) return layout;
+  const factor = Math.max(0.4, availableMm / needed);
+  const scale = (block: FitResult): FitResult => ({ ...block, fontPt: Math.max(12, Math.floor(block.fontPt * factor * 2) / 2) });
+  return { nom: scale(layout.nom), adresse: scale(layout.adresse), telephones: scale(layout.telephones), contact: layout.contact ? scale(layout.contact) : null };
+}

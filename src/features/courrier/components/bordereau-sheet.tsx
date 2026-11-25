@@ -1,5 +1,7 @@
+import { Fragment } from "react";
 import { ISSUER } from "@/features/billing/config";
 import { bordereauDateLabel } from "@/features/courrier/lib/bordereau";
+import { groupByCompany, subtotalLabel } from "@/features/courrier/lib/company";
 import type { Envoi } from "@/features/courrier/types";
 
 /** Propriétés du bordereau d'envoi imprimé. */
@@ -15,7 +17,7 @@ export interface BordereauSheetProps {
 /**
  * Bordereau d'envoi remis au prestataire de courrier. Pensé pour le papier à en-tête d'Allo Assistance : ni logo ni pied de page dessinés,
  * la place du logo (haut) et des coordonnées (bas) est réservée par les mêmes marges que les factures (`fx-wrap`, 52 mm et 34 mm).
- * Tout en noir et en gras, simples cadres noirs, aucun fond. Le numéro « BE-AAAA-NNN » s'imprime sous le titre.
+ * Tout en noir et en gras, simples cadres noirs, aucun fond. Le numéro « BE-AAAA-NNN » s'imprime sous le titre. Les lignes sont regroupées par compagnie (CAAT puis CAAR) avec un sous-total ; l'ordre enregistré ne change pas.
  */
 export function BordereauSheet({ envoi, duplicata, cachet }: Readonly<BordereauSheetProps>): React.JSX.Element {
   return (
@@ -54,13 +56,22 @@ export function BordereauSheet({ envoi, duplicata, cachet }: Readonly<BordereauS
                   </tr>
                 </thead>
                 <tbody>
-                  {envoi.lignes.map((line, index) => (
-                    <tr key={`${index}-${line.designation}`}>
-                      <td>{line.designation}</td>
-                      <td className="bd-qnt">{line.qnt}</td>
-                      <td>{line.destination}</td>
-                      <td>{line.observation}</td>
-                    </tr>
+                  {groupByCompany(envoi.lignes).map((group) => (
+                    <Fragment key={group.compagnie || "autres"}>
+                      {group.items.map((line, index) => (
+                        <tr key={`${index}-${line.designation}`}>
+                          <td>{line.designation}</td>
+                          <td className="bd-qnt">{line.qnt}</td>
+                          <td>{line.destination}</td>
+                          <td>{line.observation}</td>
+                        </tr>
+                      ))}
+                      {group.compagnie ? (
+                        <tr className="bd-sub">
+                          <td colSpan={4}>{subtotalLabel(group.compagnie, group.items.reduce((sum, line) => sum + line.qnt, 0))}</td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
                 <tfoot>
