@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { runAction } from "@/app/actions/action-helpers";
-import { hrAnomaliesValidateSchema, hrAnomalyRestoreSchema, hrAnomalyValidateSchema, hrDeleteSchema, hrEntrySchema, type HrEntryInput } from "@/features/hr/schemas";
-import { deleteHrEntry, restoreHrAnomaly, saveHrEntry, validateHrAnomalies } from "@/features/hr/services/hr-service";
+import type { HrDetailDTO } from "@/features/hr/types";
+import { hrAnomaliesValidateSchema, hrAssignSchema, hrDetailSchema, type HrAssignInput, hrAnomalyRestoreSchema, hrAnomalyValidateSchema, hrDeleteSchema, hrEntrySchema, type HrEntryInput } from "@/features/hr/schemas";
+import { assignHrEntryToLine, deleteHrEntry, getHrEntryDetail, unlinkHrEntryFromLines, restoreHrAnomaly, saveHrEntry, validateHrAnomalies } from "@/features/hr/services/hr-service";
 import type { ActionResult } from "@/types";
 
 function refresh(): void {
@@ -44,5 +45,30 @@ export async function validateHrAnomaliesAction(input: { keys: string[]; motif?:
 export async function restoreHrAnomalyAction(input: { key: string }): Promise<ActionResult<{ key: string }>> {
   const result = await runAction(hrAnomalyRestoreSchema, input, restoreHrAnomaly);
   if (result.success) refresh();
+  return result;
+}
+
+/** Détail d'une écriture RH (fenêtre dynamique). */
+export async function hrEntryDetailAction(input: { id: string }): Promise<ActionResult<HrDetailDTO>> {
+  return runAction(hrDetailSchema, input, getHrEntryDetail);
+}
+
+/** Affectation d'une écriture RH à une ligne du relevé. */
+export async function assignHrEntryAction(input: HrAssignInput): Promise<ActionResult<{ id: string }>> {
+  const result = await runAction(hrAssignSchema, input, assignHrEntryToLine);
+  if (result.success) {
+    refresh();
+    revalidatePath("/releve");
+  }
+  return result;
+}
+
+/** Détache une écriture RH du relevé. */
+export async function unlinkHrEntryAction(input: { id: string }): Promise<ActionResult<{ lines: number }>> {
+  const result = await runAction(hrDetailSchema, input, unlinkHrEntryFromLines);
+  if (result.success) {
+    refresh();
+    revalidatePath("/releve");
+  }
   return result;
 }

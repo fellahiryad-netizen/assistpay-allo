@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { HrAnomalies } from "@/features/hr/components/hr-anomalies";
+import { HrAmountDetail } from "@/features/hr/components/hr-amount-detail";
 import { HrEntryDialog } from "@/features/hr/components/hr-entry-dialog";
 import { hrQuerySchema } from "@/features/hr/schemas";
 import { listHr } from "@/features/hr/services/hr-service";
@@ -45,14 +46,14 @@ export default async function HrPage({
   const user = await requireUser();
   const raw = await searchParams;
   const one = (value: string | string[] | undefined): string | undefined => (Array.isArray(value) ? value[0] : value) || undefined;
-  const query = hrQuerySchema.parse({ annee: one(raw.annee), mois: one(raw.mois), nature: one(raw.nature), q: one(raw.q), releve: one(raw.releve), anomalies: one(raw.anomalies) });
+  const query = hrQuerySchema.parse({ annee: one(raw.annee), mois: one(raw.mois), nature: one(raw.nature), groupe: one(raw.groupe), q: one(raw.q), releve: one(raw.releve), anomalies: one(raw.anomalies) });
   const result = await listHr(user, query);
   if (!result.success) return <StateMessage kind={result.code === "FORBIDDEN" ? "forbidden" : "error"} title="RH indisponible" message={result.error} />;
   const data = result.data;
   const today = todayIso();
   const link = (patch: Record<string, string | undefined>): string => {
     const params = new URLSearchParams();
-    const merged = { annee: String(data.year), mois: query.mois, nature: query.nature, q: query.q, releve: query.releve, anomalies: query.anomalies, ...patch };
+    const merged = { annee: String(data.year), mois: query.mois, nature: query.nature, groupe: query.groupe, q: query.q, releve: query.releve, anomalies: query.anomalies, ...patch };
     for (const [key, value] of Object.entries(merged)) if (value) params.set(key, value);
     return `/rh?${params.toString()}`;
   };
@@ -96,11 +97,13 @@ export default async function HrPage({
         today={today}
       />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        {[...GROUPS.map((group) => [HR_GROUP_LABELS[group], data.totals[group]] as const), ["Total charges de personnel", sum(data.totals)] as const].map(([label, value]) => (
-          <Card key={label} className="p-3">
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="text-lg font-semibold tabular-nums">{formatDA(value)}</p>
-          </Card>
+        {[...GROUPS.map((group) => ({ label: HR_GROUP_LABELS[group], value: data.totals[group], group: group as HrGroup | undefined })), { label: "Total charges de personnel", value: sum(data.totals), group: undefined as HrGroup | undefined }].map(({ label, value, group }) => (
+          <Link key={label} href={link({ groupe: group, mois: undefined, nature: undefined })} title="Voir les écritures concernées" className={cn("rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", query.groupe === group && "ring-2 ring-primary")}>
+            <Card className="p-3 transition-colors hover:bg-primary/5">
+              <p className="text-xs text-muted-foreground">{label}</p>
+              <p className="text-lg font-semibold tabular-nums">{formatDA(value)}</p>
+            </Card>
+          </Link>
         ))}
       </div>
       <h2 className="mb-2 mt-6 text-lg font-semibold">Synthèse mensuelle</h2>
@@ -119,18 +122,24 @@ export default async function HrPage({
           </TableHeader>
           <TableBody>
             {data.months.map((month) => (
-              <TableRow key={month.key || "nd"} className={cn(query.mois === month.key && "bg-primary/5")}>
+              <TableRow key={month.key || "nd"} className={cn((query.mois ?? "") === (month.key || "nd") && "bg-primary/5")}>
                 <TableCell>
-                  <Link href={link({ mois: month.key || undefined })} className="font-medium hover:underline">
+                  <Link href={link({ mois: month.key || "nd" })} className="font-medium hover:underline">
                     {monthLabel(month.key)}
                   </Link>
                 </TableCell>
                 {GROUPS.map((group) => (
                   <TableCell key={group} className="text-right tabular-nums">
-                    {formatDA(month.totals[group])}
+                    <Link href={link({ mois: month.key || "nd", groupe: group })} className="rounded px-1 hover:bg-primary/10 hover:text-primary hover:underline" title="Voir les écritures">
+                      {formatDA(month.totals[group])}
+                    </Link>
                   </TableCell>
                 ))}
-                <TableCell className="text-right font-semibold tabular-nums">{formatDA(sum(month.totals))}</TableCell>
+                <TableCell className="text-right font-semibold tabular-nums">
+                  <Link href={link({ mois: month.key || "nd", groupe: undefined })} className="rounded px-1 hover:bg-primary/10 hover:text-primary hover:underline" title="Voir toutes les écritures du mois">
+                    {formatDA(sum(month.totals))}
+                  </Link>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -194,9 +203,8 @@ export default async function HrPage({
                   <TableCell>{entry.nature}</TableCell>
                   <TableCell className="font-medium">{entry.beneficiaire || "—"}</TableCell>
                   <TableCell className="max-w-72 truncate text-muted-foreground">{entry.libelle}</TableCell>
-                  <TableCell className={cn("whitespace-nowrap text-right tabular-nums", entry.sens === "RETOUR" && "text-destructive")}>
-                    {entry.sens === "RETOUR" ? "− " : ""}
-                    {formatDA(entry.montant)}
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    <HrAmountDetail entry={entry} beneficiaries={data.beneficiaries} today={today} />
                   </TableCell>
                   <TableCell className="text-xs">
                     {entry.mode === "CHEQUE" ? `Chèque ${entry.cheque}` : entry.mode === "VIRMT" ? "Virement" : ""}

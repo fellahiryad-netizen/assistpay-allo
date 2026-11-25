@@ -4,9 +4,10 @@ import { writeWorkbook } from "@/lib/spreadsheet";
 import type { HrEntry, Prisma } from "@/generated/prisma/client";
 import { can, requireAccess, requireAdmin } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
-import type { HrAnomaliesValidateInput, HrEntryInput, HrQuery } from "@/features/hr/schemas";
+import type { HrAnomaliesValidateInput, HrAssignInput, HrEntryInput, HrQuery } from "@/features/hr/schemas";
+import { fillFromLine, rankCandidateLines } from "@/features/hr/lib/hr-assign";
 import { normalizeText } from "@/utils/text";
-import { HR_GROUP_LABELS, hrGroup, type HrAnomalyDTO, type HrBankInfo, type HrValidatedAnomalyDTO, type HrEntryDTO, type HrGroup, type HrTotals } from "@/features/hr/types";
+import { HR_GROUP_LABELS, hrGroup, type HrDetailDTO, type HrLineDTO, type HrAnomalyDTO, type HrBankInfo, type HrValidatedAnomalyDTO, type HrEntryDTO, type HrGroup, type HrTotals } from "@/features/hr/types";
 import { detectHrAnomalies, mergeValidations, parseValidations, partitionAnomalies, removeValidation, type HrAnomaly, type HrAnomalyValidation, type HrValidationUpdate } from "@/features/hr/lib/hr-anomalies";
 import { isBankEntry, matchHrToBank, type HrBankEntry, type HrBankLine, type HrBankMatch } from "@/features/hr/lib/hr-bank-match";
 import { describeHrEntry, duplicateMessage, evaluateDuplicate, type HrDuplicate, type HrEntryLike } from "@/features/hr/lib/hr-duplicates";
@@ -207,7 +208,8 @@ export async function listHr(
   const filtered = inYear.filter(
     (row) =>
       (!query.nature || row.nature === query.nature) &&
-      (!query.mois || monthKey(row) === query.mois) &&
+      (!query.groupe || hrGroup(row.nature) === query.groupe) &&
+      (!query.mois || monthKey(row) === (query.mois === "nd" ? "" : query.mois)) &&
       (!query.releve || unmatched(row)) &&
       (!q || [row.beneficiaire, row.libelle, row.nature, row.cheque].join(" ").toLowerCase().includes(q)),
   );
@@ -337,7 +339,7 @@ export async function exportHr(actor: AuthUser, query: HrQuery): Promise<ActionR
   const rows = await db.hrEntry.findMany({ orderBy: [{ date: "asc" }, { ordre: "asc" }] });
   const q = (query.q ?? "").toLowerCase();
   const year = result.data.year;
-  const list = rows.filter((row) => (year === "all" || yearOf(row) === year) && (!query.nature || row.nature === query.nature) && (!query.mois || monthKey(row) === query.mois) && (!q || [row.beneficiaire, row.libelle, row.nature, row.cheque].join(" ").toLowerCase().includes(q)));
+  const list = rows.filter((row) => (year === "all" || yearOf(row) === year) && (!query.nature || row.nature === query.nature) && (!query.mois || monthKey(row) === (query.mois === "nd" ? "" : query.mois)) && (!q || [row.beneficiaire, row.libelle, row.nature, row.cheque].join(" ").toLowerCase().includes(q)));
   const header = ["Année", "Mois", "Date de paiement", "Nature", "Groupe", "Employé / organisme", "Libellé", "Type", "Montant", "Mode", "N° chèque", "Banque"];
   const body = list.map((row) => [yearOf(row), row.mois, toIsoDate(row.date) ?? "", row.nature, HR_GROUP_LABELS[hrGroup(row.nature) as HrGroup], row.beneficiaire, row.libelle, row.sens === "RETOUR" ? "Retour / remboursement" : "Paiement", signed(row), row.mode === "CHEQUE" ? "Chèque" : row.mode === "VIRMT" ? "Virement" : "", row.cheque, row.banque]);
   await logAction(actor, "Export RH", `${list.length} saisie(s)`);
@@ -451,4 +453,125 @@ export async function recordPayrollInHr(
     libelle: input.libelle,
     confirmerDoublon: false,
   }, false);
+}
+
+
+const lineDto = (line: { id: string; date: Date; libelle: string; numero: string; montant: Prisma.Decimal; sens: string; type: string; status: string }, entryAmount: number | null): HrLineDTO => {
+  const montant = Number(line.montant);
+  const ecart = entryAmount === null ? null : round2(montant - entryAmount);
+  return { id: line.id, date: toIsoDate(line.date) ?? "", libelle: line.libelle, numero: line.numero, montant, sens: line.sens === "CREDIT" ? "CREDIT" : "DEBIT", type: line.type, status: line.status, ecart, exact: ecart !== null && Math.abs(ecart) < 0.005 };
+};
+
+/** Détail d'une écriture RH : champs, ligne du relevé liée, propositions d'affectation, écritures voisines, historique. */
+export async function getHrEntryDetail(actor: AuthUser, input: { id: string }): Promise<ActionResult<HrDetailDTO>> {
+  const guard = requireAccess(actor, "RH");
+  if (!guard.success) return guard;
+  const row = await db.hrEntry.findUnique({ where: { id: input.id } });
+  if (!row) return fail("Saisie introuvable.", "NOT_FOUND");
+  const amount = Number(row.montant);
+  const releveVisible = can(actor, "RELEVE");
+  let linked: HrLineDTO[] = [];
+  let candidates: HrLineDTO[] = [];
+  if (releveVisible) {
+    const rows = await db.bankStatementLine.findMany({ where: { invoiceRefs: { has: `rh:${row.legacyId}` } }, orderBy: { date: "asc" } });
+    linked = rows.map((line) => lineDto(line, amount));
+    const date = toIsoDate(row.date);
+    const free = await db.bankStatementLine.findMany({
+      where: {
+        status: { in: ["A_TRAITER", "AJOUTE"] },
+        invoiceRefs: { isEmpty: true },
+        montant: { gte: round2(amount * 0.9), lte: round2(amount * 1.1) },
+        ...(date ? { date: { gte: fromIsoDate(shiftIsoDate(date, -120)) ?? undefined, lte: fromIsoDate(shiftIsoDate(date, 120)) ?? undefined } } : {}),
+      },
+      take: 200,
+    });
+    const ranked = rankCandidateLines(
+      { sens: row.sens === "RETOUR" ? "RETOUR" : "PAIEMENT", montant: amount, date },
+      free.map((line) => ({ id: line.id, date: toIsoDate(line.date) ?? "", libelle: line.libelle, numero: line.numero, montant: Number(line.montant), sens: line.sens === "CREDIT" ? ("CREDIT" as const) : ("DEBIT" as const), type: line.type })),
+    );
+    const byId = new Map(free.map((line) => [line.id, line]));
+    candidates = ranked.flatMap((item) => {
+      const source = byId.get(item.id);
+      return source ? [lineDto(source, amount)] : [];
+    });
+  }
+  const neighbours = await db.hrEntry.findMany({ where: { montant: row.montant, NOT: { id: row.id } }, orderBy: [...HR_ORDER], take: 5 });
+  const extra = obj(row.extra);
+  const cree = obj((extra.cree ?? null) as Prisma.JsonValue);
+  const maj = obj((extra.maj ?? null) as Prisma.JsonValue);
+  return ok({
+    entry: toDTO(row),
+    linked,
+    candidates,
+    similar: neighbours.map((item) => ({ id: item.id, date: toIsoDate(item.date), nature: item.nature, beneficiaire: item.beneficiaire, libelle: item.libelle, montant: Number(item.montant) })),
+    creePar: String(cree.nom ?? ""),
+    creeLe: String(cree.le ?? ""),
+    majPar: String(maj.nom ?? ""),
+    majLe: String(maj.le ?? ""),
+    releveVisible,
+    canAssign: can(actor, "RH", "EDIT") && can(actor, "RELEVE", "EDIT"),
+    canEdit: can(actor, "RH", "EDIT"),
+  });
+}
+
+/**
+ * Affecte une écriture RH à une ligne libre du relevé : la ligne passe en « déjà traité » avec le lien « rh: ».
+ * Les champs vides de l'écriture (date, mode, n° de chèque) sont complétés depuis la ligne ; montant et date ne sont alignés que sur demande.
+ */
+export async function assignHrEntryToLine(actor: AuthUser, input: HrAssignInput): Promise<ActionResult<{ id: string }>> {
+  const guard = requireAccess(actor, "RH", "EDIT");
+  if (!guard.success) return guard;
+  const releve = requireAccess(actor, "RELEVE", "EDIT");
+  if (!releve.success) return releve;
+  const entry = await db.hrEntry.findUnique({ where: { id: input.id } });
+  if (!entry) return fail("Saisie introuvable.", "NOT_FOUND");
+  const line = await db.bankStatementLine.findUnique({ where: { id: input.lineId } });
+  if (!line) return fail("Ligne du relevé introuvable.", "NOT_FOUND");
+  const mine = `rh:${entry.legacyId}`;
+  if (line.invoiceRefs.length > 0 && !line.invoiceRefs.every((ref) => ref === mine)) return fail("Cette ligne du relevé est déjà affectée à autre chose. Détachez-la d'abord dans le relevé.", "CONFLICT");
+  const wantedSens = entry.sens === "RETOUR" ? "CREDIT" : "DEBIT";
+  if (line.sens !== wantedSens) return fail(entry.sens === "RETOUR" ? "Un retour se rattache à une entrée d'argent du relevé." : "Un paiement se rattache à une sortie d'argent du relevé.", "VALIDATION");
+  const date = toIsoDate(entry.date);
+  const fill = fillFromLine({ date, mode: entry.mode, cheque: entry.cheque }, { date: toIsoDate(line.date) ?? "", numero: line.numero, type: line.type });
+  const lineDate = toIsoDate(line.date);
+  const newDate = input.alignerDate && lineDate ? lineDate : (fill.date ?? date);
+  const newAmount = input.alignerMontant ? Number(line.montant) : Number(entry.montant);
+  const stamp = { le: new Date().toISOString(), nom: actor.name, par: actor.id };
+  const avant = { montant: Number(entry.montant), date, mode: entry.mode, cheque: entry.cheque };
+  await db.$transaction(async (tx) => {
+    await tx.hrEntry.update({
+      where: { id: entry.id },
+      data: {
+        montant: newAmount,
+        date: fromIsoDate(newDate),
+        annee: storedYear(entry.nature, entry.mois, newDate),
+        mode: fill.mode ?? entry.mode,
+        cheque: fill.cheque ?? entry.cheque,
+        extra: { ...obj(entry.extra), maj: stamp, releve: line.legacyId } as Prisma.InputJsonObject,
+      },
+    });
+    await tx.bankStatementLine.update({ where: { id: line.id }, data: { status: "DEJA", invoiceRefs: [mine] } });
+  });
+  await syncHrAggregates();
+  const apres = { montant: newAmount, date: newDate, mode: fill.mode ?? entry.mode, cheque: fill.cheque ?? entry.cheque };
+  await logAction(actor, "RH : écriture affectée au relevé", `${entry.nature} – ${entry.beneficiaire} – ${formatDA(newAmount)} ↔ relevé du ${lineDate ? lineDate : "?"} (${formatDA(Number(line.montant))})`, false, { entity: "HrEntry", entityId: entry.legacyId, avant, apres });
+  return ok({ id: entry.id });
+}
+
+/** Détache une écriture RH de la (des) ligne(s) du relevé qui lui sont liées : elles repassent « à traiter ». */
+export async function unlinkHrEntryFromLines(actor: AuthUser, input: { id: string }): Promise<ActionResult<{ lines: number }>> {
+  const guard = requireAccess(actor, "RH", "EDIT");
+  if (!guard.success) return guard;
+  const releve = requireAccess(actor, "RELEVE", "EDIT");
+  if (!releve.success) return releve;
+  const entry = await db.hrEntry.findUnique({ where: { id: input.id } });
+  if (!entry) return fail("Saisie introuvable.", "NOT_FOUND");
+  const mine = `rh:${entry.legacyId}`;
+  const lines = await db.bankStatementLine.findMany({ where: { invoiceRefs: { has: mine } } });
+  for (const line of lines) {
+    const rest = line.invoiceRefs.filter((ref) => ref !== mine);
+    await db.bankStatementLine.update({ where: { id: line.id }, data: { invoiceRefs: rest, ...(rest.length === 0 ? { status: "A_TRAITER" as const } : {}) } });
+  }
+  await logAction(actor, "RH : écriture détachée du relevé", `${entry.nature} – ${entry.beneficiaire} – ${formatDA(Number(entry.montant))} (${lines.length} ligne(s) du relevé)`);
+  return ok({ lines: lines.length });
 }

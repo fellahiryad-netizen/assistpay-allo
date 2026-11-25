@@ -4,8 +4,11 @@ import { HR_NATURES } from "@/features/hr/types";
 /** Filtres de l'écran RH. */
 export const hrQuerySchema = z.object({
   annee: z.union([z.literal("all"), z.coerce.number().int().min(2000).max(2100)]).optional(),
-  mois: z.string().regex(/^\d{4}-\d{2}$/).optional().catch(undefined),
+  /** « AAAA-MM », ou « nd » pour les écritures sans date de rattachement. */
+  mois: z.union([z.string().regex(/^\d{4}-\d{2}$/), z.literal("nd")]).optional().catch(undefined),
   nature: z.string().max(60).optional().catch(undefined),
+  /** Groupe de natures (clic sur un total) : salaires, CNAS / CASNOS, G50 / IRG, autres. */
+  groupe: z.enum(["sal", "cnas", "g50", "autre"]).optional().catch(undefined),
   q: z.string().trim().max(100).optional().catch(undefined),
   /** « tout » : affiche toutes les anomalies (sinon les 60 premières). */
   anomalies: z.literal("tout").optional().catch(undefined),
@@ -49,3 +52,18 @@ export const hrAnomalyRestoreSchema = z.object({ key: z.string().min(1).max(400)
 export const hrAnomaliesValidateSchema = z.object({ keys: z.array(z.string().min(1).max(400)).min(1).max(500), motif: z.string().trim().max(200).default("") });
 /** Validation en bloc reçue par le service. */
 export type HrAnomaliesValidateInput = z.infer<typeof hrAnomaliesValidateSchema>;
+
+/** Détail d'une écriture RH (fenêtre dynamique). */
+export const hrDetailSchema = z.object({ id: z.string().min(1).max(64) });
+
+/** Affectation d'une écriture RH à une ligne du relevé, avec les corrections facultatives demandées. */
+export const hrAssignSchema = z.object({
+  id: z.string().min(1).max(64),
+  lineId: z.string().min(1).max(64),
+  /** Remplace le montant de l'écriture par celui du relevé. */
+  alignerMontant: z.boolean().default(false),
+  /** Remplace la date de paiement par celle du relevé (sinon seulement si elle est vide). */
+  alignerDate: z.boolean().default(false),
+});
+/** Affectation validée. */
+export type HrAssignInput = z.infer<typeof hrAssignSchema>;

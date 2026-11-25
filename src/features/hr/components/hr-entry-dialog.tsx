@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type FormEvent } from "react";
+import { useEffect, useState, useTransition, type FormEvent } from "react";
 import { Plus } from "lucide-react";
 import { deleteHrEntryAction, saveHrEntryAction } from "@/app/actions/hr-actions";
 import { Notice } from "@/components/common/notice";
@@ -23,11 +23,21 @@ export interface HrEntryDialogProps {
   triggerLabel?: string;
   /** Libellé accessible du bouton d'ouverture (lecteurs d'écran). */
   triggerAriaLabel?: string;
+  /** Mode piloté de l'extérieur : la fenêtre s'ouvre et se ferme selon cette valeur, sans bouton d'ouverture. */
+  open?: boolean;
+  /** Appelé quand la fenêtre demande à s'ouvrir ou se fermer (mode piloté). */
+  onOpenChange?: (open: boolean) => void;
 }
 
 /** Nouvelle saisie ou modification d'une écriture RH (salaire, CNAS, G50, avance…). */
-export function HrEntryDialog({ entry, beneficiaries, today, triggerLabel = "Modifier", triggerAriaLabel }: Readonly<HrEntryDialogProps>): React.JSX.Element {
-  const [open, setOpen] = useState(false);
+export function HrEntryDialog({ entry, beneficiaries, today, triggerLabel = "Modifier", triggerAriaLabel, open: controlledOpen, onOpenChange }: Readonly<HrEntryDialogProps>): React.JSX.Element {
+  const [innerOpen, setInnerOpen] = useState(false);
+  const controlled = controlledOpen !== undefined;
+  const open = controlled ? controlledOpen : innerOpen;
+  const setOpen = (value: boolean): void => {
+    if (!controlled) setInnerOpen(value);
+    onOpenChange?.(value);
+  };
   const [mode, setMode] = useState(entry?.mode ?? "VIRMT");
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -35,6 +45,18 @@ export function HrEntryDialog({ entry, beneficiaries, today, triggerLabel = "Mod
   const [confirmDuplicate, setConfirmDuplicate] = useState(false);
   const [pending, startTransition] = useTransition();
   const listId = `rh-benef-${entry?.id ?? "new"}`;
+
+  // Mode piloté : à chaque ouverture, on repart d'un formulaire sans message ni confirmation en attente.
+  useEffect(() => {
+    if (controlled && open) {
+      setError(null);
+      setConfirmDelete(false);
+      setProbableDuplicate(false);
+      setConfirmDuplicate(false);
+      setMode(entry?.mode ?? "VIRMT");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controlled, open]);
 
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -95,7 +117,7 @@ export function HrEntryDialog({ entry, beneficiaries, today, triggerLabel = "Mod
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {entry ? (
+      {controlled ? null : entry ? (
         <button type="button" onClick={show} aria-label={triggerAriaLabel} className="text-xs font-medium text-primary hover:underline">
           {triggerLabel}
         </button>

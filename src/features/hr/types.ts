@@ -67,3 +67,47 @@ export interface HrEntryDTO {
 
 /** Totaux par groupe. */
 export type HrTotals = Record<HrGroup, number>;
+
+/** Ligne du relevé liée à une écriture RH ou proposée pour l'affecter. */
+export interface HrLineDTO {
+  id: string;
+  date: string;
+  libelle: string;
+  numero: string;
+  montant: number;
+  sens: "DEBIT" | "CREDIT";
+  type: string;
+  status: string;
+  /** Écart avec le montant de l'écriture (propositions seulement). */
+  ecart: number | null;
+  exact: boolean;
+}
+
+/** Écriture voisine (même montant) montrée dans le détail pour repérer un doublon. */
+export interface HrSimilarDTO {
+  id: string;
+  date: string | null;
+  nature: string;
+  beneficiaire: string;
+  libelle: string;
+  montant: number;
+}
+
+/** Détail complet d'une écriture RH : champs, relevé lié, propositions d'affectation, écritures voisines, historique. */
+export interface HrDetailDTO {
+  entry: HrEntryDTO;
+  /** Lignes du relevé déjà liées à l'écriture. */
+  linked: HrLineDTO[];
+  /** Lignes libres du relevé qui pourraient correspondre. */
+  candidates: HrLineDTO[];
+  similar: HrSimilarDTO[];
+  creePar: string;
+  creeLe: string;
+  majPar: string;
+  majLe: string;
+  /** Le profil voit-il le relevé ? (sinon `linked` et `candidates` sont vides.) */
+  releveVisible: boolean;
+  /** Peut-il affecter / détacher (RH et relevé en modification) ? */
+  canAssign: boolean;
+  canEdit: boolean;
+}
