@@ -21,7 +21,7 @@ export function RibFormDialog({ rib }: Readonly<{ rib?: ProviderRibDTO }>): Reac
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const types = (["A", "B"] as const).filter((type) => form.get(`type-${type}`) === "on");
+    const types = (["A", "B", "C"] as const).filter((type) => form.get(`type-${type}`) === "on");
     startTransition(async () => {
       const result = await saveRibAction({
         id: rib?.id,
@@ -77,6 +77,10 @@ export function RibFormDialog({ rib }: Readonly<{ rib?: ProviderRibDTO }>): Reac
             <label className="flex items-center gap-2">
               <Checkbox name="type-B" defaultChecked={rib?.types.includes("B") ?? false} />
               BDG
+            </label>
+            <label className="flex items-center gap-2">
+              <Checkbox name="type-C" defaultChecked={rib?.types.includes("C") ?? false} />
+              Autre
             </label>
           </fieldset>
           {error ? (

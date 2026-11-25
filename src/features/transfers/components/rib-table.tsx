@@ -47,7 +47,7 @@ export function RibTable({ ribs, canEdit, isAdmin }: Readonly<{ ribs: ProviderRi
                   {rib.isNew ? <Badge variant="accent">Nouveau</Badge> : null}
                   {rib.types.map((type) => (
                     <Badge key={type} variant="muted">
-                      {type === "B" ? "BDG" : "Assistance"}
+                      {type === "B" ? "BDG" : type === "C" ? "Autre" : "Assistance"}
                     </Badge>
                   ))}
                 </p>

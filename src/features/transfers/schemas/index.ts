@@ -1,6 +1,8 @@
 import { z } from "zod";
 
+/** Activités d'un compte RIB : A = assistance routière, B = BDG, C = autre fournisseur (hors fichiers de virements A/B). */
 const productSchema = z.enum(["A", "B"]);
+const ribProductSchema = z.enum(["A", "B", "C"]);
 
 /** Options du contrôle d'un fichier déposé. */
 export const uploadCheckSchema = z.object({
@@ -51,7 +53,7 @@ export const ribSaveSchema = z.object({
     .transform((value) => value.replace(/\D/g, ""))
     .refine((value) => value.length === 20, "Le RIB doit compter 20 chiffres."),
   noms: z.array(z.string().trim().min(1).max(120)).min(1, "Indiquez au moins un nom.").max(10),
-  types: z.array(productSchema).min(1, "Choisissez au moins un produit."),
+  types: z.array(ribProductSchema).min(1, "Choisissez au moins un produit."),
   wilaya: z.string().trim().max(60).default(""),
   code: z.string().trim().max(20).default(""),
 });
