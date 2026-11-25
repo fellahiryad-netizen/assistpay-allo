@@ -774,6 +774,15 @@ html[data-skin="neo"] .skin-btn { border-color: rgba(59, 232, 255, 0.4); color: 
   }
 }
 
+/* Sigle de compagnie (demande du propriétaire) : « CaA » en caractères normaux, seule la dernière lettre en gras et soulignée. */
+.env-sheet .env-sigle-first,
+.env-sheet .env-sigle-small {
+  font-weight: 400 !important;
+}
+.env-sheet .env-sigle-last {
+  font-weight: 900 !important;
+}
+
 @media print {
   .env-sheet {
     margin: 0;
