@@ -21,7 +21,7 @@ export interface ImpayesMailDialogProps {
 /** Mail préparé pour la direction : succursales en retard et mois en retard, à copier ou à ouvrir dans la messagerie. */
 export function ImpayesMailDialog({ company, annee, variant = "outline" }: Readonly<ImpayesMailDialogProps>): React.JSX.Element {
   const [open, setOpen] = useState(false);
-  const [days, setDays] = useState<30 | 60 | 90>(30);
+  const [days, setDays] = useState<0 | 30 | 60 | 90>(0);
   const [mail, setMail] = useState<ImpayesMail | null>(null);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
@@ -70,11 +70,11 @@ export function ImpayesMailDialog({ company, annee, variant = "outline" }: Reado
           </DialogHeader>
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              Règlement en retard à partir de
-              <NativeSelect value={String(days)} onChange={(event) => setDays(Number(event.target.value) as 30 | 60 | 90)} className="w-44">
+              Factures à citer
+              <NativeSelect value={String(days)} onChange={(event) => setDays(Number(event.target.value) as 0 | 30 | 60 | 90)} className="w-60">
                 {LATE_DAYS_CHOICES.map((value) => (
                   <option key={value} value={value}>
-                    {value} jours
+                    {value === 0 ? "Toutes les factures impayées" : `Plus de ${value} jours`}
                   </option>
                 ))}
               </NativeSelect>
@@ -89,7 +89,7 @@ export function ImpayesMailDialog({ company, annee, variant = "outline" }: Reado
           {mail ? (
             <>
               <p className="text-sm text-muted-foreground">
-                {mail.lateBranches.length > 0 ? `${mail.lateBranches.length} succursale(s) en retard de règlement, ${mail.lateCount} facture(s), ${formatDA(mail.lateAmount)}. ` : "Aucune succursale en retard de règlement avec ce délai. "}
+                {mail.lateBranches.length > 0 ? `${mail.lateBranches.length} succursale(s) en retard de règlement, ${mail.lateCount} facture(s), ${formatDA(mail.lateAmount)}. ` : "Aucune facture à citer avec ce filtre. "}
                 {mail.productionLate.length > 0 ? `Production non reçue : ${mail.productionLate.join(", ")}.` : ""}
               </p>
               <label className="flex flex-col gap-1 text-xs font-medium">

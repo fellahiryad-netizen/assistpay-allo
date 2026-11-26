@@ -35,7 +35,8 @@ export interface ImpayesMail {
 }
 
 /** Délais de retard proposés (jours depuis la date de facture). */
-export const LATE_DAYS_CHOICES: ReadonlyArray<30 | 60 | 90> = [30, 60, 90];
+/** 0 = toutes les factures impayées (choix par défaut du mail). */
+export const LATE_DAYS_CHOICES: ReadonlyArray<0 | 30 | 60 | 90> = [0, 30, 60, 90];
 
 /** « 2026-09 » → « septembre 2026 » ; texte vide si le mois n'est pas valide. */
 export function monthName(key: string): string {
@@ -52,11 +53,11 @@ export function joinFrench(items: readonly string[]): string {
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 const validMonth = (key: string): boolean => /^\d{4}-(0[1-9]|1[0-2])$/.test(key);
 
-/** Succursales ayant au moins une facture en retard (émise depuis plus de `lateDays` jours), hors factures de la direction générale, de la plus en retard (montant) à la moins. */
+/** Succursales ayant au moins une facture impayée à citer (toutes si `lateDays` vaut 0, sinon émise depuis plus de `lateDays` jours), hors factures de la direction générale, de la plus en retard (montant) à la moins. */
 export function lateBranchesOf(report: ImpayesReport, lateDays: number): LateBranch[] {
   const result: LateBranch[] = [];
   for (const branch of report.branches) {
-    const late = branch.invoices.filter((invoice) => invoice.ageDays !== null && invoice.ageDays > lateDays && directionNature(invoice.libelle) === null);
+    const late = branch.invoices.filter((invoice) => (lateDays <= 0 || (invoice.ageDays !== null && invoice.ageDays > lateDays)) && directionNature(invoice.libelle) === null);
     if (late.length === 0) continue;
     const byMonth = new Map<string, number>();
     for (const invoice of late.filter((item) => validMonth(item.periode))) byMonth.set(invoice.periode, (byMonth.get(invoice.periode) ?? 0) + invoice.amount);
@@ -83,7 +84,7 @@ export interface MailOptions {
 
 /**
  * Prépare le mail à la directrice : objet, puis par succursale les mois de règlement en retard avec leur montant, les factures de la direction générale hors mois et les productions non reçues.
- * « En retard » = facture émise depuis plus de `lateDays` jours (ce délai n'est pas écrit dans le mail). `signer` : nom de l'expéditeur.
+ * `lateDays` : 0 = toutes les factures impayées, sinon seulement celles émises depuis plus de ce nombre de jours (ce délai n'est pas écrit dans le mail). `signer` : nom de l'expéditeur.
  */
 export function buildImpayesMail(report: ImpayesReport, lateDays: number, signer: string, options: MailOptions = {}): ImpayesMail {
   const production = options.production ?? null;

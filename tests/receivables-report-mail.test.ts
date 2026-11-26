@@ -54,3 +54,13 @@ describe("mail des impayés à la direction", () => {
     expect(buildImpayesMail(calm, 30, "X").body).toContain("sont à jour");
   });
 });
+
+describe("choix « toutes les factures impayées »", () => {
+  it("cite aussi les factures récentes quand le filtre est à 0", () => {
+    const r = buildImpayesReport(detail([br("Chéraga", [inv("C1", 6310417.63, 4, "2026-10")]), br("Annaba", [inv("A1", 3321009.05, 2, "2026-09")])]), "2026-11-26");
+    expect(lateBranchesOf(r, 30)).toHaveLength(0);
+    const mail = buildImpayesMail(r, 0, "X");
+    expect(mail.body).toContain("- Chéraga, octobre 2026 :");
+    expect(mail.body).toContain("- Annaba, septembre 2026 :");
+  });
+});
