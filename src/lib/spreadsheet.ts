@@ -488,3 +488,271 @@ export async function writeTableWorkbook(sheets: TableSheet[]): Promise<Uint8Arr
   const buffer = await wb.xlsx.writeBuffer();
   return new Uint8Array(buffer);
 }
+
+/** Montants d'une case du tableau de paiement. */
+export interface PaymentCellSpec {
+  billed: number;
+  paid: number;
+  due: number;
+}
+
+/** Ligne (succursale) du classeur d'analyse du tableau de paiement. */
+export interface PaymentRowSpec {
+  label: string;
+  /** Douze mois, de janvier à décembre. */
+  months: PaymentCellSpec[];
+  /** Factures de l'année hors avance mensuelle. */
+  other: PaymentCellSpec;
+  /** Nombre de factures en attente. */
+  pending: number;
+  /** Plus ancien mois non réglé (texte), vide si rien n'est dû. */
+  oldestUnpaid: string;
+}
+
+/** Facture du détail du classeur d'analyse. */
+export interface PaymentInvoiceSpec {
+  branch: string;
+  month: string;
+  nature: string;
+  numero: string;
+  libelle: string;
+  montant: number;
+  paid: number;
+  dateFacture: Date | null;
+  dateOperation: Date | null;
+  /** Ancienneté en jours d'une facture non réglée, `null` sinon. */
+  ageDays: number | null;
+}
+
+/** Contenu du classeur d'analyse du tableau de paiement CAAT / CAAR. */
+export interface PaymentWorkbookSpec {
+  client: string;
+  year: number;
+  /** Date d'édition, au format « jj/mm/aaaa ». */
+  generatedOn: string;
+  monthLabels: string[];
+  rows: PaymentRowSpec[];
+  invoices: PaymentInvoiceSpec[];
+}
+
+const PA_VIOLET = "FF6B1E80";
+const PA_ORANGE = "FFEB730A";
+const PA_TINT = "FFF3EAF6";
+const PA_RED = "FFC81414";
+const PA_REDFILL = "FFFDE9E9";
+const PA_GREY = "FFD9D9D9";
+const PA_MONEY = "#,##0.00;-#,##0.00;\"-\"";
+const PA_BORDER: Partial<ExcelJS.Borders> = { top: { style: "thin", color: { argb: PA_GREY } }, left: { style: "thin", color: { argb: PA_GREY } }, bottom: { style: "thin", color: { argb: PA_GREY } }, right: { style: "thin", color: { argb: PA_GREY } } };
+
+/**
+ * Écrit le classeur d'analyse du tableau de paiement : synthèse chiffrée par succursale, trois grilles mois par mois
+ * (reste à encaisser, facturé, encaissé) avec mise en couleur des mois non réglés, et le détail des factures filtrable.
+ * Les totaux sont des formules Excel ; les valeurs sont déjà calculées pour l'ouverture dans un lecteur sans calcul.
+ */
+export async function writePaymentWorkbook(spec: PaymentWorkbookSpec): Promise<Uint8Array> {
+  const ExcelRuntime = (await import("exceljs")).default;
+  const wb = new ExcelRuntime.Workbook();
+  wb.creator = "Allo Assistance";
+  const title = `Tableau de paiement ${spec.client} ${spec.year}`;
+  const banner = (ws: ExcelJS.Worksheet, subtitle: string, lastCol: number): void => {
+    ws.mergeCells(1, 1, 1, lastCol);
+    const t = ws.getCell(1, 1);
+    t.value = title;
+    t.font = { bold: true, size: 16, color: { argb: "FFFFFFFF" } };
+    t.fill = etatsFill(PA_VIOLET);
+    t.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+    ws.getRow(1).height = 30;
+    ws.mergeCells(2, 1, 2, lastCol);
+    const s = ws.getCell(2, 1);
+    s.value = subtitle;
+    s.font = { italic: true, size: 10, color: { argb: "FF595959" } };
+    s.alignment = { indent: 1 };
+    for (let c = 1; c <= lastCol; c += 1) ws.getCell(3, c).border = { bottom: { style: "medium", color: { argb: PA_ORANGE } } };
+  };
+  const head = (row: ExcelJS.Row, from = 1): void => {
+    row.height = 28;
+    row.eachCell({ includeEmpty: false }, (cell, col) => {
+      if (col < from) return;
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = etatsFill(PA_VIOLET);
+      cell.alignment = { vertical: "middle", horizontal: col === from ? "left" : "center", wrapText: true };
+      cell.border = PA_BORDER;
+    });
+  };
+  const sum = (pick: (c: PaymentCellSpec) => number, row: PaymentRowSpec): number => round2cents(row.months.reduce((total, c) => total + pick(c), 0) + pick(row.other));
+  const round2cents = (v: number): number => Math.round(v * 100) / 100;
+  const totalOf = (pick: (c: PaymentCellSpec) => number): number => round2cents(spec.rows.reduce((total, row) => total + sum(pick, row), 0));
+
+  // 1. Synthèse.
+  const ws1 = wb.addWorksheet("Synthèse", { views: [{ showGridLines: false }] });
+  [30, 18, 18, 20, 16, 16, 24, 16].forEach((w, i) => {
+    ws1.getColumn(i + 1).width = w;
+  });
+  banner(ws1, `Allo Assistance · édité le ${spec.generatedOn} · montants en DA`, 8);
+  const billed = totalOf((c) => c.billed);
+  const paid = totalOf((c) => c.paid);
+  const due = totalOf((c) => c.due);
+  const firstRow = 10;
+  const lastRow = firstRow + spec.rows.length - 1;
+  const totalRow = lastRow + 1;
+  const cards: Array<[string, number, number, string, string]> = [
+    ["Facturé", 1, billed, `SUM(B${firstRow}:B${lastRow})`, "#,##0.00"],
+    ["Encaissé", 3, paid, `SUM(C${firstRow}:C${lastRow})`, "#,##0.00"],
+    ["Reste à encaisser", 5, due, `SUM(D${firstRow}:D${lastRow})`, "#,##0.00"],
+    ["Taux d'encaissement", 7, billed > 0 ? paid / billed : 0, `IF(B${totalRow}=0,0,C${totalRow}/B${totalRow})`, "0.0%"],
+  ];
+  for (const [label, col, value, formula, fmt] of cards) {
+    ws1.mergeCells(5, col, 5, col + 1);
+    ws1.mergeCells(6, col, 6, col + 1);
+    const l = ws1.getCell(5, col);
+    l.value = label;
+    l.font = { bold: true, size: 10, color: { argb: PA_VIOLET } };
+    const v = ws1.getCell(6, col);
+    v.value = { formula, result: value };
+    v.numFmt = fmt;
+    v.font = { bold: true, size: 16, color: { argb: label === "Reste à encaisser" ? PA_RED : "FF000000" } };
+    v.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+    l.alignment = { indent: 1 };
+    for (const r of [5, 6]) for (const c of [col, col + 1]) ws1.getCell(r, c).fill = etatsFill(PA_TINT);
+    ws1.getCell(5, col).border = { left: { style: "thick", color: { argb: PA_ORANGE } } };
+    ws1.getCell(6, col).border = { left: { style: "thick", color: { argb: PA_ORANGE } } };
+  }
+  ws1.getRow(6).height = 30;
+  ws1.getCell(8, 1).value = "Situation par succursale";
+  ws1.getCell(8, 1).font = { bold: true, size: 12, color: { argb: PA_VIOLET } };
+  const h1 = ws1.getRow(9);
+  h1.values = ["Succursale", "Facturé", "Encaissé", "Reste à encaisser", "Taux encaissé", "Factures en attente", "Plus ancien mois impayé", "Part du reste"];
+  head(h1);
+  spec.rows.forEach((row, i) => {
+    const r = firstRow + i;
+    const rb = sum((c) => c.billed, row);
+    const rp = sum((c) => c.paid, row);
+    const rd = sum((c) => c.due, row);
+    const cells = ws1.getRow(r);
+    cells.getCell(1).value = row.label;
+    cells.getCell(2).value = rb;
+    cells.getCell(3).value = rp;
+    cells.getCell(4).value = rd;
+    cells.getCell(5).value = { formula: `IF(B${r}=0,0,C${r}/B${r})`, result: rb > 0 ? rp / rb : 0 };
+    cells.getCell(6).value = row.pending;
+    cells.getCell(7).value = row.oldestUnpaid || "-";
+    cells.getCell(8).value = { formula: `IF($D$${totalRow}=0,0,D${r}/$D$${totalRow})`, result: due > 0 ? rd / due : 0 };
+    for (let c = 1; c <= 8; c += 1) cells.getCell(c).border = PA_BORDER;
+    cells.getCell(1).font = { bold: true };
+    for (const c of [2, 3, 4]) cells.getCell(c).numFmt = PA_MONEY;
+    cells.getCell(5).numFmt = "0.0%";
+    cells.getCell(8).numFmt = "0.0%";
+    cells.getCell(7).alignment = { horizontal: "center" };
+    cells.getCell(6).alignment = { horizontal: "center" };
+  });
+  const tot = ws1.getRow(totalRow);
+  tot.getCell(1).value = "TOTAL";
+  for (const [c, letter, value] of [[2, "B", billed], [3, "C", paid], [4, "D", due]] as const) tot.getCell(c).value = { formula: `SUM(${letter}${firstRow}:${letter}${lastRow})`, result: value };
+  tot.getCell(5).value = { formula: `IF(B${totalRow}=0,0,C${totalRow}/B${totalRow})`, result: billed > 0 ? paid / billed : 0 };
+  tot.getCell(6).value = { formula: `SUM(F${firstRow}:F${lastRow})`, result: spec.rows.reduce((t, r) => t + r.pending, 0) };
+  for (let c = 1; c <= 8; c += 1) {
+    const cell = tot.getCell(c);
+    cell.font = { bold: true };
+    cell.fill = etatsFill(PA_TINT);
+    cell.border = { top: { style: "medium", color: { argb: PA_VIOLET } }, bottom: { style: "thin", color: { argb: PA_VIOLET } } };
+  }
+  for (const c of [2, 3, 4]) tot.getCell(c).numFmt = PA_MONEY;
+  tot.getCell(5).numFmt = "0.0%";
+  tot.getCell(6).alignment = { horizontal: "center" };
+  if (spec.rows.length > 0) {
+    ws1.addConditionalFormatting({ ref: `D${firstRow}:D${lastRow}`, rules: [{ type: "cellIs", operator: "greaterThan", formulae: [0], priority: 1, style: { font: { bold: true, color: { argb: PA_RED } } } }] });
+    ws1.addConditionalFormatting({ ref: `E${firstRow}:E${lastRow}`, rules: [{ type: "dataBar", priority: 2, color: { argb: PA_VIOLET }, gradient: false, cfvo: [{ type: "num", value: 0 }, { type: "num", value: 1 }] } as ExcelJS.DataBarRuleType] });
+    ws1.addConditionalFormatting({ ref: `H${firstRow}:H${lastRow}`, rules: [{ type: "dataBar", priority: 3, color: { argb: PA_ORANGE }, gradient: false, cfvo: [{ type: "num", value: 0 }, { type: "num", value: 1 }] } as ExcelJS.DataBarRuleType] });
+  }
+  ws1.getCell(totalRow + 2, 1).value = "Lecture : en rouge, les sommes encore dues. Les grilles mois par mois sont dans les onglets suivants ; le détail des factures est filtrable dans l'onglet « Détail factures ».";
+  ws1.getCell(totalRow + 2, 1).font = { italic: true, size: 9, color: { argb: "FF595959" } };
+  ws1.pageSetup = { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+
+  // 2-4. Grilles mois par mois.
+  const grid = (name: string, caption: string, pick: (c: PaymentCellSpec) => number, redWhenPositive: boolean): void => {
+    const ws = wb.addWorksheet(name, { views: [{ state: "frozen", xSplit: 1, ySplit: 5, showGridLines: false }] });
+    const cols = 1 + 12 + 2;
+    ws.getColumn(1).width = 28;
+    for (let c = 2; c <= 13; c += 1) ws.getColumn(c).width = 15;
+    ws.getColumn(14).width = 18;
+    ws.getColumn(15).width = 18;
+    banner(ws, `${caption} · Allo Assistance · édité le ${spec.generatedOn} · montants en DA`, cols);
+    const h = ws.getRow(5);
+    h.values = ["Succursale", ...spec.monthLabels, "Hors mois", "Total"];
+    head(h);
+    spec.rows.forEach((row, i) => {
+      const r = 6 + i;
+      const rr = ws.getRow(r);
+      rr.getCell(1).value = row.label;
+      rr.getCell(1).font = { bold: true };
+      row.months.forEach((c, m) => {
+        rr.getCell(2 + m).value = round2cents(pick(c));
+      });
+      rr.getCell(14).value = round2cents(pick(row.other));
+      rr.getCell(15).value = { formula: `SUM(B${r}:N${r})`, result: sum(pick, row) };
+      for (let c = 1; c <= cols; c += 1) {
+        rr.getCell(c).border = PA_BORDER;
+        if (c > 1) rr.getCell(c).numFmt = PA_MONEY;
+      }
+      rr.getCell(15).font = { bold: true };
+    });
+    const endRow = 5 + spec.rows.length;
+    const t = ws.getRow(endRow + 1);
+    t.getCell(1).value = "TOTAL";
+    for (let c = 2; c <= 15; c += 1) {
+      const letter = ws.getColumn(c).letter;
+      const result = c === 15 ? totalOf(pick) : round2cents(spec.rows.reduce((total, row) => total + (c === 14 ? pick(row.other) : pick(row.months[c - 2] ?? { billed: 0, paid: 0, due: 0 })), 0));
+      t.getCell(c).value = { formula: `SUM(${letter}6:${letter}${endRow})`, result };
+      t.getCell(c).numFmt = PA_MONEY;
+    }
+    for (let c = 1; c <= cols; c += 1) {
+      const cell = t.getCell(c);
+      cell.font = { bold: true };
+      cell.fill = etatsFill(PA_TINT);
+      cell.border = { top: { style: "medium", color: { argb: PA_VIOLET } }, bottom: { style: "thin", color: { argb: PA_VIOLET } } };
+    }
+    if (spec.rows.length > 0 && redWhenPositive) {
+      ws.addConditionalFormatting({ ref: `B6:N${endRow}`, rules: [{ type: "cellIs", operator: "greaterThan", formulae: [0], priority: 1, style: { font: { bold: true, color: { argb: PA_RED } }, fill: { type: "pattern", pattern: "solid", bgColor: { argb: PA_REDFILL } } } }] });
+    }
+    ws.getCell(endRow + 3, 1).value = redWhenPositive ? "Case rouge : mois non réglé (reste à encaisser). « - » : rien à payer ou aucune facture." : "« - » : aucune facture ce mois-là.";
+    ws.getCell(endRow + 3, 1).font = { italic: true, size: 9, color: { argb: "FF595959" } };
+    ws.pageSetup = { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+  };
+  grid("Reste à encaisser", `${title} · reste à encaisser par mois`, (c) => c.due, true);
+  grid("Facturé", `${title} · montants facturés par mois`, (c) => c.billed, false);
+  grid("Encaissé", `${title} · montants encaissés par mois`, (c) => c.paid, false);
+
+  // 5. Détail des factures (tableau Excel filtrable).
+  const ws5 = wb.addWorksheet("Détail factures", { views: [{ state: "frozen", ySplit: 4, showGridLines: false }] });
+  banner(ws5, `Toutes les factures du tableau · filtrez sur « État » ou « Succursale » · édité le ${spec.generatedOn}`, 12);
+  const widths = [26, 14, 24, 18, 52, 17, 17, 17, 14, 14, 13, 12];
+  widths.forEach((w, i) => {
+    ws5.getColumn(i + 1).width = w;
+  });
+  const body = spec.invoices.map((inv) => [inv.branch, inv.month, inv.nature, inv.numero, inv.libelle, inv.montant, inv.paid, round2cents(inv.montant - inv.paid), inv.dateFacture, inv.dateOperation, inv.ageDays, inv.montant - inv.paid > 0.005 ? "En attente" : "Réglée"]);
+  ws5.addTable({
+    name: "DetailFactures",
+    ref: "A4",
+    headerRow: true,
+    totalsRow: false,
+    style: { theme: "TableStyleMedium10", showRowStripes: true },
+    columns: ["Succursale", "Mois", "Nature", "N° facture", "Libellé", "Montant", "Encaissé", "Reste", "Date facture", "Date règlement", "Ancienneté (j)", "État"].map((name) => ({ name, filterButton: true })),
+    rows: body.length > 0 ? body : [["", "", "", "", "", 0, 0, 0, null, null, null, ""]],
+  });
+  head(ws5.getRow(4));
+  const lastDetail = 4 + Math.max(1, body.length);
+  for (let r = 5; r <= lastDetail; r += 1) {
+    for (const c of [6, 7, 8]) ws5.getCell(r, c).numFmt = PA_MONEY;
+    for (const c of [9, 10]) ws5.getCell(r, c).numFmt = "dd/mm/yyyy";
+    const montant = Number(ws5.getCell(r, 6).value ?? 0);
+    const encaisse = Number(ws5.getCell(r, 7).value ?? 0);
+    ws5.getCell(r, 8).value = { formula: `F${r}-G${r}`, result: round2cents(montant - encaisse) };
+    ws5.getCell(r, 5).alignment = { wrapText: true, vertical: "top" };
+  }
+  ws5.addConditionalFormatting({ ref: `L5:L${lastDetail}`, rules: [{ type: "cellIs", operator: "equal", formulae: ['"En attente"'], priority: 1, style: { font: { bold: true, color: { argb: PA_RED } } } }] });
+  ws5.addConditionalFormatting({ ref: `H5:H${lastDetail}`, rules: [{ type: "cellIs", operator: "greaterThan", formulae: [0], priority: 2, style: { font: { bold: true, color: { argb: PA_RED } } } }] });
+  ws5.pageSetup = { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "4:4" };
+
+  const buffer = await wb.xlsx.writeBuffer();
+  return new Uint8Array(buffer);
+}

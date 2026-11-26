@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { writeWorkbook } from "@/lib/spreadsheet";
+import { writePaymentWorkbook, type PaymentInvoiceSpec, type PaymentRowSpec } from "@/lib/spreadsheet";
 import { can, requireAccess } from "@/features/access/services/access-rules";
 import type { AuthUser } from "@/features/access/types";
 import { branchLabel, branchOf } from "@/features/invoices/services/branch";
@@ -166,25 +166,26 @@ export async function exportAdvanceTable(actor: AuthUser, client: AdvanceClient,
   const result = await advanceTable(actor, client, year);
   if (!result.success) return result;
   const table = result.data;
-  const heads = MONTHS_FR.map((name) => name.slice(0, 4));
-  const block = (title: string, pick: (cell: { billed: number; paid: number; due: number }) => number): Array<Array<string | number | null>> => [
-    [title],
-    ["Succursale", ...heads, "Hors mois", "Total"],
-    ...table.rows.map((row) => [row.label, ...row.months.map((c) => pick(c) || null), pick(row.other) || null, pick(row)]),
-    ["TOTAL", ...table.totals.months.map((c) => pick(c) || null), pick(table.totals.other) || null, pick(table.totals)],
-    [],
-  ];
-  const detail: Array<Array<string | number | null>> = [["Succursale", "Mois", "N° facture", "Libellé", "Montant", "Encaissé", "Reste", "Date facture", "Date règlement", "État"]];
-  for (const row of table.rows) {
-    row.months.forEach((cell, m) => cell.invoices.forEach((inv) => detail.push([row.label, heads[m] ?? "", inv.numero, inv.libelle, inv.montant, inv.paid, round2(inv.montant - inv.paid), inv.dateFacture, inv.dateOperation, inv.status === "REGLE" ? "Réglée" : "En attente"])));
-    row.other.invoices.forEach((inv) => detail.push([row.label, "Hors mois", inv.numero, inv.libelle, inv.montant, inv.paid, round2(inv.montant - inv.paid), inv.dateFacture, inv.dateOperation, inv.status === "REGLE" ? "Réglée" : "En attente"]));
-  }
-  const widths = [26, ...heads.map(() => 14), 14, 16];
-  const bytes = writeWorkbook([
-    { name: "Facturé", widths, rows: block(`${client} ${year} – montants facturés`, (c) => c.billed) },
-    { name: "Encaissé", widths, rows: block(`${client} ${year} – montants encaissés`, (c) => c.paid) },
-    { name: "Reste à encaisser", widths, rows: block(`${client} ${year} – reste à encaisser`, (c) => c.due) },
-    { name: "Détail", widths: [26, 10, 18, 60, 16, 16, 16, 14, 14, 12], rows: detail },
-  ]);
+  const monthLabels = ["Janv.", "Févr.", "Mars", "Avr.", "Mai", "Juin", "Juil.", "Août", "Sept.", "Oct.", "Nov.", "Déc."];
+  const today = todayIso();
+  const dateOf = (value: string | null): Date | null => (value && /^\d{4}-\d{2}-\d{2}/.test(value) ? new Date(`${value.slice(0, 10)}T00:00:00Z`) : null);
+  const ageOf = (value: string | null, open: boolean): number | null => {
+    const date = dateOf(value);
+    return open && date ? Math.max(0, Math.round((new Date(`${today}T00:00:00Z`).getTime() - date.getTime()) / 86_400_000)) : null;
+  };
+  const invoices: PaymentInvoiceSpec[] = [];
+  const push = (branch: string, month: string, nature: string, inv: AdvanceInvoice): void => {
+    const open = inv.montant - inv.paid > 0.005;
+    invoices.push({ branch, month, nature, numero: inv.numero, libelle: inv.libelle, montant: inv.montant, paid: inv.paid, dateFacture: dateOf(inv.dateFacture), dateOperation: dateOf(inv.dateOperation), ageDays: ageOf(inv.dateFacture, open) });
+  };
+  const rows: PaymentRowSpec[] = table.rows.map((row) => {
+    const label = row.key === "AUTRES" ? "Direction générale / sans succursale" : row.label;
+    row.months.forEach((cell, m) => cell.invoices.forEach((inv) => push(label, monthLabels[m] ?? "", "Avance mensuelle", inv)));
+    row.other.invoices.forEach((inv) => push(label, "Hors mois", row.key === "AUTRES" ? "Direction générale" : "Régularisation / autre", inv));
+    const firstDue = row.months.findIndex((cell) => cell.due > 0.005);
+    const pending = [...row.months, row.other].reduce((total, cell) => total + cell.invoices.filter((inv) => inv.montant - inv.paid > 0.005).length, 0);
+    return { label, months: row.months.map(({ billed, paid, due }) => ({ billed, paid, due })), other: { billed: row.other.billed, paid: row.other.paid, due: row.other.due }, pending, oldestUnpaid: firstDue >= 0 ? `${MONTHS_FR[firstDue] ?? ""} ${year}` : row.other.due > 0.005 ? "Hors mois" : "" };
+  });
+  const bytes = await writePaymentWorkbook({ client, year, generatedOn: today.split("-").reverse().join("/"), monthLabels, rows, invoices });
   return ok({ name: `TABLEAU_PAIEMENT_${client}_${year}.xlsx`, bytes });
 }
