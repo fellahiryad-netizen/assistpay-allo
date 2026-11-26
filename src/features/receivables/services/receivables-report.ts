@@ -3,8 +3,8 @@ import path from "node:path";
 import type { AuthUser } from "@/features/access/types";
 import { can, requireAccess } from "@/features/access/services/access-rules";
 import { db } from "@/lib/db";
-import { buildImpayesReport, excludeFromGrid, excludeFromReport, productionStatusOf, type ProductionStatus } from "@/features/receivables/lib/report";
-import { buildImpayesMail, type ImpayesMail } from "@/features/receivables/lib/report-mail";
+import { alignReportWithGrid, buildImpayesReport, excludeFromGrid, excludeFromReport, productionStatusOf, type ProductionStatus } from "@/features/receivables/lib/report";
+import { buildImpayesMail, buildImpayesMailFromGrid, type ImpayesMail } from "@/features/receivables/lib/report-mail";
 import { drawImpayesReport, type ReportAssets } from "@/features/receivables/lib/report-pdf";
 import type { ImpayesMailInput, ReceivablesQuery } from "@/features/receivables/schemas";
 import { getReceivableDetail } from "@/features/receivables/services/receivables-service";
@@ -53,7 +53,7 @@ export async function exportImpayesReport(actor: AuthUser, query: ReceivablesQue
     doc.setProperties({ title: `Factures impayées ${report.company}`, subject: `Situation au ${report.asOf}`, author: "Allo Assistance" });
     const assets: ReportAssets = { logo, footer, company };
     const { grid, production } = await loadExtras(actor, report.company, query.annee, result.data.asOf);
-    const pages = drawImpayesReport(doc, report, assets, new Date().toISOString(), { grid, production });
+    const pages = drawImpayesReport(doc, grid ? alignReportWithGrid(report, grid) : report, assets, new Date().toISOString(), { grid, production });
     return ok({ name: `impayes_${slug || "compagnie"}_${report.asOf}.pdf`, bytes: new Uint8Array(doc.output("arraybuffer")), pages });
   } catch (error) {
     console.error("[receivables] rapport PDF impossible :", error);
@@ -72,6 +72,7 @@ export async function prepareImpayesMail(actor: AuthUser, input: ImpayesMailInpu
   if (!result.success) return result;
   const report = buildImpayesReport(excludeFromReport(result.data.detail), result.data.asOf);
   const { grid, production } = await loadExtras(actor, report.company, input.annee, result.data.asOf);
-  const labels = Object.fromEntries((grid?.rows ?? []).filter((row) => row.key !== "AUTRES").map((row) => [row.key, row.label]));
+  if (grid) return ok(buildImpayesMailFromGrid(grid, result.data.asOf, actor.name, production));
+  const labels: Record<string, string> = {};
   return ok(buildImpayesMail(report, input.jours, actor.name, { production, labels }));
 }

@@ -1,3 +1,4 @@
+import type { AdvanceTable } from "@/features/partners/services/advance-table";
 import { NOT_MONTHLY } from "@/features/partners/lib/production-period";
 import { directionNature, type ImpayesReport, type ProductionStatus } from "@/features/receivables/lib/report";
 import { MONTHS_FR } from "@/utils/dates";
@@ -35,6 +36,8 @@ export interface ImpayesMail {
   directionAmount: number;
   /** Succursales dont la production du mois précédent n'est pas reçue. */
   productionLate: string[];
+  /** « tableau » : lu dans le tableau mois par mois CAAT / CAAR ; « creances » : lu dans les créances (filtre d'ancienneté). */
+  source: "tableau" | "creances";
 }
 
 /** Délais de retard proposés (jours depuis la date de facture). */
@@ -89,33 +92,29 @@ export interface MailOptions {
   labels?: Record<string, string>;
 }
 
-/**
- * Prépare le mail à la directrice : objet, puis par succursale les mois de règlement en retard avec leur montant, les factures de la direction générale hors mois et les productions non reçues.
- * `lateDays` : 0 = toutes les factures impayées, sinon seulement celles émises depuis plus de ce nombre de jours (ce délai n'est pas écrit dans le mail). `signer` : nom de l'expéditeur.
- */
-export function buildImpayesMail(report: ImpayesReport, lateDays: number, signer: string, options: MailOptions = {}): ImpayesMail {
-  const production = options.production ?? null;
-  const labels = options.labels ?? {};
-  const keys = production ? Object.keys(production.byBranch) : Object.keys(labels);
-  const display = (label: string): string => {
-    const key = keys.find((candidate) => upperPlain(label).includes(candidate));
-    return (key ? labels[key] : undefined) ?? label;
-  };
-  const late = lateBranchesOf(report, lateDays).map((branch) => ({ ...branch, label: display(branch.label) }));
+interface MailParts {
+  company: string;
+  asOf: string;
+  late: LateBranch[];
+  /** Factures de la direction générale et autres factures hors mois : nature → montant. */
+  direction: Map<string, number>;
+  production: ProductionStatus | null;
+  labels: Record<string, string>;
+  signer: string;
+  source: ImpayesMail["source"];
+}
+
+/** Écrit le mail à partir des lignes déjà calculées (succursales en retard, direction, productions). */
+function composeMail(parts: MailParts): ImpayesMail {
+  const { late, direction, production, labels } = parts;
   const lateCount = late.reduce((sum, branch) => sum + branch.count, 0);
   const lateAmount = round2(late.reduce((sum, branch) => sum + branch.amount, 0));
-  const direction = new Map<string, number>();
-  for (const invoice of report.branches.flatMap((branch) => branch.invoices)) {
-    const nature = directionNature(invoice.libelle);
-    if (nature) direction.set(nature, (direction.get(nature) ?? 0) + invoice.amount);
-  }
   const directionAmount = round2([...direction.values()].reduce((sum, value) => sum + value, 0));
   const productionLate = production ? Object.entries(production.byBranch).filter(([, state]) => !state.received).map(([key]) => labels[key] ?? key) : [];
-  const monthLabel = monthName(report.asOf.slice(0, 7));
-  const subject = `Allo Assistance : règlements et productions en attente, ${monthLabel}`;
+  const subject = `Allo Assistance : règlements et productions en attente, ${monthName(parts.asOf.slice(0, 7))}`;
   const lines: string[] = ["Bonjour Madame,", ""];
   if (late.length === 0 && direction.size === 0 && productionLate.length === 0) {
-    lines.push(`Je vous écris pour vous confirmer qu'à ce jour, tous les règlements et toutes les productions de ${report.company} sont à jour. Je vous remercie.`);
+    lines.push(`Je vous écris pour vous confirmer qu'à ce jour, tous les règlements et toutes les productions de ${parts.company} sont à jour. Je vous remercie.`);
   } else {
     lines.push("Je vous écris au sujet des règlements en retard et des productions non reçues. Vous trouverez ci-dessous, succursale par succursale, les mois concernés. Le rapport détaillé est joint à ce mail.");
     if (late.length > 0) {
@@ -137,6 +136,68 @@ export function buildImpayesMail(report: ImpayesReport, lateDays: number, signer
     }
     lines.push("", "Je vous écris afin que vous nous aidiez à débloquer la situation.");
   }
-  lines.push("", "Cordialement,", signer || "", "Allo Assistance");
-  return { subject, body: lines.join("\n"), lateBranches: late, lateCount, lateAmount, directionAmount, productionLate };
+  lines.push("", "Cordialement,", parts.signer || "", "Allo Assistance");
+  return { subject, body: lines.join("\n"), lateBranches: late, lateCount, lateAmount, directionAmount, productionLate, source: parts.source };
+}
+
+/**
+ * Prépare le mail à partir des créances (sans tableau mois par mois) : objet, mois de règlement en retard avec montant par succursale, direction générale et productions non reçues.
+ * `lateDays` : 0 = toutes les factures impayées, sinon seulement celles émises depuis plus de ce nombre de jours (ce délai n'est pas écrit dans le mail). `signer` : nom de l'expéditeur.
+ */
+export function buildImpayesMail(report: ImpayesReport, lateDays: number, signer: string, options: MailOptions = {}): ImpayesMail {
+  const production = options.production ?? null;
+  const labels = options.labels ?? {};
+  const keys = production ? Object.keys(production.byBranch) : Object.keys(labels);
+  const display = (label: string): string => {
+    const key = keys.find((candidate) => upperPlain(label).includes(candidate));
+    return (key ? labels[key] : undefined) ?? label;
+  };
+  const late = lateBranchesOf(report, lateDays).map((branch) => ({ ...branch, label: display(branch.label) }));
+  const direction = new Map<string, number>();
+  for (const invoice of report.branches.flatMap((branch) => branch.invoices)) {
+    const nature = directionNature(invoice.libelle);
+    if (nature) direction.set(nature, (direction.get(nature) ?? 0) + invoice.amount);
+  }
+  return composeMail({ company: report.company, asOf: report.asOf, late, direction, production, labels, signer, source: "creances" });
+}
+
+/**
+ * Prépare le mail à partir du tableau mois par mois CAAT / CAAR : chaque case non réglée donne une ligne « succursale, mois : reste à encaisser ».
+ * La colonne « hors mois » donne les régularisations (par succursale) et les factures de la direction générale.
+ */
+export function buildImpayesMailFromGrid(grid: AdvanceTable, asOf: string, signer: string, production: ProductionStatus | null): ImpayesMail {
+  const labels = Object.fromEntries(grid.rows.filter((row) => row.key !== "AUTRES").map((row) => [row.key, row.label]));
+  const dueOf = (invoice: { montant: number; paid: number }): number => Math.max(0, invoice.montant - invoice.paid);
+  const late: LateBranch[] = [];
+  const direction = new Map<string, number>();
+  for (const row of grid.rows) {
+    const months: LateMonth[] = [];
+    let count = 0;
+    row.months.forEach((cell, index) => {
+      if (cell.state !== "attente" && cell.state !== "partiel") return;
+      const key = `${grid.year}-${String(index + 1).padStart(2, "0")}`;
+      if (row.key === "AUTRES") {
+        direction.set(`Facture ${monthName(key)}`, (direction.get(`Facture ${monthName(key)}`) ?? 0) + cell.due);
+      } else {
+        months.push({ key, amount: round2(cell.due) });
+        count += cell.invoices.filter((invoice) => dueOf(invoice) > 0.005).length;
+      }
+    });
+    const others = row.other.invoices.filter((invoice) => dueOf(invoice) > 0.005);
+    const regul = { count: 0, amount: 0 };
+    for (const invoice of others) {
+      if (row.key === "AUTRES") {
+        const nature = directionNature(invoice.libelle) ?? "Autre facture";
+        direction.set(nature, (direction.get(nature) ?? 0) + dueOf(invoice));
+      } else {
+        regul.count += 1;
+        regul.amount += dueOf(invoice);
+      }
+    }
+    if (row.key === "AUTRES" || (months.length === 0 && regul.count === 0)) continue;
+    const amount = round2(months.reduce((sum, month) => sum + month.amount, 0) + regul.amount);
+    late.push({ label: row.label, count: count + regul.count, amount, months, withoutPeriod: { count: 0, amount: 0 }, regularisation: { count: regul.count, amount: round2(regul.amount) } });
+  }
+  late.sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label, "fr"));
+  return composeMail({ company: grid.client, asOf, late, direction, production, labels, signer, source: "tableau" });
 }

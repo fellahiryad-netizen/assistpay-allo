@@ -84,3 +84,32 @@ describe("mois déduits du libellé et régularisations", () => {
     expect(body).not.toContain("mois non indiqué");
   });
 });
+
+describe("mail construit depuis le tableau mois par mois", () => {
+  it("reprend les cases non réglées, la régularisation et la direction", async () => {
+    const { buildImpayesMailFromGrid } = await import("@/features/receivables/lib/report-mail");
+    const empty = { invoices: [], billed: 0, paid: 0, due: 0, state: "vide" as const };
+    const mi = (numero: string, libelle: string, montant: number) => ({ id: numero, numero, libelle, montant, paid: 0, status: "EN_ATTENTE" as const, dateFacture: null, dateOperation: null, liens: [] });
+    const cell = (invoices: ReturnType<typeof mi>[]) => ({ invoices, billed: invoices.reduce((s, i) => s + i.montant, 0), paid: 0, due: invoices.reduce((s, i) => s + i.montant, 0), state: "attente" as const });
+    const months = (m: Record<number, ReturnType<typeof cell>>) => Array.from({ length: 12 }, (_, i) => m[i] ?? empty);
+    const row = (key: string, label: string, m: Record<number, ReturnType<typeof cell>>, other = empty) => ({ key, label, months: months(m), other, billed: 0, paid: 0, due: 0 });
+    const grid = {
+      client: "CAAR" as const, year: 2026, years: [2026],
+      rows: [
+        row("CHERAGA", "Chéraga (Alger)", { 8: cell([mi("C1", "Honoraire – Mois de SEPTEMBRE 2026", 7133560.06)]), 9: cell([mi("C2", "Facturation mois de OCTOBRE 2026", 6310417.63)]) }),
+        row("ORAN", "Oran", { 9: cell([mi("O2", "Facturation mois de OCTOBRE 2026", 2841760.23)]) }, cell([mi("O1", "Régul 10 % mai, juin et juillet 2026", 2756586.26)])),
+        row("AUTRES", "Direction / sans succursale", {}, cell([mi("D1", "Refacturation assistance routière passif", 2859599.8)])),
+      ],
+      totals: { months: [], other: { billed: 0, paid: 0, due: 0 }, billed: 0, paid: 0, due: 0 },
+    };
+    const mail = buildImpayesMailFromGrid(grid as never, "2026-11-26", "Riad FELLAHI", { month: "2026-10", byBranch: { CHERAGA: { received: true, last: "2026-10" }, ORAN: { received: true, last: "2026-10" } } });
+    expect(mail.source).toBe("tableau");
+    expect(mail.body).toContain(`- Chéraga (Alger), septembre 2026 : ${formatDA(7133560.06)}`);
+    expect(mail.body).toContain("- Chéraga (Alger), octobre 2026");
+    expect(mail.body).toContain("- Oran, octobre 2026");
+    expect(mail.body).toContain("- Oran, régularisation");
+    expect(mail.body).not.toContain("Oran, juillet");
+    expect(mail.body).toContain("- Refacturation :");
+    expect(mail.body).not.toContain("Productions non reçues");
+  });
+});

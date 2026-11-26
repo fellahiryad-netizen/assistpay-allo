@@ -217,3 +217,14 @@ export function excludeFromGrid(grid: AdvanceTable): AdvanceTable {
   const sum = (pick: (row: AdvanceTable["rows"][number]) => number): number => round2(rows.reduce((total, row) => total + pick(row), 0));
   return { ...grid, rows, totals: { ...grid.totals, other: { billed: sum((r) => r.other.billed), paid: sum((r) => r.other.paid), due: sum((r) => r.other.due) }, billed: sum((r) => r.billed), paid: sum((r) => r.paid), due: sum((r) => r.due) } };
 }
+
+/** Aligne le mois de chaque facture du rapport sur le tableau mois par mois CAAT / CAAR (case du mois, ou « hors mois » si la facture n'y est pas rattachée). */
+export function alignReportWithGrid(report: ImpayesReport, grid: AdvanceTable): ImpayesReport {
+  const monthOf = new Map<string, string>();
+  for (const row of grid.rows) {
+    row.months.forEach((cell, index) => cell.invoices.forEach((invoice) => monthOf.set(invoice.id, `${grid.year}-${String(index + 1).padStart(2, "0")}`)));
+    for (const invoice of row.other.invoices) monthOf.set(invoice.id, "");
+  }
+  const fix = (invoice: ReportInvoice): ReportInvoice => (monthOf.has(invoice.id) ? { ...invoice, periode: monthOf.get(invoice.id) ?? "" } : invoice);
+  return { ...report, branches: report.branches.map((branch) => ({ ...branch, invoices: branch.invoices.map(fix) })), oldest: report.oldest.map(fix) };
+}

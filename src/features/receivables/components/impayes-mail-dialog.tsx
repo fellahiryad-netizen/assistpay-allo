@@ -66,9 +66,10 @@ export function ImpayesMailDialog({ company, annee, variant = "outline" }: Reado
         <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Mail à la direction {company}</DialogTitle>
-            <DialogDescription>Les mois et montants en retard par succursale, les factures de la direction générale et les productions non reçues sont déjà écrits. Relisez, corrigez si besoin, puis copiez ou ouvrez dans votre messagerie. Pensez à joindre le rapport PDF.</DialogDescription>
+            <DialogDescription>Les mois et montants en retard sont repris du tableau CAAT / CAAR (mois par mois), avec les factures de la direction générale et les productions non reçues. Relisez, corrigez si besoin, puis copiez ou ouvrez dans votre messagerie. Pensez à joindre le rapport PDF.</DialogDescription>
           </DialogHeader>
           <div className="flex flex-wrap items-end gap-3">
+            {mail?.source === "tableau" ? null : (
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
               Factures à citer
               <NativeSelect value={String(days)} onChange={(event) => setDays(Number(event.target.value) as 0 | 30 | 60 | 90)} className="w-60">
@@ -79,6 +80,7 @@ export function ImpayesMailDialog({ company, annee, variant = "outline" }: Reado
                 ))}
               </NativeSelect>
             </label>
+            )}
             <label className="flex min-w-56 flex-1 flex-col gap-1 text-xs text-muted-foreground">
               Destinataire (facultatif)
               <Input value={to} onChange={(event) => setTo(event.target.value)} type="email" placeholder="adresse e-mail de la direction" />

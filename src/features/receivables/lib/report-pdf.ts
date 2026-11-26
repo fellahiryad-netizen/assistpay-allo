@@ -1,5 +1,7 @@
 import type { jsPDF } from "jspdf";
 import { GREY, ORANGE, Pen, TINT, VIOLET, table, type Col, type Rgb } from "@/features/treasury/lib/deck-pdf";
+import { NOT_MONTHLY } from "@/features/partners/lib/production-period";
+import { upperPlain } from "@/utils/text";
 import type { AdvanceTable } from "@/features/partners/services/advance-table";
 import { monthName } from "@/features/receivables/lib/report-mail";
 import { directionNature, millions, type ImpayesReport, type ProductionStatus, type ReportInvoice } from "@/features/receivables/lib/report";
@@ -174,7 +176,8 @@ function monthLabel(invoice: ReportInvoice): string {
   const nature = directionNature(invoice.libelle);
   if (nature) return `Hors mois : ${nature.toLowerCase().split(",")[0]}`;
   const name = monthName(invoice.periode);
-  return name ? `${name} (impayé)` : "Mois non indiqué";
+  if (name) return `${name} (impayé)`;
+  return NOT_MONTHLY.test(upperPlain(invoice.libelle)) ? "Hors mois : régularisation" : "Mois non indiqué";
 }
 
 /** Page 3 : toutes les factures impayées dans un seul tableau (les plus anciennes si la liste dépasse la page). */
