@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, ExternalLink, Mail, Printer } from "lucide-react";
+import { Download, ExternalLink, FileText, Mail, Printer } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { CompanyLogo } from "@/features/receivables/components/company-logo";
 import { DETAIL_AGE_FILTERS, agingLabelOf, scopeKey, scopeLabel } from "@/features/receivables/lib/detail";
@@ -55,6 +55,12 @@ export function ReceivableDetailPanel({ detail, query, canExport, canRelance }: 
             <a href={`/api/creances/detail?${qs}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
               <Download />
               Exporter ce détail en Excel
+            </a>
+          ) : null}
+          {canExport ? (
+            <a href={`/api/creances/rapport?${new URLSearchParams({ detail: detail.scope.company, ...(query.annee ? { annee: String(query.annee) } : {}) }).toString()}`} className={buttonVariants({ variant: "outline", size: "sm" })} title={`Présentation PDF des impayés ${detail.scope.company} pour la direction`}>
+              <FileText />
+              Rapport PDF direction
             </a>
           ) : null}
           <Link href={`/imprimer/creances-detail?${qs}`} target="_blank" className={buttonVariants({ variant: "outline", size: "sm" })}>

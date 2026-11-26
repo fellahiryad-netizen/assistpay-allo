@@ -12,15 +12,15 @@ export interface DeckAssets {
   footer: Uint8Array | null;
 }
 
-type Rgb = [number, number, number];
+export type Rgb = [number, number, number];
 
 // Couleurs de la charte Allo Assistance, celles de l'application (globals.css) : violet hsl(287 62% 31%), orange hsl(28 92% 48%), texte hsl(285 40% 13%).
-const VIOLET: Rgb = [107, 30, 128];
-const ORANGE: Rgb = [235, 115, 10];
-const INK: Rgb = [40, 20, 46];
-const BLACK: Rgb = [0, 0, 0];
-const TINT: Rgb = [243, 236, 247];
-const GREY: Rgb = [90, 90, 90];
+export const VIOLET: Rgb = [107, 30, 128];
+export const ORANGE: Rgb = [235, 115, 10];
+export const INK: Rgb = [40, 20, 46];
+export const BLACK: Rgb = [0, 0, 0];
+export const TINT: Rgb = [243, 236, 247];
+export const GREY: Rgb = [90, 90, 90];
 
 const PAGE_W = 297;
 const PAGE_H = 210;
@@ -32,7 +32,7 @@ const LOGO_RATIO = 693 / 384;
 const FOOTER_RATIO = 619 / 61;
 
 /** Dessinateur : petite surcouche de jsPDF pour le texte latin-1, les cadres et les tableaux. */
-class Pen {
+export class Pen {
   constructor(readonly doc: jsPDF) {}
 
   text(value: string, x: number, y: number, opts: { size?: number; bold?: boolean; color?: Rgb; align?: "left" | "center" | "right"; maxWidth?: number } = {}): void {
@@ -96,13 +96,13 @@ class Pen {
 }
 
 /** Colonne d'un tableau : largeur en mm et alignement. */
-interface Col {
+export interface Col {
   w: number;
   align?: "left" | "right";
 }
 
 /** Tableau simple (en-tête violet, lignes séparées par des filets noirs) ; renvoie le y de fin. Les cellules longues passent à la ligne. */
-function table(pen: Pen, x: number, y: number, cols: Col[], head: string[], rows: string[][], opts: { size?: number; bold?: boolean[] ; footRow?: string[] } = {}): number {
+export function table(pen: Pen, x: number, y: number, cols: Col[], head: string[], rows: string[][], opts: { size?: number; bold?: boolean[] ; footRow?: string[] } = {}): number {
   const size = opts.size ?? 9;
   const pad = 1.8;
   const lineH = size * 0.42;
