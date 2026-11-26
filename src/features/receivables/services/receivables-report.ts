@@ -1,9 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { AuthUser } from "@/features/access/types";
-import { requireAccess } from "@/features/access/services/access-rules";
+import { can, requireAccess } from "@/features/access/services/access-rules";
 import { db } from "@/lib/db";
-import { can } from "@/features/access/services/access-rules";
 import { buildImpayesReport, productionStatusOf, type ProductionStatus } from "@/features/receivables/lib/report";
 import { buildImpayesMail, type ImpayesMail } from "@/features/receivables/lib/report-mail";
 import { drawImpayesReport, type ReportAssets } from "@/features/receivables/lib/report-pdf";
@@ -19,6 +18,19 @@ async function readAsset(file: string): Promise<Uint8Array | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Tableau de paiement mois par mois et réception de la production M-1 (CAAR seulement, lecture seule).
+ * Si l'un des deux est indisponible, il vaut `null` et le rapport ou le mail sort sans cette partie.
+ */
+async function loadExtras(actor: AuthUser, company: string, annee: number | undefined, asOf: string): Promise<{ grid: AdvanceTable | null; production: ProductionStatus | null }> {
+  if (company !== "CAAR") return { grid: null, production: null };
+  const table = await advanceTable(actor, "CAAR", annee ?? Number(asOf.slice(0, 4)));
+  const grid = table.success ? table.data : null;
+  if (!grid || !can(actor, "CAAR")) return { grid, production: null };
+  const files = await db.caarProduction.findMany({ select: { annee: true, mois: true, succursale: true } });
+  return { grid, production: productionStatusOf(files, asOf, grid.rows.filter((row) => row.key !== "AUTRES").map((row) => row.key)) };
 }
 
 /**
@@ -40,19 +52,7 @@ export async function exportImpayesReport(actor: AuthUser, query: ReceivablesQue
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
     doc.setProperties({ title: `Factures impayées ${report.company}`, subject: `Situation au ${report.asOf}`, author: "Allo Assistance" });
     const assets: ReportAssets = { logo, footer, company };
-    // Tableau de paiement mois par mois et réception de la production M-1 (CAAR seulement, lecture seule).
-    // Si l'un des deux est indisponible, le rapport sort sans cette partie.
-    let grid: AdvanceTable | null = null;
-    let production: ProductionStatus | null = null;
-    if (report.company === "CAAR") {
-      const year = query.annee ?? Number(result.data.asOf.slice(0, 4));
-      const table = await advanceTable(actor, "CAAR", year);
-      if (table.success) grid = table.data;
-      if (grid && can(actor, "CAAR")) {
-        const files = await db.caarProduction.findMany({ select: { annee: true, mois: true, succursale: true } });
-        production = productionStatusOf(files, result.data.asOf, grid.rows.filter((row) => row.key !== "AUTRES").map((row) => row.key));
-      }
-    }
+    const { grid, production } = await loadExtras(actor, report.company, query.annee, result.data.asOf);
     const pages = drawImpayesReport(doc, report, assets, new Date().toISOString(), { grid, production });
     return ok({ name: `impayes_${slug || "compagnie"}_${report.asOf}.pdf`, bytes: new Uint8Array(doc.output("arraybuffer")), pages });
   } catch (error) {
@@ -62,7 +62,7 @@ export async function exportImpayesReport(actor: AuthUser, query: ReceivablesQue
 }
 
 /**
- * Mail préparé pour la direction d'une compagnie : succursales en retard (factures émises depuis plus de `jours` jours) et mois en retard de chacune.
+ * Mail préparé pour la directrice d'une compagnie : mois et montants en retard de règlement par succursale, factures de la direction générale et productions non reçues.
  * Lecture seule ; mêmes droits que le rapport PDF. La signature porte le nom de l'utilisateur.
  */
 export async function prepareImpayesMail(actor: AuthUser, input: ImpayesMailInput): Promise<ActionResult<ImpayesMail>> {
@@ -71,5 +71,7 @@ export async function prepareImpayesMail(actor: AuthUser, input: ImpayesMailInpu
   const result = await getReceivableDetail(actor, { detail: input.company, annee: input.annee, anc: undefined, activite: undefined });
   if (!result.success) return result;
   const report = buildImpayesReport(result.data.detail, result.data.asOf);
-  return ok(buildImpayesMail(report, input.jours, actor.name));
+  const { grid, production } = await loadExtras(actor, report.company, input.annee, result.data.asOf);
+  const labels = Object.fromEntries((grid?.rows ?? []).filter((row) => row.key !== "AUTRES").map((row) => [row.key, row.label]));
+  return ok(buildImpayesMail(report, input.jours, actor.name, { production, labels }));
 }

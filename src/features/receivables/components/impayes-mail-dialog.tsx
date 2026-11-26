@@ -66,11 +66,11 @@ export function ImpayesMailDialog({ company, annee, variant = "outline" }: Reado
         <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Mail à la direction {company}</DialogTitle>
-            <DialogDescription>Les succursales en retard et leurs mois en retard sont déjà écrits. Relisez, corrigez si besoin, puis copiez ou ouvrez dans votre messagerie. Pensez à joindre le rapport PDF.</DialogDescription>
+            <DialogDescription>Les mois et montants en retard par succursale, les factures de la direction générale et les productions non reçues sont déjà écrits. Relisez, corrigez si besoin, puis copiez ou ouvrez dans votre messagerie. Pensez à joindre le rapport PDF.</DialogDescription>
           </DialogHeader>
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              En retard à partir de
+              Règlement en retard à partir de
               <NativeSelect value={String(days)} onChange={(event) => setDays(Number(event.target.value) as 30 | 60 | 90)} className="w-44">
                 {LATE_DAYS_CHOICES.map((value) => (
                   <option key={value} value={value}>
@@ -89,9 +89,8 @@ export function ImpayesMailDialog({ company, annee, variant = "outline" }: Reado
           {mail ? (
             <>
               <p className="text-sm text-muted-foreground">
-                {mail.lateBranches.length > 0
-                  ? `${mail.lateBranches.length} succursale(s) en retard, ${mail.lateCount} facture(s), ${formatDA(mail.lateAmount)}.`
-                  : "Aucune succursale en retard avec ce délai."}
+                {mail.lateBranches.length > 0 ? `${mail.lateBranches.length} succursale(s) en retard de règlement, ${mail.lateCount} facture(s), ${formatDA(mail.lateAmount)}. ` : "Aucune succursale en retard de règlement avec ce délai. "}
+                {mail.productionLate.length > 0 ? `Production non reçue : ${mail.productionLate.join(", ")}.` : ""}
               </p>
               <label className="flex flex-col gap-1 text-xs font-medium">
                 Objet

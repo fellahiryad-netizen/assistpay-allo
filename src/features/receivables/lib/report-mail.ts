@@ -1,18 +1,24 @@
-import type { ImpayesReport } from "@/features/receivables/lib/report";
+import { directionNature, type ImpayesReport, type ProductionStatus } from "@/features/receivables/lib/report";
 import { MONTHS_FR } from "@/utils/dates";
-import { formatDA, formatDate } from "@/utils/format";
+import { formatDA } from "@/utils/format";
+import { upperPlain } from "@/utils/text";
 
-/** Succursale en retard : factures émises depuis plus de `lateDays` jours et mois concernés. */
+/** Montant en retard pour un mois de période. */
+export interface LateMonth {
+  /** Mois « AAAA-MM ». */
+  key: string;
+  amount: number;
+}
+
+/** Succursale en retard de règlement : factures émises depuis plus de `lateDays` jours, regroupées par mois. */
 export interface LateBranch {
   label: string;
   count: number;
   amount: number;
-  /** Mois (AAAA-MM) de période des factures en retard, du plus ancien au plus récent. */
-  months: string[];
-  /** Factures en retard dont la période n'est pas indiquée. */
-  withoutPeriod: number;
-  /** Ancienneté de la plus ancienne facture en retard (jours). */
-  oldestDays: number;
+  /** Mois en retard avec leur montant, du plus ancien au plus récent. */
+  months: LateMonth[];
+  /** Factures en retard dont le mois n'est pas indiqué. */
+  withoutPeriod: { count: number; amount: number };
 }
 
 /** Mail préparé pour la direction. */
@@ -22,6 +28,10 @@ export interface ImpayesMail {
   lateBranches: LateBranch[];
   lateCount: number;
   lateAmount: number;
+  /** Montant des factures de la direction générale (hors mois) citées dans le mail. */
+  directionAmount: number;
+  /** Succursales dont la production du mois précédent n'est pas reçue. */
+  productionLate: string[];
 }
 
 /** Délais de retard proposés (jours depuis la date de facture). */
@@ -39,58 +49,89 @@ export function joinFrench(items: readonly string[]): string {
   return `${items.slice(0, -1).join(", ")} et ${items[items.length - 1]}`;
 }
 
-/** Succursales ayant au moins une facture en retard (émise depuis plus de `lateDays` jours), de la plus en retard (montant) à la moins. */
+const round2 = (value: number): number => Math.round(value * 100) / 100;
+const validMonth = (key: string): boolean => /^\d{4}-(0[1-9]|1[0-2])$/.test(key);
+
+/** Succursales ayant au moins une facture en retard (émise depuis plus de `lateDays` jours), hors factures de la direction générale, de la plus en retard (montant) à la moins. */
 export function lateBranchesOf(report: ImpayesReport, lateDays: number): LateBranch[] {
   const result: LateBranch[] = [];
   for (const branch of report.branches) {
-    const late = branch.invoices.filter((invoice) => invoice.ageDays !== null && invoice.ageDays > lateDays);
+    const late = branch.invoices.filter((invoice) => invoice.ageDays !== null && invoice.ageDays > lateDays && directionNature(invoice.libelle) === null);
     if (late.length === 0) continue;
-    const months = [...new Set(late.map((invoice) => (/^\d{4}-(0[1-9]|1[0-2])$/.test(invoice.periode) ? invoice.periode : "")).filter(Boolean))].sort();
+    const byMonth = new Map<string, number>();
+    for (const invoice of late.filter((item) => validMonth(item.periode))) byMonth.set(invoice.periode, (byMonth.get(invoice.periode) ?? 0) + invoice.amount);
+    const unknown = late.filter((invoice) => !validMonth(invoice.periode));
     result.push({
       label: branch.label,
       count: late.length,
-      amount: Math.round(late.reduce((sum, invoice) => sum + invoice.amount, 0) * 100) / 100,
-      months,
-      withoutPeriod: late.filter((invoice) => !/^\d{4}-(0[1-9]|1[0-2])$/.test(invoice.periode)).length,
-      oldestDays: Math.max(...late.map((invoice) => invoice.ageDays ?? 0)),
+      amount: round2(late.reduce((sum, invoice) => sum + invoice.amount, 0)),
+      months: [...byMonth.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, amount]) => ({ key, amount: round2(amount) })),
+      withoutPeriod: { count: unknown.length, amount: round2(unknown.reduce((sum, invoice) => sum + invoice.amount, 0)) },
     });
   }
   return result.sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label, "fr"));
 }
 
-/** Ligne d'une succursale dans le mail. */
-function branchLine(branch: LateBranch): string {
-  const names = branch.months.map(monthName).filter(Boolean);
-  const parts = [`${branch.label} : ${branch.count} facture${branch.count > 1 ? "s" : ""} pour ${formatDA(branch.amount)}`];
-  if (names.length > 0) parts.push(`${names.length > 1 ? "mois en retard" : "mois en retard"} : ${joinFrench(names)}`);
-  if (branch.withoutPeriod > 0) parts.push(`${branch.withoutPeriod} facture${branch.withoutPeriod > 1 ? "s" : ""} sans mois indiqué`);
-  return `- ${parts.join(". ")}.`;
+/** « de octobre 2026 » s'écrit « d'octobre 2026 » : élision devant une voyelle. */
+const deMois = (name: string): string => (/^[aeiouyéèêîô]/i.test(name) ? `d'${name}` : `de ${name}`);
+
+/** Options du mail : réception de la production M-1 et noms d'affichage des succursales (clé → libellé). */
+export interface MailOptions {
+  production?: ProductionStatus | null;
+  labels?: Record<string, string>;
 }
 
 /**
- * Prépare le mail à la direction : objet, texte avec la liste des succursales en retard et, pour chacune, les mois en retard.
- * « En retard » = facture émise depuis plus de `lateDays` jours. `signer` : nom de l'expéditeur pour la signature.
+ * Prépare le mail à la directrice : objet, puis par succursale les mois de règlement en retard avec leur montant, les factures de la direction générale hors mois et les productions non reçues.
+ * « En retard » = facture émise depuis plus de `lateDays` jours (ce délai n'est pas écrit dans le mail). `signer` : nom de l'expéditeur.
  */
-export function buildImpayesMail(report: ImpayesReport, lateDays: number, signer: string): ImpayesMail {
-  const late = lateBranchesOf(report, lateDays);
+export function buildImpayesMail(report: ImpayesReport, lateDays: number, signer: string, options: MailOptions = {}): ImpayesMail {
+  const production = options.production ?? null;
+  const labels = options.labels ?? {};
+  const keys = production ? Object.keys(production.byBranch) : Object.keys(labels);
+  const display = (label: string): string => {
+    const key = keys.find((candidate) => upperPlain(label).includes(candidate));
+    return (key ? labels[key] : undefined) ?? label;
+  };
+  const late = lateBranchesOf(report, lateDays).map((branch) => ({ ...branch, label: display(branch.label) }));
   const lateCount = late.reduce((sum, branch) => sum + branch.count, 0);
-  const lateAmount = Math.round(late.reduce((sum, branch) => sum + branch.amount, 0) * 100) / 100;
-  const date = formatDate(report.asOf);
-  const subject = `Factures Allo Assistance en attente de règlement - situation au ${date}`;
-  const lines: string[] = ["Bonjour,", ""];
-  if (report.count === 0) {
-    lines.push(`Au ${date}, toutes les factures Allo Assistance sont réglées. Je vous remercie.`);
+  const lateAmount = round2(late.reduce((sum, branch) => sum + branch.amount, 0));
+  const direction = new Map<string, number>();
+  for (const invoice of report.branches.flatMap((branch) => branch.invoices)) {
+    const nature = directionNature(invoice.libelle);
+    if (nature) direction.set(nature, (direction.get(nature) ?? 0) + invoice.amount);
+  }
+  const directionAmount = round2([...direction.values()].reduce((sum, value) => sum + value, 0));
+  const productionLate = production ? Object.entries(production.byBranch).filter(([, state]) => !state.received).map(([key]) => labels[key] ?? key) : [];
+  const monthLabel = monthName(report.asOf.slice(0, 7));
+  const subject = `Allo Assistance : règlements et productions en attente, ${monthLabel}`;
+  const lines: string[] = ["Bonjour Madame,", ""];
+  if (late.length === 0 && direction.size === 0 && productionLate.length === 0) {
+    lines.push(`Je vous écris pour vous confirmer qu'à ce jour, tous les règlements et toutes les productions de ${report.company} sont à jour. Je vous remercie.`);
   } else {
-    lines.push(`Je vous envoie la situation, au ${date}, des factures Allo Assistance que la ${report.company} n'a pas encore réglées. Le rapport détaillé est joint à ce mail.`, "");
-    lines.push(`Au total, ${report.count} facture${report.count > 1 ? "s" : ""} restent à régler, pour ${formatDA(report.total)}.`);
-    if (late.length === 0) {
-      lines.push(`Aucune n'a plus de ${lateDays} jours : aucune succursale n'est en retard pour le moment.`);
-    } else {
-      lines.push(`Parmi elles, ${lateCount} facture${lateCount > 1 ? "s" : ""} (${formatDA(lateAmount)}) ${lateCount > 1 ? "ont" : "a"} été émise${lateCount > 1 ? "s" : ""} il y a plus de ${lateDays} jours. Voici les succursales concernées et les mois en retard :`, "");
-      for (const branch of late) lines.push(branchLine(branch));
-      lines.push("", "Je vous remercie de bien vouloir demander à ces succursales de régler ces factures dès que possible, ou de nous indiquer la date prévue du règlement. Pour toute précision sur une facture, je reste à votre disposition.");
+    lines.push("Je vous écris au sujet des règlements en retard et des productions non reçues. Vous trouverez ci-dessous, succursale par succursale, les mois concernés. Le rapport détaillé est joint à ce mail.");
+    if (late.length > 0) {
+      lines.push("", "Règlements en retard :");
+      for (const branch of late) {
+        lines.push("", branch.label);
+        for (const month of branch.months) lines.push(`- ${monthName(month.key)} : ${formatDA(month.amount)}`);
+        if (branch.withoutPeriod.count > 0) lines.push(`- mois non indiqué : ${formatDA(branch.withoutPeriod.amount)}`);
+      }
+      lines.push("", `Total des règlements en retard : ${formatDA(lateAmount)}.`);
     }
+    if (direction.size > 0) {
+      lines.push("", "Factures de la direction générale (hors mois) :");
+      for (const [nature, amount] of direction) lines.push(`- ${nature} : ${formatDA(round2(amount))}`);
+    }
+    if (productionLate.length > 0 && production) {
+      lines.push("", "Productions non reçues :");
+      for (const label of productionLate) lines.push(`- ${label} : production ${deMois(monthName(production.month))}`);
+    }
+    const asks: string[] = [];
+    if (late.length > 0 || direction.size > 0) asks.push("faire régler ces factures, ou de nous indiquer la date prévue du règlement");
+    if (productionLate.length > 0) asks.push("demander aux succursales concernées de nous envoyer leur production");
+    lines.push("", `Je vous remercie de bien vouloir ${asks.join(", et de ")}. Je reste à votre disposition pour toute précision.`);
   }
   lines.push("", "Cordialement,", signer || "", "Allo Assistance");
-  return { subject, body: lines.join("\n"), lateBranches: late, lateCount, lateAmount };
+  return { subject, body: lines.join("\n"), lateBranches: late, lateCount, lateAmount, directionAmount, productionLate };
 }

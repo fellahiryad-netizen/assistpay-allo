@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildImpayesMail, joinFrench, lateBranchesOf, monthName } from "@/features/receivables/lib/report-mail";
+import { formatDA } from "@/utils/format";
 import { buildImpayesReport } from "@/features/receivables/lib/report";
 import type { DetailBranch, DetailInvoice, ReceivableDetail } from "@/features/receivables/types";
 
@@ -18,23 +19,37 @@ describe("mail des impayés à la direction", () => {
     expect(monthName("n'importe quoi")).toBe("");
     expect(joinFrench(["a", "b", "c"])).toBe("a, b et c");
   });
-  it("ne garde que les succursales avec des factures de plus de 30 jours, classées par montant", () => {
+  it("ne garde que les succursales avec des factures de plus de 30 jours, classées par montant, avec montant par mois", () => {
     const late = lateBranchesOf(report, 30);
     expect(late.map((b) => b.label)).toEqual(["Annaba", "Oran"]);
-    expect(late[1]).toMatchObject({ count: 2, months: ["2026-07", "2026-09"], withoutPeriod: 0 });
-    expect(late[0]).toMatchObject({ count: 2, months: ["2026-09"], withoutPeriod: 1 });
+    expect(late[1]).toMatchObject({ count: 2, months: [{ key: "2026-07", amount: 1000 }, { key: "2026-09", amount: 500 }], withoutPeriod: { count: 0, amount: 0 } });
+    expect(late[0]).toMatchObject({ count: 2, months: [{ key: "2026-09", amount: 3000 }], withoutPeriod: { count: 1, amount: 100 } });
   });
-  it("écrit le mail avec les mois en retard de chaque succursale", () => {
+  it("écrit au féminin, par succursale avec mois et montants, sans nombre de jours", () => {
     const mail = buildImpayesMail(report, 30, "Riad FELLAHI");
-    expect(mail.subject).toContain("26/11/2026");
-    expect(mail.body).toContain("Oran : 2 factures");
-    expect(mail.body).toContain("juillet 2026 et septembre 2026");
-    expect(mail.body).toContain("1 facture sans mois indiqué");
+    expect(mail.subject).toContain("novembre 2026");
+    expect(mail.body.startsWith("Bonjour Madame,")).toBe(true);
+    expect(mail.body).toContain(`Oran\n- juillet 2026 : ${formatDA(1000)}`);
+    expect(mail.body).toContain("- mois non indiqué :");
+    expect(mail.body).not.toMatch(/\d\s*jours?/);
     expect(mail.body).not.toContain("Constantine");
     expect(mail.body.endsWith("Riad FELLAHI\nAllo Assistance")).toBe(true);
   });
-  it("dit qu'aucune succursale n'est en retard quand tout est récent", () => {
+  it("cite la direction générale et les productions non reçues", () => {
+    const withDirection = buildImpayesReport(detail([
+      br("Direction", [{ ...inv("D1", 2000, 60, "2026-06"), libelle: "Refacturation assistance routière passif" }]),
+      br("Annaba", [inv("A1", 3000, 70, "2026-09")]),
+    ]), "2026-11-26");
+    const production = { month: "2026-10", byBranch: { ANNABA: { received: false, last: "2026-09" }, ORAN: { received: true, last: "2026-10" } } };
+    const mail = buildImpayesMail(withDirection, 30, "X", { production, labels: { ANNABA: "Annaba", ORAN: "Oran" } });
+    expect(mail.body).toContain("Factures de la direction générale (hors mois) :");
+    expect(mail.body).toContain("- Refacturation :");
+    expect(mail.body).toContain("Productions non reçues :\n- Annaba : production d'octobre 2026");
+    expect(mail.productionLate).toEqual(["Annaba"]);
+    expect(mail.lateBranches.map((b) => b.label)).toEqual(["Annaba"]);
+  });
+  it("confirme que tout est à jour quand rien n'est en retard", () => {
     const calm = buildImpayesReport(detail([br("Oran", [inv("O3", 200, 5, "2026-11")])]), "2026-11-26");
-    expect(buildImpayesMail(calm, 30, "X").body).toContain("aucune succursale n'est en retard");
+    expect(buildImpayesMail(calm, 30, "X").body).toContain("sont à jour");
   });
 });
