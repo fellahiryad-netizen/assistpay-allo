@@ -186,6 +186,6 @@ export async function exportAdvanceTable(actor: AuthUser, client: AdvanceClient,
     const pending = [...row.months, row.other].reduce((total, cell) => total + cell.invoices.filter((inv) => inv.montant - inv.paid > 0.005).length, 0);
     return { label, months: row.months.map(({ billed, paid, due }) => ({ billed, paid, due })), other: { billed: row.other.billed, paid: row.other.paid, due: row.other.due }, pending, oldestUnpaid: firstDue >= 0 ? `${MONTHS_FR[firstDue] ?? ""} ${year}` : row.other.due > 0.005 ? "Hors mois" : "" };
   });
-  const bytes = await writePaymentWorkbook({ client, year, generatedOn: today.split("-").reverse().join("/"), monthLabels, rows, invoices });
+  const bytes = await writePaymentWorkbook({ client, year, signedBy: actor.name, generatedOn: today.split("-").reverse().join("/"), monthLabels, rows, invoices });
   return ok({ name: `TABLEAU_PAIEMENT_${client}_${year}.xlsx`, bytes });
 }

@@ -530,6 +530,8 @@ export interface PaymentWorkbookSpec {
   year: number;
   /** Date d'édition, au format « jj/mm/aaaa ». */
   generatedOn: string;
+  /** Nom du compte connecté qui a lancé l'export (« Établi par … »). */
+  signedBy?: string;
   monthLabels: string[];
   rows: PaymentRowSpec[];
   invoices: PaymentInvoiceSpec[];
@@ -554,6 +556,7 @@ export async function writePaymentWorkbook(spec: PaymentWorkbookSpec): Promise<U
   const wb = new ExcelRuntime.Workbook();
   wb.creator = "Allo Assistance";
   const title = `Tableau de paiement ${spec.client} ${spec.year}`;
+  const by = spec.signedBy ? ` par ${spec.signedBy}` : "";
   const banner = (ws: ExcelJS.Worksheet, subtitle: string, lastCol: number): void => {
     ws.mergeCells(1, 1, 1, lastCol);
     const t = ws.getCell(1, 1);
@@ -588,7 +591,7 @@ export async function writePaymentWorkbook(spec: PaymentWorkbookSpec): Promise<U
   [30, 18, 18, 20, 16, 16, 24, 16].forEach((w, i) => {
     ws1.getColumn(i + 1).width = w;
   });
-  banner(ws1, `Allo Assistance · édité le ${spec.generatedOn} · montants en DA`, 8);
+  banner(ws1, `Allo Assistance · édité le ${spec.generatedOn}${by} · montants en DA`, 8);
   const billed = totalOf((c) => c.billed);
   const paid = totalOf((c) => c.paid);
   const due = totalOf((c) => c.due);
@@ -666,6 +669,10 @@ export async function writePaymentWorkbook(spec: PaymentWorkbookSpec): Promise<U
   }
   ws1.getCell(totalRow + 2, 1).value = "Lecture : en rouge, les sommes encore dues. Les grilles mois par mois sont dans les onglets suivants ; le détail des factures est filtrable dans l'onglet « Détail factures ».";
   ws1.getCell(totalRow + 2, 1).font = { italic: true, size: 9, color: { argb: "FF595959" } };
+  if (spec.signedBy) {
+    ws1.getCell(totalRow + 4, 1).value = `Établi par ${spec.signedBy}, le ${spec.generatedOn}`;
+    ws1.getCell(totalRow + 4, 1).font = { bold: true, size: 10 };
+  }
   ws1.pageSetup = { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
 
   // 2-4. Grilles mois par mois.
@@ -676,7 +683,7 @@ export async function writePaymentWorkbook(spec: PaymentWorkbookSpec): Promise<U
     for (let c = 2; c <= 13; c += 1) ws.getColumn(c).width = 15;
     ws.getColumn(14).width = 18;
     ws.getColumn(15).width = 18;
-    banner(ws, `${caption} · Allo Assistance · édité le ${spec.generatedOn} · montants en DA`, cols);
+    banner(ws, `${caption} · Allo Assistance · édité le ${spec.generatedOn}${by} · montants en DA`, cols);
     const h = ws.getRow(5);
     h.values = ["Succursale", ...spec.monthLabels, "Hors mois", "Total"];
     head(h);
@@ -724,7 +731,7 @@ export async function writePaymentWorkbook(spec: PaymentWorkbookSpec): Promise<U
 
   // 5. Détail des factures (tableau Excel filtrable).
   const ws5 = wb.addWorksheet("Détail factures", { views: [{ state: "frozen", ySplit: 4, showGridLines: false }] });
-  banner(ws5, `Toutes les factures du tableau · filtrez sur « État » ou « Succursale » · édité le ${spec.generatedOn}`, 12);
+  banner(ws5, `Toutes les factures du tableau · filtrez sur « État » ou « Succursale » · édité le ${spec.generatedOn}${by}`, 12);
   const widths = [26, 14, 24, 18, 52, 17, 17, 17, 14, 14, 13, 12];
   widths.forEach((w, i) => {
     ws5.getColumn(i + 1).width = w;

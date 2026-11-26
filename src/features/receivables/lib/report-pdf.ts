@@ -18,6 +18,8 @@ export interface ReportAssets {
 export interface ReportExtras {
   grid?: AdvanceTable | null;
   production?: ProductionStatus | null;
+  /** Nom du compte connecté, imprimé en pied de page (« Établi par … »). */
+  signer?: string;
 }
 
 /** Le rapport tient en 3 pages au plus. */
@@ -238,7 +240,7 @@ function plan(pen: Pen, report: ImpayesReport, extras: ReportExtras): PageSpec[]
 export function drawImpayesReport(doc: jsPDF, report: ImpayesReport, assets: ReportAssets, generatedAt: string, extras: ReportExtras = {}): number {
   const pen = new Pen(doc);
   const pages = plan(pen, report, extras);
-  const stamp = `Généré le ${formatDateTime(generatedAt)} (heure d'Alger)`;
+  const stamp = `${extras.signer ? `Établi par ${extras.signer}, le` : "Généré le"} ${formatDateTime(generatedAt)} (heure d'Alger)`;
   pages.forEach((page, index) => {
     if (index > 0) doc.addPage();
     if (assets.logo) doc.addImage(assets.logo, "PNG", MARGIN - 3, 4, 22 * LOGO_RATIO, 22);

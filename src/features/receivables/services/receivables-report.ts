@@ -53,7 +53,7 @@ export async function exportImpayesReport(actor: AuthUser, query: ReceivablesQue
     doc.setProperties({ title: `Factures impayées ${report.company}`, subject: `Situation au ${report.asOf}`, author: "Allo Assistance" });
     const assets: ReportAssets = { logo, footer, company };
     const { grid, production } = await loadExtras(actor, report.company, query.annee, result.data.asOf);
-    const pages = drawImpayesReport(doc, grid ? alignReportWithGrid(report, grid) : report, assets, new Date().toISOString(), { grid, production });
+    const pages = drawImpayesReport(doc, grid ? alignReportWithGrid(report, grid) : report, assets, new Date().toISOString(), { grid, production, signer: actor.name });
     return ok({ name: `impayes_${slug || "compagnie"}_${report.asOf}.pdf`, bytes: new Uint8Array(doc.output("arraybuffer")), pages });
   } catch (error) {
     console.error("[receivables] rapport PDF impossible :", error);
