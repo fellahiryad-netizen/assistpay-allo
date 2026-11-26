@@ -1,6 +1,7 @@
 import { AGING_BUCKETS, type AgingKey } from "@/features/receivables/lib/aging";
 import type { DetailInvoice, ReceivableDetail } from "@/features/receivables/types";
 import { formatDA, formatDate } from "@/utils/format";
+import { upperPlain } from "@/utils/text";
 
 /** Facture du rapport, avec sa succursale. */
 export interface ReportInvoice extends DetailInvoice {
@@ -147,4 +148,37 @@ export function buildImpayesReport(detail: ReceivableDetail, asOf: string): Impa
 export function branchHeadline(branch: ReportBranch): string {
   const base = `${branch.label} : ${branch.count} facture(s) pour ${formatDA(branch.amount)}.`;
   return branch.over90 > 0 ? `${base} Dont ${formatDA(branch.over90)} de plus de 90 jours (${branch.over90Count} facture(s)).` : base;
+}
+
+/** Réception de la production du mois précédent (M-1) par succursale. */
+export interface ProductionStatus {
+  /** Mois attendu, « AAAA-MM » (le mois qui précède la date du rapport). */
+  month: string;
+  /** Par clé de succursale (majuscules sans accent) : production du mois reçue ou non, et dernier mois reçu. */
+  byBranch: Record<string, { received: boolean; last: string | null }>;
+}
+
+/**
+ * Indique, pour chaque succursale, si la production du mois précédent (M-1) a été reçue, et quel est le dernier mois reçu.
+ * `rows` : fichiers de production enregistrés (année, mois, succursale).
+ */
+export function productionStatusOf(rows: ReadonlyArray<{ annee: number; mois: number; succursale: string }>, asOf: string, branchKeys: readonly string[]): ProductionStatus {
+  const year = Number(asOf.slice(0, 4));
+  const monthNumber = Number(asOf.slice(5, 7));
+  const previous = monthNumber === 1 ? { y: year - 1, m: 12 } : { y: year, m: monthNumber - 1 };
+  const month = `${previous.y}-${String(previous.m).padStart(2, "0")}`;
+  const byBranch: ProductionStatus["byBranch"] = {};
+  for (const key of branchKeys) {
+    const months = rows.filter((row) => upperPlain(row.succursale) === key).map((row) => `${row.annee}-${String(row.mois).padStart(2, "0")}`).sort();
+    byBranch[key] = { received: months.includes(month), last: months[months.length - 1] ?? null };
+  }
+  return { month, byBranch };
+}
+
+/** Nature d'une facture de la direction générale d'après son libellé ; `null` pour une facture ordinaire. */
+export function directionNature(libelle: string): string | null {
+  const text = upperPlain(libelle);
+  if (/REFACTUR/.test(text)) return "Refacturation";
+  if (/REGUL/.test(text) && /DIRECTION|PASSI/.test(text)) return "Facture client, janvier à avril";
+  return null;
 }

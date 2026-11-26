@@ -2,7 +2,9 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { AuthUser } from "@/features/access/types";
 import { requireAccess } from "@/features/access/services/access-rules";
-import { buildImpayesReport } from "@/features/receivables/lib/report";
+import { db } from "@/lib/db";
+import { can } from "@/features/access/services/access-rules";
+import { buildImpayesReport, productionStatusOf, type ProductionStatus } from "@/features/receivables/lib/report";
 import { buildImpayesMail, type ImpayesMail } from "@/features/receivables/lib/report-mail";
 import { drawImpayesReport, type ReportAssets } from "@/features/receivables/lib/report-pdf";
 import type { ImpayesMailInput, ReceivablesQuery } from "@/features/receivables/schemas";
@@ -21,7 +23,7 @@ async function readAsset(file: string): Promise<Uint8Array | null> {
 
 /**
  * Rapport PDF « factures impayées » (A4 paysage) d'une compagnie, à présenter à sa direction :
- * couverture, vue d'ensemble, situation par succursale, factures les plus anciennes, annexe détaillée.
+ * 3 pages au plus : synthèse, tableau de paiement mois par mois (avec production M-1), détail des factures.
  * Lecture seule. Droits : factures partenaires et bouton d'export. Le périmètre est la compagnie de `query.detail` (toutes activités, sans filtre d'activité ni d'ancienneté).
  */
 export async function exportImpayesReport(actor: AuthUser, query: ReceivablesQuery): Promise<ActionResult<{ name: string; bytes: Uint8Array; pages: number }>> {
@@ -38,14 +40,20 @@ export async function exportImpayesReport(actor: AuthUser, query: ReceivablesQue
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
     doc.setProperties({ title: `Factures impayées ${report.company}`, subject: `Situation au ${report.asOf}`, author: "Allo Assistance" });
     const assets: ReportAssets = { logo, footer, company };
-    // Tableau de paiement mois par mois (CAAR seulement, lecture seule) ; s'il est indisponible, le rapport sort sans cette page.
+    // Tableau de paiement mois par mois et réception de la production M-1 (CAAR seulement, lecture seule).
+    // Si l'un des deux est indisponible, le rapport sort sans cette partie.
     let grid: AdvanceTable | null = null;
+    let production: ProductionStatus | null = null;
     if (report.company === "CAAR") {
       const year = query.annee ?? Number(result.data.asOf.slice(0, 4));
       const table = await advanceTable(actor, "CAAR", year);
       if (table.success) grid = table.data;
+      if (grid && can(actor, "CAAR")) {
+        const files = await db.caarProduction.findMany({ select: { annee: true, mois: true, succursale: true } });
+        production = productionStatusOf(files, result.data.asOf, grid.rows.filter((row) => row.key !== "AUTRES").map((row) => row.key));
+      }
     }
-    const pages = drawImpayesReport(doc, report, assets, new Date().toISOString(), grid);
+    const pages = drawImpayesReport(doc, report, assets, new Date().toISOString(), { grid, production });
     return ok({ name: `impayes_${slug || "compagnie"}_${report.asOf}.pdf`, bytes: new Uint8Array(doc.output("arraybuffer")), pages });
   } catch (error) {
     console.error("[receivables] rapport PDF impossible :", error);
