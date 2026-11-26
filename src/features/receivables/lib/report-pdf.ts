@@ -238,6 +238,9 @@ function plan(pen: Pen, report: ImpayesReport, extras: ReportExtras): PageSpec[]
 
 /** Dessine le rapport « factures impayées » (A4 paysage, 3 pages au plus) sur un document jsPDF vide ; renvoie le nombre de pages. */
 export function drawImpayesReport(doc: jsPDF, report: ImpayesReport, assets: ReportAssets, generatedAt: string, extras: ReportExtras = {}): number {
+  // Propriétés du fichier : le compte connecté comme auteur, sans nom d'outil.
+  const author = extras.signer || "Allo Assistance";
+  doc.setProperties({ title: `Impayés ${report.company} au ${formatDate(report.asOf)}`, author, creator: author, subject: `Factures impayées ${report.company}` });
   const pen = new Pen(doc);
   const pages = plan(pen, report, extras);
   const stamp = `${extras.signer ? `Établi par ${extras.signer}, le` : "Généré le"} ${formatDateTime(generatedAt)} (heure d'Alger)`;

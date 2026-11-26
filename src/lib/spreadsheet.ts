@@ -554,8 +554,11 @@ const PA_BORDER: Partial<ExcelJS.Borders> = { top: { style: "thin", color: { arg
 export async function writePaymentWorkbook(spec: PaymentWorkbookSpec): Promise<Uint8Array> {
   const ExcelRuntime = (await import("exceljs")).default;
   const wb = new ExcelRuntime.Workbook();
-  wb.creator = "Allo Assistance";
   const title = `Tableau de paiement ${spec.client} ${spec.year}`;
+  // Auteur du fichier : le compte connecté (jamais un nom d'outil).
+  wb.creator = spec.signedBy || "Allo Assistance";
+  wb.lastModifiedBy = spec.signedBy || "Allo Assistance";
+  wb.title = title;
   const by = spec.signedBy ? ` par ${spec.signedBy}` : "";
   const banner = (ws: ExcelJS.Worksheet, subtitle: string, lastCol: number): void => {
     ws.mergeCells(1, 1, 1, lastCol);
