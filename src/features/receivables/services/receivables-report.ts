@@ -3,8 +3,9 @@ import path from "node:path";
 import type { AuthUser } from "@/features/access/types";
 import { requireAccess } from "@/features/access/services/access-rules";
 import { buildImpayesReport } from "@/features/receivables/lib/report";
+import { buildImpayesMail, type ImpayesMail } from "@/features/receivables/lib/report-mail";
 import { drawImpayesReport, type ReportAssets } from "@/features/receivables/lib/report-pdf";
-import type { ReceivablesQuery } from "@/features/receivables/schemas";
+import type { ImpayesMailInput, ReceivablesQuery } from "@/features/receivables/schemas";
 import { getReceivableDetail } from "@/features/receivables/services/receivables-service";
 import { companySlug } from "@/features/receivables/lib/company";
 import { fail, ok, type ActionResult } from "@/types";
@@ -42,4 +43,17 @@ export async function exportImpayesReport(actor: AuthUser, query: ReceivablesQue
     console.error("[receivables] rapport PDF impossible :", error);
     return fail("Le rapport PDF n'a pas pu être généré.", "DATABASE");
   }
+}
+
+/**
+ * Mail préparé pour la direction d'une compagnie : succursales en retard (factures émises depuis plus de `jours` jours) et mois en retard de chacune.
+ * Lecture seule ; mêmes droits que le rapport PDF. La signature porte le nom de l'utilisateur.
+ */
+export async function prepareImpayesMail(actor: AuthUser, input: ImpayesMailInput): Promise<ActionResult<ImpayesMail>> {
+  const allowed = requireAccess(actor, "A_EXPORT", "EDIT");
+  if (!allowed.success) return allowed;
+  const result = await getReceivableDetail(actor, { detail: input.company, annee: input.annee, anc: undefined, activite: undefined });
+  if (!result.success) return result;
+  const report = buildImpayesReport(result.data.detail, result.data.asOf);
+  return ok(buildImpayesMail(report, input.jours, actor.name));
 }

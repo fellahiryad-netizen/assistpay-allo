@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Download, FileText, Printer } from "lucide-react";
+import { ImpayesMailDialog } from "@/features/receivables/components/impayes-mail-dialog";
 import { buttonVariants } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import type { ReceivablesQuery } from "@/features/receivables/schemas";
@@ -62,6 +63,7 @@ export function ReceivablesFilters({ years, query, canExport }: Readonly<Receiva
             Rapport CAAR (PDF)
           </a>
         ) : null}
+        {canExport ? <ImpayesMailDialog company="CAAR" annee={query.annee} /> : null}
         <Link href={`/imprimer/creances${suffix}`} target="_blank" className={buttonVariants({ variant: "outline" })}>
           <Printer />
           Version imprimable

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Download, ExternalLink, FileText, Mail, Printer } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { CompanyLogo } from "@/features/receivables/components/company-logo";
+import { ImpayesMailDialog } from "@/features/receivables/components/impayes-mail-dialog";
 import { DETAIL_AGE_FILTERS, agingLabelOf, scopeKey, scopeLabel } from "@/features/receivables/lib/detail";
 import { invoicesHref, receivablesHref } from "@/features/receivables/lib/links";
 import type { ReceivablesQuery } from "@/features/receivables/schemas";
@@ -63,6 +64,7 @@ export function ReceivableDetailPanel({ detail, query, canExport, canRelance }: 
               Rapport PDF direction
             </a>
           ) : null}
+          {canExport ? <ImpayesMailDialog company={detail.scope.company} annee={query.annee} /> : null}
           <Link href={`/imprimer/creances-detail?${qs}`} target="_blank" className={buttonVariants({ variant: "outline", size: "sm" })}>
             <Printer />
             Imprimer le détail

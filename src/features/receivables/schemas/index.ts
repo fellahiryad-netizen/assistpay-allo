@@ -12,3 +12,12 @@ export const receivablesQuerySchema = z.object({
 
 /** Filtres validés de la page des créances. */
 export type ReceivablesQuery = z.infer<typeof receivablesQuerySchema>;
+
+/** Mail à la direction : compagnie, année facultative et délai de retard (30, 60 ou 90 jours). */
+export const impayesMailSchema = z.object({
+  company: z.string().trim().min(1).max(80),
+  annee: z.coerce.number().int().min(2000).max(2100).optional(),
+  jours: z.coerce.number().int().refine((value) => value === 30 || value === 60 || value === 90).default(30),
+});
+/** Demande de mail validée. */
+export type ImpayesMailInput = z.infer<typeof impayesMailSchema>;
