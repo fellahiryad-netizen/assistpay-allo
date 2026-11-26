@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { Download, ExternalLink, FileText, Mail, Printer } from "lucide-react";
+import { Download, ExternalLink, Mail, Printer } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { CompanyLogo } from "@/features/receivables/components/company-logo";
-import { ImpayesMailDialog } from "@/features/receivables/components/impayes-mail-dialog";
 import { DETAIL_AGE_FILTERS, agingLabelOf, scopeKey, scopeLabel } from "@/features/receivables/lib/detail";
 import { invoicesHref, receivablesHref } from "@/features/receivables/lib/links";
 import type { ReceivablesQuery } from "@/features/receivables/schemas";
@@ -58,13 +57,6 @@ export function ReceivableDetailPanel({ detail, query, canExport, canRelance }: 
               Exporter ce détail en Excel
             </a>
           ) : null}
-          {canExport ? (
-            <a href={`/api/creances/rapport?${new URLSearchParams({ detail: detail.scope.company, ...(query.annee ? { annee: String(query.annee) } : {}) }).toString()}`} className={buttonVariants({ variant: "outline", size: "sm" })} title={`Présentation PDF des impayés ${detail.scope.company} pour la direction`}>
-              <FileText />
-              Rapport PDF direction
-            </a>
-          ) : null}
-          {canExport ? <ImpayesMailDialog company={detail.scope.company} annee={query.annee} /> : null}
           <Link href={`/imprimer/creances-detail?${qs}`} target="_blank" className={buttonVariants({ variant: "outline", size: "sm" })}>
             <Printer />
             Imprimer le détail
