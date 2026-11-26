@@ -36,3 +36,24 @@ describe("rapport des impayés", () => {
     expect(buildImpayesReport(detail([]), "2026-11-26").headline).toContain("aucune facture");
   });
 });
+
+describe("factures exclues du rapport (TDA)", () => {
+  it("retire la facture TDA du détail et du tableau, totaux recalculés", async () => {
+    const { excludeFromReport, excludeFromGrid, isExcludedFromReport } = await import("@/features/receivables/lib/report");
+    expect(isExcludedFromReport("TDA26-00085")).toBe(true);
+    expect(isExcludedFromReport("CAAR26-00100")).toBe(false);
+    const mk = (numero: string, amount: number, age: number): DetailInvoice => ({ id: numero, numero, libelle: "", periode: "", date: "2026-09-01", ageDays: age, aging: "D31_60", amount, partner: "", lastReminder: null });
+    const only = branch("TDA ALGERIE", [mk("TDA26-00085", 166600, 40)]);
+    const mixed = branch("Oran", [mk("TDA26-00086", 100, 90), mk("CAAR26-00001", 1000, 50)]);
+    const out = excludeFromReport({ scope: { company: "CAAR", activity: null }, scopeTotal: 0, scopeCount: 0, minAge: null, total: 0, count: 0, branches: [only, mixed] });
+    expect(out.branches.map((b) => b.label)).toEqual(["Oran"]);
+    expect(out.branches[0]).toMatchObject({ count: 1, amount: 1000, oldestDays: 50 });
+    const cell = (invoices: Array<{ numero: string; montant: number }>) => ({ invoices: invoices.map((i) => ({ ...i, id: i.numero, libelle: "", paid: 0, status: "EN_ATTENTE" as const, dateFacture: null, dateOperation: null, liens: [] })), billed: 0, paid: 0, due: invoices.reduce((s, i) => s + i.montant, 0), state: "attente" as const });
+    const empty = { invoices: [], billed: 0, paid: 0, due: 0, state: "vide" as const };
+    const grid = { client: "CAAR" as const, year: 2026, years: [2026], rows: [{ key: "AUTRES", label: "Direction", months: Array.from({ length: 12 }, () => empty), other: cell([{ numero: "TDA26-00085", montant: 166600 }, { numero: "CAAR26-00100", montant: 2859599.8 }]), billed: 3026199.8, paid: 0, due: 3026199.8 }], totals: { months: Array.from({ length: 12 }, () => ({ billed: 0, paid: 0, due: 0 })), other: { billed: 3026199.8, paid: 0, due: 3026199.8 }, billed: 3026199.8, paid: 0, due: 3026199.8 } };
+    const g = excludeFromGrid(grid);
+    expect(g.rows[0]?.other.invoices.map((i) => i.numero)).toEqual(["CAAR26-00100"]);
+    expect(g.totals.due).toBeCloseTo(2859599.8, 2);
+    expect(g.rows[0]?.due).toBeCloseTo(2859599.8, 2);
+  });
+});

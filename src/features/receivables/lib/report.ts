@@ -1,4 +1,5 @@
 import { AGING_BUCKETS, type AgingKey } from "@/features/receivables/lib/aging";
+import type { AdvanceTable } from "@/features/partners/services/advance-table";
 import type { DetailInvoice, ReceivableDetail } from "@/features/receivables/types";
 import { formatDA, formatDate } from "@/utils/format";
 import { upperPlain } from "@/utils/text";
@@ -181,4 +182,36 @@ export function directionNature(libelle: string): string | null {
   if (/REFACTUR/.test(text)) return "Refacturation";
   if (/REGUL/.test(text) && /DIRECTION|PASSI/.test(text)) return "Facture client, janvier à avril";
   return null;
+}
+
+/** Factures sorties du rapport et du mail : TDA, facturées directement au client (numéro commençant par « TDA »). */
+export const isExcludedFromReport = (numero: string): boolean => /^TDA/i.test(numero.trim());
+
+/** Détail des créances sans les factures exclues du rapport ; les succursales vides disparaissent et leurs totaux sont recalculés. */
+export function excludeFromReport(detail: ReceivableDetail): ReceivableDetail {
+  const branches = detail.branches
+    .map((branch) => {
+      const invoices = branch.invoices.filter((invoice) => !isExcludedFromReport(invoice.numero));
+      if (invoices.length === branch.invoices.length) return branch;
+      const oldest = invoices.filter((invoice) => invoice.ageDays !== null).sort((a, b) => (b.ageDays ?? 0) - (a.ageDays ?? 0))[0];
+      return { ...branch, invoices, count: invoices.length, amount: round2(invoices.reduce((sum, invoice) => sum + invoice.amount, 0)), oldestDays: oldest?.ageDays ?? null, oldestDate: oldest?.date ?? null };
+    })
+    .filter((branch) => branch.invoices.length > 0);
+  return { ...detail, branches };
+}
+
+/** Tableau de paiement sans les factures exclues du rapport (case « hors mois » et totaux recalculés). */
+export function excludeFromGrid(grid: AdvanceTable): AdvanceTable {
+  const rows = grid.rows.map((row) => {
+    const other = row.other;
+    const invoices = other.invoices.filter((invoice) => !isExcludedFromReport(invoice.numero));
+    if (invoices.length === other.invoices.length) return row;
+    const billed = round2(invoices.reduce((sum, invoice) => sum + invoice.montant, 0));
+    const paid = round2(invoices.reduce((sum, invoice) => sum + invoice.paid, 0));
+    const due = round2(invoices.reduce((sum, invoice) => sum + Math.max(0, invoice.montant - invoice.paid), 0));
+    const state: typeof other.state = invoices.length === 0 ? "vide" : billed === 0 ? "zero" : due <= 0.005 ? "regle" : paid > 0.005 ? "partiel" : "attente";
+    return { ...row, other: { invoices, billed, paid, due, state }, billed: round2(row.billed - other.billed + billed), paid: round2(row.paid - other.paid + paid), due: round2(row.due - other.due + due) };
+  });
+  const sum = (pick: (row: AdvanceTable["rows"][number]) => number): number => round2(rows.reduce((total, row) => total + pick(row), 0));
+  return { ...grid, rows, totals: { ...grid.totals, other: { billed: sum((r) => r.other.billed), paid: sum((r) => r.other.paid), due: sum((r) => r.other.due) }, billed: sum((r) => r.billed), paid: sum((r) => r.paid), due: sum((r) => r.due) } };
 }
