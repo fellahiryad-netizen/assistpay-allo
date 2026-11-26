@@ -1,3 +1,4 @@
+import { NOT_MONTHLY } from "@/features/partners/lib/production-period";
 import { directionNature, type ImpayesReport, type ProductionStatus } from "@/features/receivables/lib/report";
 import { MONTHS_FR } from "@/utils/dates";
 import { formatDA } from "@/utils/format";
@@ -19,6 +20,8 @@ export interface LateBranch {
   months: LateMonth[];
   /** Factures en retard dont le mois n'est pas indiqué. */
   withoutPeriod: { count: number; amount: number };
+  /** Régularisations (10 %…) en attente : ce ne sont pas des mois de retard. */
+  regularisation: { count: number; amount: number };
 }
 
 /** Mail préparé pour la direction. */
@@ -59,15 +62,19 @@ export function lateBranchesOf(report: ImpayesReport, lateDays: number): LateBra
   for (const branch of report.branches) {
     const late = branch.invoices.filter((invoice) => (lateDays <= 0 || (invoice.ageDays !== null && invoice.ageDays > lateDays)) && directionNature(invoice.libelle) === null);
     if (late.length === 0) continue;
+    const isRegul = (invoice: { libelle: string }): boolean => NOT_MONTHLY.test(upperPlain(invoice.libelle));
+    const regul = late.filter(isRegul);
+    const monthly = late.filter((invoice) => !isRegul(invoice));
     const byMonth = new Map<string, number>();
-    for (const invoice of late.filter((item) => validMonth(item.periode))) byMonth.set(invoice.periode, (byMonth.get(invoice.periode) ?? 0) + invoice.amount);
-    const unknown = late.filter((invoice) => !validMonth(invoice.periode));
+    for (const invoice of monthly.filter((item) => validMonth(item.periode))) byMonth.set(invoice.periode, (byMonth.get(invoice.periode) ?? 0) + invoice.amount);
+    const unknown = monthly.filter((invoice) => !validMonth(invoice.periode));
     result.push({
       label: branch.label,
       count: late.length,
       amount: round2(late.reduce((sum, invoice) => sum + invoice.amount, 0)),
       months: [...byMonth.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, amount]) => ({ key, amount: round2(amount) })),
       withoutPeriod: { count: unknown.length, amount: round2(unknown.reduce((sum, invoice) => sum + invoice.amount, 0)) },
+      regularisation: { count: regul.length, amount: round2(regul.reduce((sum, invoice) => sum + invoice.amount, 0)) },
     });
   }
   return result.sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label, "fr"));
@@ -115,6 +122,7 @@ export function buildImpayesMail(report: ImpayesReport, lateDays: number, signer
       lines.push("", "Règlements en retard :");
       for (const branch of late) {
         for (const month of branch.months) lines.push(`- ${branch.label}, ${monthName(month.key)} : ${formatDA(month.amount)}`);
+        if (branch.regularisation.count > 0) lines.push(`- ${branch.label}, régularisation : ${formatDA(branch.regularisation.amount)}`);
         if (branch.withoutPeriod.count > 0) lines.push(`- ${branch.label}, mois non indiqué : ${formatDA(branch.withoutPeriod.amount)}`);
       }
       lines.push("", `Total des règlements en retard : ${formatDA(lateAmount)}.`);

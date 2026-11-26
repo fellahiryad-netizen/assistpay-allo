@@ -1,4 +1,5 @@
 import { AGING_BUCKETS, type AgingKey } from "@/features/receivables/lib/aging";
+import { productionPeriod } from "@/features/partners/lib/production-period";
 import type { AdvanceTable } from "@/features/partners/services/advance-table";
 import type { DetailInvoice, ReceivableDetail } from "@/features/receivables/types";
 import { formatDA, formatDate } from "@/utils/format";
@@ -85,7 +86,8 @@ export function buildImpayesReport(detail: ReceivableDetail, asOf: string): Impa
   const company = detail.scope.company;
   const branches: ReportBranch[] = detail.branches
     .map((branch) => {
-      const invoices: ReportInvoice[] = branch.invoices.map((invoice) => ({ ...invoice, branch: branch.label }));
+      // Le mois est celui du champ « période », sinon celui cité dans le libellé (« Honoraire – Mois de SEPTEMBRE 2026 »).
+      const invoices: ReportInvoice[] = branch.invoices.map((invoice) => ({ ...invoice, periode: productionPeriod(invoice.periode, invoice.libelle) ?? "", branch: branch.label }));
       const old = invoices.filter((invoice) => invoice.aging === "D90_PLUS");
       return {
         label: branch.label,

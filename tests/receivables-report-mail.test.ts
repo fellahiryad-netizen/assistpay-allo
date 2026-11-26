@@ -64,3 +64,23 @@ describe("choix « toutes les factures impayées »", () => {
     expect(mail.body).toContain("- Annaba, septembre 2026 :");
   });
 });
+
+describe("mois déduits du libellé et régularisations", () => {
+  it("retrouve le mois dans le libellé et met la régularisation à part", () => {
+    const l = (id: string, libelle: string, periode: string, amount: number, age: number): DetailInvoice => ({ ...inv(id, amount, age, periode), libelle });
+    const r = buildImpayesReport(detail([
+      br("Succursale Cheraga", [l("C1", "Honoraire – Mois de SEPTEMBRE 2026 — Succursale CHERAGA", "", 7133560.06, 38), l("C2", "Facturation mois de OCTOBRE 2026", "2026-10", 6310417.63, 4)]),
+      br("Succursale Annaba", [l("A1", "FACTURATION MOIS DE AOUT2026", "", 2880540.27, 60), l("A2", "Facturation mois de SEPTEMBRE 2026", "2026-09", 3321009.05, 2)]),
+      br("Succursale Oran", [l("O1", "Régul 10 % mai, juin et juillet 2026 succursale Oran", "2026-07", 2756586.26, 11), l("O2", "Facturation mois de OCTOBRE 2026", "2026-10", 2841760.23, 3)]),
+    ]), "2026-11-26");
+    const body = buildImpayesMail(r, 0, "X").body;
+    expect(body).toContain("- Cheraga, septembre 2026 :".replace("Cheraga", "Succursale Cheraga"));
+    expect(body).toContain("Succursale Cheraga, octobre 2026");
+    expect(body).toContain("Succursale Annaba, août 2026");
+    expect(body).toContain("Succursale Annaba, septembre 2026");
+    expect(body).toContain("Succursale Oran, octobre 2026");
+    expect(body).not.toContain("Succursale Oran, juillet 2026");
+    expect(body).toContain("Succursale Oran, régularisation");
+    expect(body).not.toContain("mois non indiqué");
+  });
+});
