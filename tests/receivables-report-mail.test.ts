@@ -29,8 +29,9 @@ describe("mail des impayés à la direction", () => {
     const mail = buildImpayesMail(report, 30, "Riad FELLAHI");
     expect(mail.subject).toContain("novembre 2026");
     expect(mail.body.startsWith("Bonjour Madame,")).toBe(true);
-    expect(mail.body).toContain(`Oran\n- juillet 2026 : ${formatDA(1000)}`);
-    expect(mail.body).toContain("- mois non indiqué :");
+    expect(mail.body).toContain(`- Oran, juillet 2026 : ${formatDA(1000)}`);
+    expect(mail.body).toContain("afin que vous nous aidiez à débloquer la situation.");
+    expect(mail.body).toContain("- Annaba, mois non indiqué :");
     expect(mail.body).not.toMatch(/\d\s*jours?/);
     expect(mail.body).not.toContain("Constantine");
     expect(mail.body.endsWith("Riad FELLAHI\nAllo Assistance")).toBe(true);

@@ -113,9 +113,8 @@ export function buildImpayesMail(report: ImpayesReport, lateDays: number, signer
     if (late.length > 0) {
       lines.push("", "Règlements en retard :");
       for (const branch of late) {
-        lines.push("", branch.label);
-        for (const month of branch.months) lines.push(`- ${monthName(month.key)} : ${formatDA(month.amount)}`);
-        if (branch.withoutPeriod.count > 0) lines.push(`- mois non indiqué : ${formatDA(branch.withoutPeriod.amount)}`);
+        for (const month of branch.months) lines.push(`- ${branch.label}, ${monthName(month.key)} : ${formatDA(month.amount)}`);
+        if (branch.withoutPeriod.count > 0) lines.push(`- ${branch.label}, mois non indiqué : ${formatDA(branch.withoutPeriod.amount)}`);
       }
       lines.push("", `Total des règlements en retard : ${formatDA(lateAmount)}.`);
     }
@@ -127,10 +126,7 @@ export function buildImpayesMail(report: ImpayesReport, lateDays: number, signer
       lines.push("", "Productions non reçues :");
       for (const label of productionLate) lines.push(`- ${label} : production ${deMois(monthName(production.month))}`);
     }
-    const asks: string[] = [];
-    if (late.length > 0 || direction.size > 0) asks.push("faire régler ces factures, ou de nous indiquer la date prévue du règlement");
-    if (productionLate.length > 0) asks.push("demander aux succursales concernées de nous envoyer leur production");
-    lines.push("", `Je vous remercie de bien vouloir ${asks.join(", et de ")}. Je reste à votre disposition pour toute précision.`);
+    lines.push("", "Je vous écris afin que vous nous aidiez à débloquer la situation.");
   }
   lines.push("", "Cordialement,", signer || "", "Allo Assistance");
   return { subject, body: lines.join("\n"), lateBranches: late, lateCount, lateAmount, directionAmount, productionLate };
