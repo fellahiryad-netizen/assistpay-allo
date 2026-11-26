@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Download } from "lucide-react";
+import { Download, FileText } from "lucide-react";
+import { ImpayesMailDialog } from "@/features/receivables/components/impayes-mail-dialog";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/features/access/services/access-rules";
 import { PageHeader } from "@/components/common/page-header";
@@ -44,6 +45,14 @@ export default async function AdvancesPage({
           <a href={`/api/avances?client=${client}&annee=${year}`} className={buttonVariants({ size: "sm", variant: "outline", className: "ml-auto" })}>
             <Download className="mr-1 h-4 w-4" aria-hidden /> Excel
           </a>
+        ) : null}
+        {client === "CAAR" && can(user, "A_EXPORT", "EDIT") ? (
+          <>
+            <a href={`/api/creances/rapport?detail=CAAR&annee=${year}`} className={buttonVariants({ size: "sm", variant: "violet" })} title="Rapport PDF des impayés CAAR pour la direction, avec ce tableau mois par mois">
+              <FileText className="mr-1 h-4 w-4" aria-hidden /> Rapport impayés CAAR (PDF)
+            </a>
+            <ImpayesMailDialog company="CAAR" annee={year} />
+          </>
         ) : null}
       </div>
       <AdvanceGrid table={table} deleteMode={user.isAdmin ? "direct" : can(user, "A_SUPPR", "EDIT") ? "request" : "none"} />

@@ -1,5 +1,6 @@
 import type { jsPDF } from "jspdf";
 import { BLACK, GREY, ORANGE, Pen, TINT, VIOLET, table, type Col, type Rgb } from "@/features/treasury/lib/deck-pdf";
+import type { AdvanceTable } from "@/features/partners/services/advance-table";
 import { agingLabelOf } from "@/features/receivables/lib/detail";
 import { monthName } from "@/features/receivables/lib/report-mail";
 import { branchHeadline, millions, type ImpayesReport, type ReportBranch, type ReportInvoice } from "@/features/receivables/lib/report";
@@ -141,8 +142,36 @@ function branchHeader(pen: Pen, branch: ReportBranch, y: number): number {
   return y + 17;
 }
 
+
+const MONTH_SHORT = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+const gridCols: Col[] = [{ w: 41 }, ...Array.from({ length: 12 }, () => ({ w: 16.5, align: "right" as const })), { w: 30, align: "right" }];
+const dzd = (value: number): string => Math.round(value).toLocaleString("fr-FR");
+
+/** Tableau de paiement du CRM (une ligne par succursale, une colonne par mois) : reste à encaisser en rouge et en gras, « réglé » sinon. */
+function paymentGrid(pen: Pen, grid: AdvanceTable, y: number): void {
+  const cellText = (cell: AdvanceTable["rows"][number]["months"][number]): string => {
+    if (cell.state === "vide" || cell.state === "zero") return "-";
+    return cell.state === "regle" ? "réglé" : dzd(cell.due);
+  };
+  const rows = grid.rows.map((row) => [row.label, ...row.months.map(cellText), dzd(row.due)]);
+  const colored = (row: number, col: number): Rgb | undefined => {
+    const source = grid.rows[row];
+    if (!source) return undefined;
+    if (col === 13) return source.due > 0.005 ? RED : undefined;
+    const cell = source.months[col - 1];
+    return cell && (cell.state === "attente" || cell.state === "partiel") ? RED : undefined;
+  };
+  const end = table(pen, MARGIN, y, gridCols, ["Succursale", ...MONTH_SHORT, "Total à régler"], rows, {
+    size: 7.5,
+    bold: [true, ...Array.from({ length: 13 }, () => true)],
+    cellColor: colored,
+    footRow: ["Total", ...grid.totals.months.map((m) => (m.due > 0.005 ? dzd(m.due) : "-")), dzd(grid.totals.due)],
+  });
+  pen.text("Montants en DA, arrondis. En rouge et en gras : mois non réglé (reste à encaisser). « réglé » : mois soldé. « - » : aucune facture.", MARGIN, end + 6, { size: 8.5, bold: true });
+}
+
 /** Pages de présentation du rapport : couverture, vue d'ensemble, succursales, factures les plus anciennes, puis annexe détaillée. */
-function plan(pen: Pen, report: ImpayesReport, assets: ReportAssets): PageSpec[] {
+function plan(pen: Pen, report: ImpayesReport, assets: ReportAssets, grid: AdvanceTable | null): PageSpec[] {
   const pages: PageSpec[] = [];
   const doc = pen.doc;
 
@@ -282,14 +311,22 @@ function plan(pen: Pen, report: ImpayesReport, assets: ReportAssets): PageSpec[]
       });
     });
   };
+  if (grid && grid.rows.length > 0) {
+    const late = grid.rows.filter((row) => row.due > 0.005).length;
+    pages.splice(Math.min(3, pages.length), 0, {
+      title: `Tableau de paiement ${grid.client} ${grid.year}`,
+      retenir: `Reste à encaisser sur ${grid.year} : ${formatDA(grid.totals.due)}, réparti sur ${late} succursale(s). Les mois non réglés sont en rouge.`,
+      draw: () => paymentGrid(pen, grid, 52),
+    });
+  }
   report.branches.forEach(annex);
   return pages;
 }
 
 /** Dessine le rapport « factures impayées » (A4 paysage, une rubrique par page) sur un document jsPDF vide. */
-export function drawImpayesReport(doc: jsPDF, report: ImpayesReport, assets: ReportAssets, generatedAt: string): number {
+export function drawImpayesReport(doc: jsPDF, report: ImpayesReport, assets: ReportAssets, generatedAt: string, grid: AdvanceTable | null = null): number {
   const pen = new Pen(doc);
-  const pages = plan(pen, report, assets);
+  const pages = plan(pen, report, assets, grid);
   const stamp = `Généré le ${formatDateTime(generatedAt)} (heure d'Alger)`;
   pages.forEach((page, index) => {
     if (index > 0) doc.addPage();

@@ -8,6 +8,7 @@ import { drawImpayesReport, type ReportAssets } from "@/features/receivables/lib
 import type { ImpayesMailInput, ReceivablesQuery } from "@/features/receivables/schemas";
 import { getReceivableDetail } from "@/features/receivables/services/receivables-service";
 import { companySlug } from "@/features/receivables/lib/company";
+import { advanceTable, type AdvanceTable } from "@/features/partners/services/advance-table";
 import { fail, ok, type ActionResult } from "@/types";
 
 async function readAsset(file: string): Promise<Uint8Array | null> {
@@ -37,7 +38,14 @@ export async function exportImpayesReport(actor: AuthUser, query: ReceivablesQue
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
     doc.setProperties({ title: `Factures impayées ${report.company}`, subject: `Situation au ${report.asOf}`, author: "Allo Assistance" });
     const assets: ReportAssets = { logo, footer, company };
-    const pages = drawImpayesReport(doc, report, assets, new Date().toISOString());
+    // Tableau de paiement mois par mois (CAAR seulement, lecture seule) ; s'il est indisponible, le rapport sort sans cette page.
+    let grid: AdvanceTable | null = null;
+    if (report.company === "CAAR") {
+      const year = query.annee ?? Number(result.data.asOf.slice(0, 4));
+      const table = await advanceTable(actor, "CAAR", year);
+      if (table.success) grid = table.data;
+    }
+    const pages = drawImpayesReport(doc, report, assets, new Date().toISOString(), grid);
     return ok({ name: `impayes_${slug || "compagnie"}_${report.asOf}.pdf`, bytes: new Uint8Array(doc.output("arraybuffer")), pages });
   } catch (error) {
     console.error("[receivables] rapport PDF impossible :", error);
