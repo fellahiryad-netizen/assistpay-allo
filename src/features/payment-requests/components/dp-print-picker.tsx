@@ -72,7 +72,7 @@ export function DpPrintPicker(): React.JSX.Element {
         Impression multiple
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogContent className="max-h-[95vh] max-w-5xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Impression multiple des demandes de paiement</DialogTitle>
             <DialogDescription>Cochez les demandes à imprimer : elles sortent ensemble, une page par demande.</DialogDescription>
@@ -104,10 +104,10 @@ export function DpPrintPicker(): React.JSX.Element {
                 <input type="checkbox" className="size-4 cursor-pointer accent-primary" checked={allVisibleChecked} onChange={toggleAll} aria-label="Tout sélectionner" />
                 Tout sélectionner ({visible.length})
               </label>
-              <ul className="max-h-[45vh] divide-y overflow-y-auto">
+              <ul className="max-h-[62vh] divide-y overflow-y-auto [scrollbar-width:auto] [&::-webkit-scrollbar]:w-5 [&::-webkit-scrollbar-thumb]:min-h-16 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-4 [&::-webkit-scrollbar-thumb]:border-solid [&::-webkit-scrollbar-thumb]:border-card [&::-webkit-scrollbar-thumb]:bg-foreground/60 [&::-webkit-scrollbar-track]:bg-muted">
                 {visible.map((item) => (
                   <li key={item.id}>
-                    <label className={cn("flex cursor-pointer items-center gap-3 p-2 text-sm hover:bg-primary/5", selected.has(item.id) && "bg-primary/10")}>
+                    <label className={cn("flex cursor-pointer items-center gap-3 p-3 text-sm hover:bg-primary/5", selected.has(item.id) && "bg-primary/10")}>
                       <input type="checkbox" className="size-4 shrink-0 cursor-pointer accent-primary" checked={selected.has(item.id)} onChange={() => toggle(item.id)} aria-label={`Sélectionner ${item.ref}`} />
                       <span className="w-28 shrink-0 font-semibold">
                         {item.ref}
