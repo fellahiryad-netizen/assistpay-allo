@@ -6,9 +6,9 @@ import type { AuthUser } from "@/features/access/types";
 import { remaining, toPayable } from "@/features/invoices/services/invoice-balance";
 import { decimalToNumber } from "@/features/invoices/services/invoice-mapper";
 import { logAction } from "@/features/journal/services/journal-service";
-import type { DpCreateInput, DpLinkInput, DpQuery, DpUpdateInput } from "@/features/payment-requests/schemas";
+import type { DpCreateInput, DpLinkInput, DpPrintListInput, DpQuery, DpUpdateInput } from "@/features/payment-requests/schemas";
 import { beneficiaryKey, parseRequestWorkbook, productFromCategory } from "@/features/payment-requests/services/dp-import-parser";
-import type { DpImportPlan, DpInvoiceOption, DpPaymentState, DpProduct, ImportedRequest, PaymentRequestDTO } from "@/features/payment-requests/types";
+import type { DpImportPlan, DpInvoiceOption, DpPaymentState, DpPrintableDTO, DpProduct, ImportedRequest, PaymentRequestDTO } from "@/features/payment-requests/types";
 import { fail, ok, type ActionResult, type Paginated } from "@/types";
 import { round2 } from "@/utils/amounts";
 import { fromIsoDate, toIsoDate, todayIso } from "@/utils/dates";
@@ -593,4 +593,44 @@ export async function requestIdsForInvoice(actor: AuthUser, invoiceId: string): 
     take: 5,
   });
   return rows;
+}
+
+
+/** Plafond d'une impression multiple (le lien d'impression porte les identifiants). */
+export const DP_PRINT_MAX = 100;
+
+/**
+ * Demandes proposées à l'impression multiple, des plus récentes aux plus anciennes (400 au plus).
+ * « non_payee » : non payées ou partiellement payées ; « a_valider » : en attente de validation ; « toutes ».
+ */
+export async function listPrintableRequests(actor: AuthUser, query: DpPrintListInput): Promise<ActionResult<DpPrintableDTO[]>> {
+  const guard = requireAccess(actor, "DP");
+  if (!guard.success) return guard;
+  try {
+    const all = await db.paymentRequest.findMany({
+      where: query.filtre === "a_valider" ? { status: "a_valider" } : {},
+      orderBy: [{ createdAt: "desc" }, { num: "desc" }],
+      take: 400,
+    });
+    const maps = await invoiceMaps(all);
+    const items = all.map((request) => toDTO(request, linkedInvoices(request, maps.byLegacy, maps.debitByNumber)));
+    const kept = query.filtre === "non_payee" ? items.filter((item) => item.payment.state === "non_payee" || item.payment.state === "partielle") : items;
+    return ok(
+      kept.map((item) => ({
+        id: item.id,
+        ref: item.ref,
+        date: item.date,
+        beneficiaire: item.beneficiaire,
+        montant: item.montant,
+        produit: item.produit,
+        mode: item.mode,
+        status: item.status,
+        paymentState: item.payment.state,
+        paymentLabel: item.payment.label,
+      })),
+    );
+  } catch (error) {
+    console.error("[demandes] liste d'impression :", error);
+    return fail("Impossible de charger les demandes à imprimer.", "DATABASE");
+  }
 }

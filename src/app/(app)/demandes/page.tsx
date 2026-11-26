@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { can } from "@/features/access/services/access-rules";
 import { SupplierImportDialog } from "@/features/payment-requests/components/supplier-import-dialog";
 import { DpImportDialog } from "@/features/payment-requests/components/dp-import-dialog";
+import { DpPrintPicker } from "@/features/payment-requests/components/dp-print-picker";
 import { DpList } from "@/features/payment-requests/components/dp-list";
 import { NewRequestButton } from "@/features/payment-requests/components/new-request-button";
 import { dpQuerySchema, type DpQuery } from "@/features/payment-requests/schemas";
@@ -43,13 +44,16 @@ export default async function RequestsPage({
         title="Demandes de paiement"
         description={`Prochaine demande : n° ${data.nextRef} · ${data.total} demande(s), total ${formatDA(data.sumMontant)}`}
         actions={
-          data.canEdit ? (
-            <>
-              {can(user, "FFOUR", "EDIT") && can(user, "A_IMPORT", "EDIT") ? <SupplierImportDialog /> : null}
-              <DpImportDialog />
-              <NewRequestButton />
-            </>
-          ) : undefined
+          <>
+            <DpPrintPicker />
+            {data.canEdit ? (
+              <>
+                {can(user, "FFOUR", "EDIT") && can(user, "A_IMPORT", "EDIT") ? <SupplierImportDialog /> : null}
+                <DpImportDialog />
+                <NewRequestButton />
+              </>
+            ) : null}
+          </>
         }
       />
       <TabsNav

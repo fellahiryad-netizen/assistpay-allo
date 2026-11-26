@@ -3,18 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { runAction, runUploadAction } from "@/app/actions/action-helpers";
-import { dpCreateSchema, dpIdSchema, dpLinkSchema, dpUpdateSchema, type DpCreateInput, type DpLinkInput, type DpUpdateInput } from "@/features/payment-requests/schemas";
+import { dpCreateSchema, dpIdSchema, dpLinkSchema, dpPrintListSchema, dpUpdateSchema, type DpCreateInput, type DpPrintListInput, type DpLinkInput, type DpUpdateInput } from "@/features/payment-requests/schemas";
 import {
   applyRequestImport,
   createFromInvoices,
   deleteRequest,
   invoiceOptions,
   linkInvoices,
+  listPrintableRequests,
   previewRequestImport,
   updateRequest,
 } from "@/features/payment-requests/services/payment-request-service";
 import { applySupplierImport, previewSupplierImport, type SupplierPlan } from "@/features/payment-requests/services/supplier-import";
-import type { DpImportPlan, DpInvoiceOption, PaymentRequestDTO } from "@/features/payment-requests/types";
+import type { DpImportPlan, DpInvoiceOption, DpPrintableDTO, PaymentRequestDTO } from "@/features/payment-requests/types";
 import { ok, type ActionResult } from "@/types";
 
 function refresh(id?: string): void {
@@ -99,4 +100,9 @@ export async function deleteRequestsBulkAction(input: { ids: string[] }): Promis
   });
   if (result.success) refresh();
   return result;
+}
+
+/** Demandes proposées à l'impression multiple. */
+export async function printableRequestsAction(input: DpPrintListInput): Promise<ActionResult<DpPrintableDTO[]>> {
+  return runAction(dpPrintListSchema, input, listPrintableRequests);
 }

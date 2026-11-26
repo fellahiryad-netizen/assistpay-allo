@@ -36,3 +36,8 @@ export type DpLinkInput = z.infer<typeof dpLinkSchema>;
 
 /** Identifiant d'une demande. */
 export const dpIdSchema = z.string().min(1).max(64);
+
+/** Demandes proposées à l'impression multiple : « non_payee » (défaut), « a_valider » ou « toutes ». */
+export const dpPrintListSchema = z.object({ filtre: z.enum(["a_valider", "non_payee", "toutes"]).default("non_payee") });
+/** Filtre validé de l'impression multiple. */
+export type DpPrintListInput = z.infer<typeof dpPrintListSchema>;

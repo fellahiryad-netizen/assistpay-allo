@@ -69,3 +69,18 @@ export interface DpImportPlan {
   deduced: number;
   unknownProduct: number;
 }
+
+/** Demande résumée pour le choix d'impression multiple. */
+export interface DpPrintableDTO {
+  id: string;
+  ref: string;
+  date: string | null;
+  beneficiaire: string;
+  montant: number;
+  produit: string;
+  mode: string;
+  /** « a_valider » ou statut validé. */
+  status: string;
+  paymentState: DpPaymentState;
+  paymentLabel: string;
+}
