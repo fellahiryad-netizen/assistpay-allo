@@ -1,6 +1,7 @@
 import type { jsPDF } from "jspdf";
 import { BLACK, GREY, ORANGE, Pen, TINT, VIOLET, table, type Col, type Rgb } from "@/features/treasury/lib/deck-pdf";
 import { agingLabelOf } from "@/features/receivables/lib/detail";
+import { monthName } from "@/features/receivables/lib/report-mail";
 import { branchHeadline, millions, type ImpayesReport, type ReportBranch, type ReportInvoice } from "@/features/receivables/lib/report";
 import { formatDA, formatDate, formatDateTime } from "@/utils/format";
 
@@ -18,7 +19,9 @@ const CONTENT_W = PAGE_W - 2 * MARGIN;
 const LOGO_RATIO = 693 / 384;
 const FOOTER_RATIO = 619 / 61;
 /** Lignes de facture par page d'annexe. */
-const ROWS_PER_PAGE = 16;
+const ROWS_PER_PAGE = 11;
+/** Rouge des mois non réglés (doublé d'un libellé « impayé » pour rester lisible en noir et blanc). */
+const RED: Rgb = [200, 20, 20];
 
 const SLICES: Rgb[] = [VIOLET, ORANGE, [60, 60, 60], [160, 100, 180], [245, 170, 90], [130, 130, 130], [205, 175, 220], [250, 210, 160]];
 const pct = (value: number): string => `${value.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
@@ -90,16 +93,52 @@ function agingBars(pen: Pen, x: number, y: number, w: number, report: ImpayesRep
 }
 
 const invoiceCols: Col[] = [
-  { w: 62 },
-  { w: 34 },
+  { w: 44 },
   { w: 40 },
-  { w: 30, align: "right" },
-  { w: 43 },
-  { w: 60, align: "right" },
+  { w: 72 },
+  { w: 26 },
+  { w: 24, align: "right" },
+  { w: 30 },
+  { w: 41, align: "right" },
 ];
+const invoiceHead = ["N° de facture", "Mois impayé", "Libellé", "Date", "Ancienneté", "Dernière relance", "Montant"];
+
+/** Mois de la facture en toutes lettres, suivi de « impayé » ; « Mois non indiqué » si la période manque. */
+function unpaidMonth(invoice: ReportInvoice): string {
+  const name = monthName(invoice.periode);
+  return name ? `${name} (impayé)` : "Mois non indiqué";
+}
 
 function invoiceRows(invoices: readonly ReportInvoice[]): string[][] {
-  return invoices.map((invoice) => [invoice.numero || "-", invoice.periode || "-", invoice.date ? formatDate(invoice.date) : "Sans date", invoice.ageDays === null ? "-" : `${invoice.ageDays} j`, agingLabelOf(invoice.aging), formatDA(invoice.amount)]);
+  return invoices.map((invoice) => [
+    invoice.numero || "sans n°",
+    unpaidMonth(invoice),
+    invoice.libelle || "-",
+    invoice.date ? formatDate(invoice.date) : "Sans date",
+    invoice.ageDays === null ? "-" : `${invoice.ageDays} j`,
+    invoice.lastReminder ? formatDate(invoice.lastReminder) : "Aucune",
+    formatDA(invoice.amount),
+  ]);
+}
+
+/** Mois impayés distincts d'une succursale, du plus ancien au plus récent. */
+function unpaidMonths(branch: ReportBranch): string[] {
+  return [...new Set(branch.invoices.map((invoice) => invoice.periode).filter((key) => monthName(key) !== ""))].sort().map(monthName);
+}
+
+/** Bandeau d'en-tête de succursale, comme dans le CRM : nom, nombre, part, plus ancienne, dernière relance, montant, puis mois impayés en rouge. */
+function branchHeader(pen: Pen, branch: ReportBranch, y: number): number {
+  pen.doc.setFillColor(...TINT);
+  pen.doc.rect(MARGIN, y, CONTENT_W, 17, "F");
+  pen.text(branch.label, MARGIN + 3, y + 6.5, { size: 12, bold: true, color: VIOLET });
+  const facts = [`${branch.count} facture(s)`, pct(branch.share)];
+  if (branch.oldestDays !== null) facts.push(`la plus ancienne : ${branch.oldestDays} j`);
+  facts.push(branch.lastReminder ? `dernière relance : ${formatDate(branch.lastReminder)}` : "aucune relance connue");
+  pen.text(facts.join("  ·  "), MARGIN + 3, y + 12.8, { size: 8.5, color: GREY });
+  pen.text(formatDA(branch.amount), MARGIN + CONTENT_W - 3, y + 7, { size: 12, bold: true, align: "right" });
+  const months = unpaidMonths(branch);
+  pen.text(months.length > 0 ? `Mois non réglés : ${months.join(", ")}` : "Mois non réglés : aucun mois indiqué sur les factures", MARGIN + CONTENT_W - 3, y + 13.2, { size: 8.5, bold: true, color: months.length > 0 ? RED : GREY, align: "right" });
+  return y + 17;
 }
 
 /** Pages de présentation du rapport : couverture, vue d'ensemble, succursales, factures les plus anciennes, puis annexe détaillée. */
@@ -232,10 +271,12 @@ function plan(pen: Pen, report: ImpayesReport, assets: ReportAssets): PageSpec[]
         title: `Annexe : ${branch.label}${chunks.length > 1 ? ` (${index + 1}/${chunks.length})` : ""}`,
         retenir: branchHeadline(branch),
         draw: () => {
-          table(pen, MARGIN, 50, invoiceCols, ["N° de facture", "Période", "Date", "Âge", "Tranche", "Montant"], invoiceRows(chunk), {
-            size: 9,
-            bold: [true, false, false, false, false, true],
-            ...(last ? { footRow: [`Sous-total : ${branch.count} facture(s)`, "", "", "", "", formatDA(branch.amount)] } : {}),
+          const top = branchHeader(pen, branch, 50) + 3;
+          table(pen, MARGIN, top, invoiceCols, invoiceHead, invoiceRows(chunk), {
+            size: 8.5,
+            bold: [true, true, false, false, false, false, true],
+            cellColor: (row, col) => (col === 1 && monthName(chunk[row]?.periode ?? "") !== "" ? RED : undefined),
+            ...(last ? { footRow: [`Sous-total : ${branch.count} facture(s)`, "", "", "", "", "", formatDA(branch.amount)] } : {}),
           });
         },
       });

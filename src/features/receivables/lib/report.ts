@@ -16,6 +16,8 @@ export interface ReportBranch {
   share: number;
   oldestDays: number | null;
   oldestDate: string | null;
+  /** Date de la dernière relance de la succursale, `null` si aucune. */
+  lastReminder: string | null;
   /** Montant des factures de plus de 90 jours. */
   over90: number;
   over90Count: number;
@@ -90,6 +92,7 @@ export function buildImpayesReport(detail: ReceivableDetail, asOf: string): Impa
         share: 0,
         oldestDays: branch.oldestDays,
         oldestDate: branch.oldestDate,
+        lastReminder: branch.lastReminder,
         over90: round2(old.reduce((sum, invoice) => sum + invoice.amount, 0)),
         over90Count: old.length,
         invoices,

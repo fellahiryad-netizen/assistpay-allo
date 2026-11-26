@@ -102,12 +102,12 @@ export interface Col {
 }
 
 /** Tableau simple (en-tête violet, lignes séparées par des filets noirs) ; renvoie le y de fin. Les cellules longues passent à la ligne. */
-export function table(pen: Pen, x: number, y: number, cols: Col[], head: string[], rows: string[][], opts: { size?: number; bold?: boolean[] ; footRow?: string[] } = {}): number {
+export function table(pen: Pen, x: number, y: number, cols: Col[], head: string[], rows: string[][], opts: { size?: number; bold?: boolean[] ; footRow?: string[]; cellColor?: (row: number, col: number) => Rgb | undefined } = {}): number {
   const size = opts.size ?? 9;
   const pad = 1.8;
   const lineH = size * 0.42;
   const rowHeight = (cells: string[], allBold = false): number => Math.max(...cells.map((cell, i) => pen.lineCount(cell, (cols[i]?.w ?? 20) - 2 * pad, size, Boolean(opts.bold?.[i]) || allBold))) * lineH + 2 * pad - 0.6;
-  const drawRow = (cells: string[], top: number, style: { fill?: Rgb; color?: Rgb; bold?: boolean }): number => {
+  const drawRow = (cells: string[], top: number, style: { fill?: Rgb; color?: Rgb; bold?: boolean }, rowIndex = -1): number => {
     const height = rowHeight(cells, Boolean(style.bold));
     if (style.fill) {
       pen.doc.setFillColor(...style.fill);
@@ -121,7 +121,7 @@ export function table(pen: Pen, x: number, y: number, cols: Col[], head: string[
       pen.doc.setFont("helvetica", style.bold || opts.bold?.[i] ? "bold" : "normal");
       pen.doc.setFontSize(size);
       const lines = pen.doc.splitTextToSize(pdfText(cell), col.w - 2 * pad) as string[];
-      pen.doc.setTextColor(...(style.color ?? BLACK));
+      pen.doc.setTextColor(...((rowIndex >= 0 ? opts.cellColor?.(rowIndex, i) : undefined) ?? style.color ?? BLACK));
       lines.forEach((line, k) => pen.doc.text(line, tx, top + pad + lineH * (k + 0.8), { align: col.align === "right" ? "right" : "left" }));
       cx += col.w;
     });
@@ -129,7 +129,9 @@ export function table(pen: Pen, x: number, y: number, cols: Col[], head: string[
     return top + height;
   };
   let cursor = drawRow(head, y, { fill: VIOLET, color: [255, 255, 255], bold: true });
-  for (const row of rows) cursor = drawRow(row, cursor, {});
+  rows.forEach((row, index) => {
+    cursor = drawRow(row, cursor, {}, index);
+  });
   if (opts.footRow) cursor = drawRow(opts.footRow, cursor, { fill: TINT, bold: true });
   return cursor;
 }
